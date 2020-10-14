@@ -1,0 +1,642 @@
+Welcome to the Emacs shell
+
+~/Documents/Uni/RTpred/roi $ setq B `("0001" "0002" "0003" "0004" "0005" "0006" "0008" "0009" "0010" "0011" "0012" "0013" "0014" "0015" "0016" "0017" "0018" "0019" "0021" "0022" "0023" "0024" "0025" "0026" "0028" "0029" "0030" "0031" "0032" "0033" "0034" "0036" "0037" "0038" "0039" "0040" "0041" "0042" "0043" "0045" "0046" "0047" "0048" "0049" "0050" "0051" "0052" "0053" "0054" "0055" "0056" "0058" "0059" "0060" "0061" "0062" "0063" "0064" "0065" "0066" "0067" "0068" "0069" "0070" "0071" "0072" "0073" "0074" "0075" "0076" "0077" "0078" "0079" "0080" "0081" "0082" "0083" "0084" "0085" "0086" "0087" "0088" "0089" "0090" "0091" "0092" "0093" "0094" "0095" "0096" "0097" "0098" "0099" "0100" "0101" "0102" "0122" "0123" "0124" "0125" "0126" "0127" "0128" "0129" "0130" "0131" "0132" "0133" "0134" "0135" "0136" "0137" "0138" "0139" "0140" "0141" "0142" "0143" "0144" "0145" "0146" "0147" "0148" "0149" "0150" "0151" "0152" "0153" "0154" "0155" "0156" "0157" "0158" "0159" "0179" "0180" "0181" "0182")
+("0001" "0002" "0003" "0004" "0005" "0006" "0008" "0009" "0010" "0011" "0012" "0013" "0014" "0015" "0016" "0017" "0018" "0019" "0021" "0022" "0023" "0024" "0025" "0026" "0028" "0029" "0030" "0031" "0032" "0033" "0034" "0036" "0037" "0038" "0039" "0040" "0041" "0042" "0043" "0045" "0046" "0047" "0048" "0049" "0050" "0051" "0052" "0053" "0054" "0055" "0056" "0058" "0059" "0060" "0061" "0062" "0063" "0064" "0065" "0066" "0067" "0068" "0069" "0070" "0071" "0072" "0073" "0074" "0075" "0076" "0077" "0078" "0079" "0080" "0081" "0082" "0083" "0084" "0085" "0086" "0087" "0088" "0089" "0090" "0091" "0092" "0093" "0094" "0095" "0096" "0097" "0098" "0099" "0100" "0101" "0102" "0122" "0123" "0124" "0125" "0126" "0127" "0128" "0129" "0130" "0131" "0132" "0133" "0134" "0135" "0136" "0137" "0138" "0139" "0140" "0141" "0142" "0143" "0144" "0145" "0146" "0147" "0148" "0149" "0150" "0151" "0152" "0153" "0154" "0155" "0156" "0157" "0158" "0159" "0179" "0180" "0181" "0182")
+ ~/Documents/Uni/RTpred/roi $ python ranknet.py -i $B -t rdk -e 100 -b 1024 --standardize --sizes 64 64 --sysinfo --pair_step 3 --pair_stop 1024 --test $B
+using /job:localhost/replica:0/task:0/device:GPU:0
+Epoch 1/100
+4199/4199 [==============================] - 15s 4ms/step - loss: 0.1668 - val_loss: 0.2263
+Epoch 2/100
+4199/4199 [==============================] - 15s 4ms/step - loss: 0.1149 - val_loss: 0.2307
+Epoch 3/100
+4199/4199 [==============================] - 14s 3ms/step - loss: 0.1032 - val_loss: 0.2447
+Epoch 4/100
+4199/4199 [==============================] - 15s 3ms/step - loss: 0.0967 - val_loss: 0.2577
+train: 0.945
+test: 0.920
+val: 0.917
+evaluating on different dataset(s) (['0001', '0002', '0003', '0004', '0005', '0006', '0008', '0009', '0010', '0011', '0012', '0013', '0014', '0015', '0016', '0017', '0018', '0019', '0021', '0022', '0023', '0024', '0025', '0026', '0028', '0029', '0030', '0031', '0032', '0033', '0034', '0036', '0037', '0038', '0039', '0040', '0041', '0042', '0043', '0045', '0046', '0047', '0048', '0049', '0050', '0051', '0052', '0053', '0054', '0055', '0056', '0058', '0059', '0060', '0061', '0062', '0063', '0064', '0065', '0066', '0067', '0068', '0069', '0070', '0071', '0072', '0073', '0074', '0075', '0076', '0077', '0078', '0079', '0080', '0081', '0082', '0083', '0084', '0085', '0086', '0087', '0088', '0089', '0090', '0091', '0092', '0093', '0094', '0095', '0096', '0097', '0098', '0099', '0100', '0101', '0102', '0122', '0123', '0124', '0125', '0126', '0127', '0128', '0129', '0130', '0131', '0132', '0133', '0134', '0135', '0136', '0137', '0138', '0139', '0140', '0141', '0142', '0143', '0144', '0145', '0146', '0147', '0148', '0149', '0150', '0151', '0152', '0153', '0154', '0155', '0156', '0157', '0158', '0159', '0179', '0180', '0181', '0182'])
+0001: 0.843
+0002: 0.913
+0003: 0.909
+0004: 0.918
+0005: 0.923
+0006: 0.952
+0008: 0.733
+0009: 0.914
+0010: 0.937
+0011: 0.945
+0012: 0.951
+0013: 0.612
+0014: 0.644
+0015: 0.836
+0016: 0.762
+0017: 0.858
+0018: 0.885
+0019: 0.894
+0021: 0.799
+0022: 0.722
+0023: 0.901
+0024: 0.865
+0025: 0.890
+0026: 0.566
+0028: 0.939
+0029: 0.844
+0030: 0.855
+0031: 0.949
+0032: 0.923
+0033: 0.885
+0034: 0.785
+0036: 0.908
+0037: 0.837
+0038: 0.883
+0039: 0.829
+0040: 0.817
+0041: 0.873
+0042: 0.873
+0043: 0.865
+0045: 0.913
+0046: 0.944
+0047: 0.898
+0048: 0.934
+0049: 0.891
+0050: 0.912
+0051: 0.904
+0052: 0.895
+0053: 0.942
+0054: 0.931
+0055: 0.939
+0056: 0.881
+0058: 0.821
+0059: 0.845
+0060: 0.868
+0061: 1.000
+0062: 0.839
+0063: 0.886
+0064: 0.870
+0065: 0.788
+0066: 0.671
+ 0067: 0.913
+0068: 0.923
+0069: 0.873
+0070: 0.936
+0071: 0.940
+0072: 0.970
+0073: 0.956
+0074: 0.946
+0075: 0.920
+0076: 0.938
+0077: 0.936
+0078: 0.945
+0079: 0.954
+0080: 0.942
+0081: 0.924
+0082: 0.796
+0083: 0.929
+0084: 0.910
+0085: 0.930
+0086: 0.918
+0087: 0.926
+0088: 0.956
+0089: 0.946
+0090: 0.948
+0091: 0.950
+0092: 0.941
+0093: 0.916
+0094: 0.943
+0095: 0.950
+0096: 0.958
+0097: 0.953
+0098: 0.957
+0099: 0.951
+0100: 0.959
+0101: 0.935
+0102: 0.835
+0122: 0.866
+0123: 0.966
+0124: 0.926
+0125: 0.928
+0126: 0.909
+0127: 0.938
+0128: 0.957
+0129: 0.946
+0130: 0.869
+0131: 0.811
+0132: 0.798
+0133: 0.926
+0134: 0.937
+0135: 0.939
+0136: 0.920
+0137: 0.906
+0138: 0.920
+0139: 0.837
+0140: 0.930
+0141: 0.924
+0142: 0.932
+0143: 0.925
+0144: 0.924
+0145: 0.946
+0146: 0.935
+0147: 0.887
+0148: 0.836
+0149: 0.839
+0150: 0.937
+0151: 0.937
+0152: 0.953
+0153: 0.939
+0154: 0.961
+0155: 0.952
+0156: 0.964
+0157: 0.945
+0158: 0.958
+0159: 0.881
+0179: 0.945
+0180: 0.938
+0181: 0.948
+0182: 0.950
+~/Documents/Uni/RTpred/roi $ python ranknet.py -i $B -t rdk -e 100 -b 1024 --standardize --sizes 64 64 --sysinfo --pair_step 3 --pair_stop 1024 --test $B
+ ~/Documents/Uni/RTpred/roi $ setq A `("0045" "0019" "0063" "0047" "0017" "0062" "0024" "0064" "0048" "0068" "0086" "0091" "0096" "0097" "0080" "0085" "0087" "0088" "0098" "0095" "0100" "0099" "0077" "0138" "0179" "0181" "0182" "0076" "0084" "0089" "0090")
+("0045" "0019" "0063" "0047" "0017" "0062" "0024" "0064" "0048" "0068" "0086" "0091" "0096" "0097" "0080" "0085" "0087" "0088" "0098" "0095" "0100" "0099" "0077" "0138" "0179" "0181" "0182" "0076" "0084" "0089" "0090")
+~/Documents/Uni/RTpred/roi $ python ranknet.py -i 0024 -t rdk -e 100 -b 1024 --standardize --sizes 64 64 --sysinfo --pair_step 3 --pair_stop 1024
+Process ForkPoolWorker-2:
+Process ForkPoolWorker-6:
+Process ForkPoolWorker-4:
+Process ForkPoolWorker-8:
+Process ForkPoolWorker-3:
+Traceback (most recent call last):
+  File "ranknet.py", line 741, in <module>
+Process ForkPoolWorker-1:
+    data.compute_features(features_type=args.type, n_thr=args.num_features)
+  File "ranknet.py", line 348, in compute_features
+Process ForkPoolWorker-5:
+    features_unique = features(smiles_unique, features_type)
+  File "ranknet.py", line 124, in features
+Traceback (most recent call last):
+  File "/usr/lib/python3.8/multiprocessing/process.py", line 315, in _bootstrap
+    self.run()
+  File "/usr/lib/python3.8/multiprocessing/process.py", line 108, in run
+    self._target(*self._args, **self._kwargs)
+Traceback (most recent call last):
+  File "/usr/lib/python3.8/multiprocessing/pool.py", line 125, in worker
+    result = (True, func(*args, **kwds))
+  File "/usr/lib/python3.8/multiprocessing/pool.py", line 48, in mapstar
+    return list(map(*args))
+  File "ranknet.py", line 109, in get_rdk_descs
+    return [f(Chem.MolFromSmiles(m)) for _, f in Descriptors.descList]
+  File "ranknet.py", line 109, in <listcomp>
+    return [f(Chem.MolFromSmiles(m)) for _, f in Descriptors.descList]
+KeyboardInterrupt
+  File "/usr/lib/python3.8/multiprocessing/process.py", line 315, in _bootstrap
+    self.run()
+  File "/usr/lib/python3.8/multiprocessing/process.py", line 108, in run
+    self._target(*self._args, **self._kwargs)
+  File "/usr/lib/python3.8/multiprocessing/pool.py", line 125, in worker
+    result = (True, func(*args, **kwds))
+  File "/usr/lib/python3.8/multiprocessing/pool.py", line 48, in mapstar
+    return list(map(*args))
+  File "ranknet.py", line 109, in get_rdk_descs
+    return [f(Chem.MolFromSmiles(m)) for _, f in Descriptors.descList]
+  File "ranknet.py", line 109, in <listcomp>
+    return [f(Chem.MolFromSmiles(m)) for _, f in Descriptors.descList]
+  File "/usr/lib/python3.8/site-packages/rdkit/Chem/EState/EState.py", line 78, in MaxEStateIndex
+    return max(EStateIndices(mol, force))
+  File "/usr/lib/python3.8/site-packages/rdkit/Chem/EState/EState.py", line 64, in EStateIndices
+    if p < 1e6:
+KeyboardInterrupt
+    arr = np.array(pool.map(get_rdk_descs, smiles))
+  File "/usr/lib/python3.8/multiprocessing/pool.py", line 364, in map
+    return self._map_async(func, iterable, mapstar, chunksize).get()
+Traceback (most recent call last):
+  File "/usr/lib/python3.8/multiprocessing/pool.py", line 765, in get
+Traceback (most recent call last):
+Traceback (most recent call last):
+  File "/usr/lib/python3.8/multiprocessing/process.py", line 315, in _bootstrap
+    self.run()
+  File "/usr/lib/python3.8/multiprocessing/process.py", line 108, in run
+    self._target(*self._args, **self._kwargs)
+  File "/usr/lib/python3.8/multiprocessing/pool.py", line 125, in worker
+    result = (True, func(*args, **kwds))
+  File "/usr/lib/python3.8/multiprocessing/pool.py", line 48, in mapstar
+    return list(map(*args))
+  File "ranknet.py", line 109, in get_rdk_descs
+    return [f(Chem.MolFromSmiles(m)) for _, f in Descriptors.descList]
+  File "/usr/lib/python3.8/multiprocessing/process.py", line 315, in _bootstrap
+    self.run()
+  File "ranknet.py", line 109, in <listcomp>
+    return [f(Chem.MolFromSmiles(m)) for _, f in Descriptors.descList]
+  File "/usr/lib/python3.8/multiprocessing/process.py", line 108, in run
+    self._target(*self._args, **self._kwargs)
+  File "/usr/lib/python3.8/site-packages/rdkit/Chem/EState/EState_VSA.py", line 98, in VSA_EState_bin
+    return VSA_EState_(mol, force=False)[nbin]
+  File "/usr/lib/python3.8/multiprocessing/pool.py", line 125, in worker
+    result = (True, func(*args, **kwds))
+  File "/usr/lib/python3.8/site-packages/rdkit/Chem/EState/EState_VSA.py", line 41, in VSA_EState_
+    propContribs = EStateIndices_(mol, force=force)
+  File "/usr/lib/python3.8/multiprocessing/process.py", line 315, in _bootstrap
+    self.run()
+  File "/usr/lib/python3.8/site-packages/rdkit/Chem/EState/EState.py", line 54, in EStateIndices
+    h = at.GetTotalNumHs()
+  File "/usr/lib/python3.8/multiprocessing/process.py", line 108, in run
+    self._target(*self._args, **self._kwargs)
+  File "/usr/lib/python3.8/multiprocessing/pool.py", line 125, in worker
+    result = (True, func(*args, **kwds))
+  File "/usr/lib/python3.8/multiprocessing/pool.py", line 48, in mapstar
+    return list(map(*args))
+  File "ranknet.py", line 109, in get_rdk_descs
+    return [f(Chem.MolFromSmiles(m)) for _, f in Descriptors.descList]
+KeyboardInterrupt
+  File "ranknet.py", line 109, in <listcomp>
+    return [f(Chem.MolFromSmiles(m)) for _, f in Descriptors.descList]
+  File "/usr/lib/python3.8/site-packages/rdkit/Chem/EState/EState_VSA.py", line 98, in VSA_EState_bin
+    return VSA_EState_(mol, force=False)[nbin]
+  File "/usr/lib/python3.8/site-packages/rdkit/Chem/EState/EState_VSA.py", line 41, in VSA_EState_
+    propContribs = EStateIndices_(mol, force=force)
+  File "/usr/lib/python3.8/site-packages/rdkit/Chem/EState/EState.py", line 66, in EStateIndices
+    accum[i] += tmp
+KeyboardInterrupt
+    self.wait(timeout)
+  File "/usr/lib/python3.8/multiprocessing/pool.py", line 762, in wait
+Process ForkPoolWorker-7:
+Traceback (most recent call last):
+    self._event.wait(timeout)
+  File "/usr/lib/python3.8/threading.py", line 558, in wait
+  File "/usr/lib/python3.8/multiprocessing/process.py", line 315, in _bootstrap
+    self.run()
+  File "/usr/lib/python3.8/multiprocessing/process.py", line 108, in run
+    self._target(*self._args, **self._kwargs)
+  File "/usr/lib/python3.8/multiprocessing/pool.py", line 125, in worker
+    result = (True, func(*args, **kwds))
+  File "/usr/lib/python3.8/multiprocessing/pool.py", line 48, in mapstar
+    return list(map(*args))
+  File "ranknet.py", line 109, in get_rdk_descs
+    return [f(Chem.MolFromSmiles(m)) for _, f in Descriptors.descList]
+  File "ranknet.py", line 109, in <listcomp>
+    return [f(Chem.MolFromSmiles(m)) for _, f in Descriptors.descList]
+  File "/usr/lib/python3.8/site-packages/rdkit/Chem/EState/EState_VSA.py", line 110, in EState_VSA_bin
+    return EState_VSA_(mol, force=False)[nbin]
+  File "/usr/lib/python3.8/site-packages/rdkit/Chem/EState/EState_VSA.py", line 73, in EState_VSA_
+    volContribs = VSAContribs_(mol)
+  File "/usr/lib/python3.8/site-packages/rdkit/Chem/MolSurf.py", line 49, in _LabuteHelper
+    Vi = [hs] + list(ats)
+KeyboardInterrupt
+    signaled = self._cond.wait(timeout)
+  File "/usr/lib/python3.8/threading.py", line 302, in wait
+    waiter.acquire()
+KeyboardInterrupt
+Traceback (most recent call last):
+interrupt
+~/Documents/Uni/RTpred/roi $ python ranknet.py -i 0045 -t rdk -e 100 -b 1024 --standardize --sizes 64 64 --sysinfo --pair_step 3 --pair_stop 1024
+using /job:localhost/replica:0/task:0/device:GPU:0
+Epoch 1/100
+197/197 [==============================] - 1s 4ms/step - loss: 0.1253 - val_loss: 0.0431
+Epoch 2/100
+197/197 [==============================] - 1s 3ms/step - loss: 0.0349 - val_loss: 0.0252
+Epoch 3/100
+197/197 [==============================] - 1s 3ms/step - loss: 0.0295 - val_loss: 0.0120
+Epoch 4/100
+197/197 [==============================] - 1s 4ms/step - loss: 0.0279 - val_loss: 0.0113
+Epoch 5/100
+197/197 [==============================] - 1s 4ms/step - loss: 0.0273 - val_loss: 0.0095
+Epoch 6/100
+197/197 [==============================] - 1s 4ms/step - loss: 0.0268 - val_loss: 0.0095
+Epoch 7/100
+197/197 [==============================] - 1s 4ms/step - loss: 0.0269 - val_loss: 0.0079
+Epoch 8/100
+197/197 [==============================] - 1s 4ms/step - loss: 0.0266 - val_loss: 0.0093
+Epoch 9/100
+197/197 [==============================] - 1s 3ms/step - loss: 0.0262 - val_loss: 0.0071
+Epoch 10/100
+197/197 [==============================] - 1s 3ms/step - loss: 0.0260 - val_loss: 0.0084
+Epoch 11/100
+197/197 [==============================] - 1s 4ms/step - loss: 0.0258 - val_loss: 0.0069
+Epoch 12/100
+197/197 [==============================] - 1s 4ms/step - loss: 0.0259 - val_loss: 0.0073
+Epoch 13/100
+197/197 [==============================] - 1s 3ms/step - loss: 0.0256 - val_loss: 0.0085
+Epoch 14/100
+197/197 [==============================] - 1s 3ms/step - loss: 0.0257 - val_loss: 0.0078
+train: 0.996
+test: 0.993
+val: 1.000
+ ~/Documents/Uni/RTpred/roi $ python ranknet.py -i 0045 -t rdk -e 100 -b 1024 --standardize --sizes 64 64 --sysinfo --pair_step 3 --pair_stop 1024
+ ~/Documents/Uni/RTpred/roi $ python ranknet.py -i $B -t rdk -e 100 -b 1024 --standardize --sizes 64 64 --sysinfo --pair_step 3 --pair_stop 1024
+using /job:localhost/replica:0/task:0/device:GPU:0
+Epoch 1/100
+3725/3725 [==============================] - 14s 4ms/step - loss: 0.1141 - val_loss: 0.1227
+Epoch 2/100
+3725/3725 [==============================] - 13s 4ms/step - loss: 0.0661 - val_loss: 0.1268
+Epoch 3/100
+3725/3725 [==============================] - 13s 4ms/step - loss: 0.0565 - val_loss: 0.1303
+Epoch 4/100
+3725/3725 [==============================] - 14s 4ms/step - loss: 0.0513 - val_loss: 0.1366
+train: 0.979
+test: 0.957
+val: 0.963
+~/Documents/Uni/RTpred/roi $ python ranknet.py -i $B -t rdk -e 100 -b 16384 --standardize --sizes 64 64 --sysinfo --pair_step 3 --pair_stop 1024 --test $B
+using /job:localhost/replica:0/task:0/device:GPU:0
+Epoch 1/100
+233/233 [==============================] - 11s 46ms/step - loss: 0.2388 - val_loss: 0.1914
+Epoch 2/100
+233/233 [==============================] - 9s 40ms/step - loss: 0.1269 - val_loss: 0.1697
+Epoch 3/100
+233/233 [==============================] - 9s 39ms/step - loss: 0.0966 - val_loss: 0.1687
+Epoch 4/100
+233/233 [==============================] - 9s 40ms/step - loss: 0.0810 - val_loss: 0.1826
+Epoch 5/100
+233/233 [==============================] - 10s 41ms/step - loss: 0.0724 - val_loss: 0.1869
+Epoch 6/100
+233/233 [==============================] - 10s 42ms/step - loss: 0.0666 - val_loss: 0.1988
+train: 0.973
+test: 0.951
+val: 0.952
+evaluating on different dataset(s) (['0001', '0002', '0003', '0004', '0005', '0006', '0008', '0009', '0010', '0011', '0012', '0013', '0014', '0015', '0016', '0017', '0018', '0019', '0021', '0022', '0023', '0024', '0025', '0026', '0028', '0029', '0030', '0031', '0032', '0033', '0034', '0036', '0037', '0038', '0039', '0040', '0041', '0042', '0043', '0045', '0046', '0047', '0048', '0049', '0050', '0051', '0052', '0053', '0054', '0055', '0056', '0058', '0059', '0060', '0061', '0062', '0063', '0064', '0065', '0066', '0067', '0068', '0069', '0070', '0071', '0072', '0073', '0074', '0075', '0076', '0077', '0078', '0079', '0080', '0081', '0082', '0083', '0084', '0085', '0086', '0087', '0088', '0089', '0090', '0091', '0092', '0093', '0094', '0095', '0096', '0097', '0098', '0099', '0100', '0101', '0102', '0122', '0123', '0124', '0125', '0126', '0127', '0128', '0129', '0130', '0131', '0132', '0133', '0134', '0135', '0136', '0137', '0138', '0139', '0140', '0141', '0142', '0143', '0144', '0145', '0146', '0147', '0148', '0149', '0150', '0151', '0152', '0153', '0154', '0155', '0156', '0157', '0158', '0159', '0179', '0180', '0181', '0182'])
+0001: 0.883
+0002: 0.916
+0003: 0.971
+0004: 0.967
+0005: 0.974
+0006: 0.914
+0008: 1.000
+0009: 0.997
+0010: 0.954
+0011: 0.950
+0012: 0.975
+0013: 0.948
+0014: 0.858
+0015: 0.947
+0016: 0.892
+0017: 0.900
+0018: 0.885
+0019: 0.933
+0021: 0.879
+0022: 0.750
+0023: 0.958
+0024: 0.902
+0025: 0.976
+0026: 0.699
+0028: 0.951
+0029: 0.923
+0030: 0.953
+0031: 0.983
+0032: 0.926
+0033: 0.960
+0034: 0.970
+0036: 0.934
+0037: 0.904
+0038: 0.952
+0039: 0.763
+0040: 0.862
+0041: 0.987
+0042: 0.962
+0043: 0.987
+0045: 0.973
+0046: 0.833
+0047: 0.913
+0048: 0.978
+0049: 0.968
+0050: 0.971
+0051: 0.914
+0052: 0.958
+0053: 0.949
+0054: 0.998
+0055: 0.987
+0056: 0.946
+0058: 0.932
+0059: 0.936
+0060: 0.999
+0061: 1.000
+0062: 0.951
+0063: 0.962
+0064: 0.925
+0065: 0.981
+0066: 0.948
+0067: 0.969
+0068: 0.986
+0069: 0.955
+0070: 0.993
+0071: 0.998
+0072: 0.997
+0073: 0.999
+0074: 0.999
+0075: 0.999
+0076: 0.996
+0077: 0.993
+0078: 0.996
+0079: 0.984
+0080: 0.966
+0081: 0.993
+0082: 0.973
+0083: 0.984
+0084: 0.994
+0085: 0.997
+0086: 0.996
+0087: 0.997
+0088: 0.992
+0089: 0.995
+0090: 0.998
+0091: 0.995
+0092: 0.996
+0093: 0.993
+0094: 0.997
+0095: 0.997
+0096: 0.997
+0097: 0.995
+0098: 0.997
+0099: 0.994
+0100: 0.996
+0101: 0.962
+0102: 0.905
+0122: 0.973
+0123: 1.000
+0124: 0.948
+0125: 0.980
+0126: 0.961
+0127: 0.991
+0128: 0.982
+0129: 0.989
+0130: 0.986
+0131: 0.990
+0132: 0.989
+0133: 0.987
+0134: 0.990
+0135: 0.994
+0136: 0.993
+0137: 0.991
+0138: 0.952
+0139: 0.995
+0140: 0.973
+0141: 0.990
+0142: 0.996
+0143: 0.989
+0144: 0.996
+0145: 0.992
+0146: 0.987
+0147: 0.996
+0148: 0.998
+0149: 0.998
+0150: 0.992
+0151: 0.994
+0152: 0.997
+0153: 0.993
+0154: 0.990
+0155: 0.995
+0156: 0.986
+0157: 0.995
+0158: 0.976
+0159: 0.941
+0179: 0.996
+0180: 0.990
+0181: 0.995
+0182: 0.991
+~/Documents/Uni/RTpred/roi $ python ranknet.py -i $B -t rdk -e 100 -b 16384 --standardize --sizes 64 64 --pair_step 3 --pair_stop 1024 --test $B
+Epoch 1/100
+233/233 [==============================] - 7s 28ms/step - loss: 0.3481 - val_loss: 0.3515
+Epoch 2/100
+233/233 [==============================] - 6s 28ms/step - loss: 0.2926 - val_loss: 0.3533
+Epoch 3/100
+233/233 [==============================] - 6s 28ms/step - loss: 0.2785 - val_loss: 0.3538
+Epoch 4/100
+233/233 [==============================] - 6s 27ms/step - loss: 0.2708 - val_loss: 0.3538
+train: 0.884
+test: 0.868
+val: 0.860
+evaluating on different dataset(s) (['0001', '0002', '0003', '0004', '0005', '0006', '0008', '0009', '0010', '0011', '0012', '0013', '0014', '0015', '0016', '0017', '0018', '0019', '0021', '0022', '0023', '0024', '0025', '0026', '0028', '0029', '0030', '0031', '0032', '0033', '0034', '0036', '0037', '0038', '0039', '0040', '0041', '0042', '0043', '0045', '0046', '0047', '0048', '0049', '0050', '0051', '0052', '0053', '0054', '0055', '0056', '0058', '0059', '0060', '0061', '0062', '0063', '0064', '0065', '0066', '0067', '0068', '0069', '0070', '0071', '0072', '0073', '0074', '0075', '0076', '0077', '0078', '0079', '0080', '0081', '0082', '0083', '0084', '0085', '0086', '0087', '0088', '0089', '0090', '0091', '0092', '0093', '0094', '0095', '0096', '0097', '0098', '0099', '0100', '0101', '0102', '0122', '0123', '0124', '0125', '0126', '0127', '0128', '0129', '0130', '0131', '0132', '0133', '0134', '0135', '0136', '0137', '0138', '0139', '0140', '0141', '0142', '0143', '0144', '0145', '0146', '0147', '0148', '0149', '0150', '0151', '0152', '0153', '0154', '0155', '0156', '0157', '0158', '0159', '0179', '0180', '0181', '0182'])
+0001: 0.872
+0002: 0.907
+0003: 0.945
+0004: 0.956
+0005: 0.956
+0006: 0.938
+0008: 1.000
+0009: 0.994
+0010: 0.843
+0011: 0.881
+0012: 0.903
+0013: 0.800
+0014: 0.835
+0015: 0.911
+0016: 0.766
+0017: 0.863
+0018: 0.791
+0019: 0.863
+0021: 0.882
+0022: 0.833
+0023: 0.912
+0024: 0.809
+0025: 0.970
+0026: 0.610
+0028: 0.916
+0029: 0.909
+0030: 0.972
+0031: 0.978
+0032: 0.884
+0033: 0.965
+0034: 0.973
+0036: 0.887
+0037: 0.793
+0038: 0.857
+0039: 0.806
+0040: 0.904
+0041: 0.970
+0042: 0.946
+0043: 0.894
+0045: 0.891
+0046: 0.778
+0047: 0.824
+0048: 0.950
+0049: 0.954
+0050: 0.942
+0051: 0.835
+0052: 0.909
+0053: 0.863
+0054: 0.981
+0055: 0.975
+0056: 0.932
+0058: 0.899
+0059: 0.878
+0060: 0.987
+0061: 1.000
+0062: 0.910
+0063: 0.910
+0064: 0.869
+0065: 0.976
+0066: 0.901
+0067: 0.952
+0068: 0.974
+0069: 0.942
+0070: 0.986
+0071: 0.992
+0072: 0.978
+0073: 0.993
+0074: 0.991
+0075: 0.993
+0076: 0.989
+0077: 0.987
+0078: 0.989
+0079: 0.955
+0080: 0.924
+0081: 0.953
+0082: 0.936
+0083: 0.967
+0084: 0.989
+0085: 0.990
+0086: 0.987
+0087: 0.985
+0088: 0.980
+0089: 0.973
+0090: 0.982
+0091: 0.976
+0092: 0.982
+0093: 0.984
+0094: 0.987
+0095: 0.989
+0096: 0.988
+0097: 0.989
+0098: 0.989
+0099: 0.987
+0100: 0.989
+0101: 0.939
+0102: 0.824
+0122: 0.952
+0123: 0.982
+0124: 0.891
+0125: 0.963
+0126: 0.951
+0127: 0.978
+0128: 0.958
+0129: 0.962
+0130: 0.970
+0131: 0.978
+0132: 0.978
+0133: 0.974
+0134: 0.973
+0135: 0.978
+0136: 0.968
+0137: 0.955
+0138: 0.912
+0139: 0.972
+0140: 0.941
+0141: 0.971
+0142: 0.979
+0143: 0.974
+0144: 0.979
+0145: 0.969
+0146: 0.971
+0147: 0.968
+0148: 0.985
+0149: 0.985
+0150: 0.972
+0151: 0.982
+0152: 0.980
+0153: 0.980
+0154: 0.985
+0155: 0.981
+0156: 0.981
+0157: 0.983
+0158: 0.937
+0159: 0.871
+0179: 0.984
+0180: 0.982
+0181: 0.983
+0182: 0.976
+ ~/Documents/Uni/RTpred/roi $ 

@@ -1,0 +1,157 @@
+ ~/Documents/Uni/RTpred/roi $ python ranknet.py -i test.csv -t rdk -e2 -b 2048 --sizes 3 3 --standardize
+train:  0.8502777489132506
+test:  0.8055225281602002
+val:  0.8074685534591195
+~/Documents/Uni/RTpred/roi $ python ranknet.py -i test.csv -t rdk -e2 -b 2048 --sizes 1 1 --standardize
+train:  0.8492581094889247
+test:  0.8072747183979975
+val:  0.8145440251572327
+~/Documents/Uni/RTpred/roi $ python ranknet.py -i test.csv -t rdk -e2 -b 4096 --sizes 1 1 --standardize
+ ~/Documents/Uni/RTpred/roi $ python ranknet.py -i test.csv -t rdk -e2 -b 4096 --sizes 1 1 --standardize
+train:  0.6718118408063595
+test:  0.656311013767209
+val:  0.6566823899371069
+ ~/Documents/Uni/RTpred/roi $ python ranknet.py -i test.csv -t rdk -e 10 -b 4096 --sizes 1 1 --standardize
+train:  0.7340789040716302
+test:  0.7042083854818523
+val:  0.704559748427673
+ ~/Documents/Uni/RTpred/roi $ python ranknet.py -i test.csv -t rdk -e 10 -b 4096 --sizes 1 1 --standardize
+train:  1.0
+test:  1.0
+val:  1.0
+~/Documents/Uni/RTpred/roi $ python ranknet.py -i test.csv -t rdk -e 10 -b 20000 --sizes 10 10 --standardize
+train:  0.6732990855717774
+test:  0.6771526908635794
+val:  0.6474842767295598
+ ~/Documents/Uni/RTpred/roi $ python ranknet.py -i test.csv -t rdk -e 10 -b 40000 --sizes 10 10 --standardize
+train:  0.5990855717774198
+test:  0.584217772215269
+val:  0.6216981132075472
+ ~/Documents/Uni/RTpred/roi $ python ranknet.py -i test.csv -t rdk -e 10 -b 40000 --sizes 10 10 --standardize
+train:  0.7881321331462912
+test:  0.7564080100125157
+val:  0.8006289308176101
+~/Documents/Uni/RTpred/roi $ python ranknet.py -i test.csv -t rdk -e 30 -b 1_000_000 --sizes 10 10 --standardize
+train:  0.7202960201589859
+test:  0.7192897371714644
+val:  0.7400943396226415
+~/Documents/Uni/RTpred/roi $ python ranknet.py -i test.csv -t rdk -e 30 -b 4096 --sizes 10 10 --standardize
+train:  0.8889956876396321
+test:  0.8180632040050062
+val:  0.7852987421383648
+~/Documents/Uni/RTpred/roi $ python ranknet.py -i test.csv -t rdk -e 100 -b 1_000_000 --sizes 10 10 --standardize
+train:  0.7965481633501325
+test:  0.7702596996245307
+val:  0.7985849056603773
+~/Documents/Uni/RTpred/roi $ python ranknet.py -i test.csv -t rdk -e 20 -b 20_000 --sizes 10 10 --standardize
+train:  0.8561000848617101
+test:  0.8125125156445557
+val:  0.8157232704402516
+~/Documents/Uni/RTpred/roi $ python ranknet.py -i test.csv -t rdk -e 15 -b 20_000 --sizes 50 50 --standardize
+train:  0.9034078904071631
+test:  0.8214236545682103
+val:  0.8330188679245283
+~/Documents/Uni/RTpred/roi $ python ranknet.py -i test.csv -t rdk -e 8 -b 20_000 --sizes 50 50 --standardize
+train:  0.8640941878387974
+test:  0.8299061326658322
+val:  0.8064465408805032
+~/Documents/Uni/RTpred/roi $ python ranknet.py -i test.csv -t rdk -e 8 -b 20_000 --sizes 100 100 --standardize
+train:  0.9010547098249078
+test:  0.8192772215269086
+val:  0.822248427672956
+~/Documents/Uni/RTpred/roi $ python ranknet.py -i test.csv -t rdk -e 8 -b 40_000 --sizes 200 200 --standardize
+train:  0.8865968289430387
+test:  0.8286420525657071
+val:  0.837814465408805
+ ~/Documents/Uni/RTpred/roi $ python ranknet.py -i test.csv -t rdk -e 8 -b 40_000 --sizes 200 200 --standardize --reduce_features
+train:  0.8867018236608303
+test:  0.8149280350438047
+val:  0.8528301886792453
+~/Documents/Uni/RTpred/roi $ python ranknet.py -i test.csv -t mordred -e 8 -b 40_000 --sizes 200 200 --standardize --reduce_features
+train:  0.9132481685457474
+test:  0.7999092615769712
+val:  0.8005503144654088
+~/Documents/Uni/RTpred/roi $ python ranknet.py -i test.csv -t rdk -e 8 -b 40_000 --sizes 1000 1000 --standardize --reduce_features
+train:  0.9374276943592941
+test:  0.8289893617021277
+val:  0.8520440251572327
+ ~/Documents/Uni/RTpred/roi $ python ranknet.py -i test.csv -t rdk -e 5 -b 40_000 --sizes 1000 1000 --standardize --reduce_features
+train:  0.9089141597824769
+test:  0.8330131414267835
+val:  0.8419811320754716
+ ~/Documents/Uni/RTpred/roi $ python ranknet.py -i test.csv -t rdk -e 5 -b 40_000 --sizes 5000 5000 --standardize --reduce_features
+train:  0.8853243362601964
+test:  0.8466082603254067
+val:  0.8239779874213836
+ ~/Documents/Uni/RTpred/roi $ python ranknet.py -i test.csv -t rdk -e 5 -b 20_000 --sizes 10000 10000 --standardize --reduce_features
+train:  0.9229849673542198
+test:  0.8297934918648311
+val:  0.840566037735849
+~/Documents/Uni/RTpred/roi $ python ranknet.py -i test.csv -t rdk -e 5 -b 20_000 --sizes 10000 10000 --standardize
+train:  0.9218938882250047
+test:  0.8308260325406759
+val:  0.8466981132075472
+ ~/Documents/Uni/RTpred/roi $ python ranknet.py -i test.csv -t rdk -e 5 -b 30_000 --sizes 10000 10000 --standardize
+ ~/Documents/Uni/RTpred/roi $ python ranknet.py -i test.csv -t rdk -e 5 -b 20_000 --sizes 10000 10000 --standardize
+train:  0.9183989712682495
+test:  0.8306914893617021
+val:  0.8247641509433963
+~/Documents/Uni/RTpred/roi $ python ranknet.py -i test.csv -t rdk -e 5 -b 20_000 --standardize --sizes 100 1000 200
+ ~/Documents/Uni/RTpred/roi $ python ranknet.py -i test.csv -t rdk -e 5 -b 20_000 --standardize --sizes 100 1000 200
+ ~/Documents/Uni/RTpred/roi $ python ranknet.py -i test.csv -t rdk -e 5 -b 20_000 --standardize --sizes 100 1000 200
+ ~/Documents/Uni/RTpred/roi $ python ranknet.py -i test.csv -t rdk -e 5 -b 20_000 --standardize --sizes 100 1000 200
+ ~/Documents/Uni/RTpred/roi $ python ranknet.py -i test.csv -t rdk -e 5 -b 20_000 --standardize --sizes 100 1000 200
+train:  0.9399748445645209
+test:  0.8133260325406758
+val:  0.8176100628930818
+~/Documents/Uni/RTpred/roi $ python ranknet.py -i test.csv -t rdk -e 5 -b 20_000 --standardize --sizes 1000 10_000 5_000
+train:  0.9570303164129474
+test:  0.836846057571965
+val:  0.8386006289308177
+~/Documents/Uni/RTpred/roi $ python ranknet.py -i test.csv -t rdk -e 5 -b 20_000 --standardize --sizes 10_000
+train:  0.9085314161514348
+test:  0.8252221526908636
+val:  0.8511006289308176
+ ~/Documents/Uni/RTpred/roi $ python ranknet.py -i test.csv -t rdk -e 5 -b 20_000 --standardize --sizes 1_000
+train:  0.8925449420688939
+test:  0.8278598247809762
+val:  0.8114779874213837
+~/Documents/Uni/RTpred/roi $ python ranknet.py -i test.csv -t rdk -e 5 -b 20_000 --standardize --sizes 100 100 100
+train:  0.8863102041876656
+test:  0.8257040050062578
+val:  0.7887578616352201
+ ~/Documents/Uni/RTpred/roi $ python ranknet.py -i test.csv -t rdk -e 5 -b 20_000 --standardize --sizes 1000 1000 1000
+train:  0.9625342044647651
+test:  0.8321088861076346
+val:  0.8282232704402516
+~/Documents/Uni/RTpred/roi $ python ranknet.py -i test.csv -t rdk -e 5 -b 20_000 --standardize --sizes 100_000
+~/Documents/Uni/RTpred/roi $ python ranknet.py -i test.csv -t rdk -e 5 -b 20_000 --standardize --sizes 80_000
+ ~/Documents/Uni/RTpred/roi $ python ranknet.py -i test.csv -t rdk -e 5 -b 20_000 --standardize --sizes 50_000
+~/Documents/Uni/RTpred/roi $ python ranknet.py -i test.csv -t rdk -e 5 -b 20_000 --standardize --sizes 50_000
+ ~/Documents/Uni/RTpred/roi $ python ranknet.py -i test.csv -t rdk -e 5 -b 20_000 --standardize --sizes 10_000
+train:  0.9085366117663359
+test:  0.8262265331664581
+val:  0.8380503144654088
+~/Documents/Uni/RTpred/roi $ python ranknet.py -i test.csv -t rdk -e 5 -b 40_000 --standardize --sizes 200 200
+train:  0.8671721566997455
+test:  0.8229474342928661
+val:  0.808254716981132
+ ~/Documents/Uni/RTpred/roi $ python ranknet.py -i test.csv -t rdk -e 5 -b 40_000 --standardize --sizes 200 200 100
+train:  0.8863307701633155
+test:  0.8279005006257822
+val:  0.8171383647798742
+~/Documents/Uni/RTpred/roi $ python ranknet.py -i test.csv -t rdk -e 5 -b 40_000 --standardize --sizes 200 200 1000
+train:  0.8984073275488821
+test:  0.8176439299123905
+val:  0.8425314465408805
+~/Documents/Uni/RTpred/roi $ python ranknet.py -i test.csv -t rdk -e 5 -b 40_000 --standardize --sizes 100 200 1000
+ ~/Documents/Uni/RTpred/roi $ python ranknet.py -i test.csv -t rdk -e 5 -b 40_000 --standardize --sizes 1000 200 1000
+train:  0.9259466843317573
+test:  0.8340456821026283
+val:  0.8282232704402516
+~/Documents/Uni/RTpred/roi $ python ranknet.py -i test.csv -t rdk -e 5 -b 40_000 --standardize --sizes 100 10_000 20_000
+ ~/Documents/Uni/RTpred/roi $ python ranknet.py -i test.csv -t rdk -e 5 -b 20_000 --standardize --sizes 100 10_000 20_000
+ ~/Documents/Uni/RTpred/roi $ python ranknet.py -i test.csv -t rdk -e 5 -b 20_000 --standardize --sizes 100 10_000 10_000
+train:  0.9558504788625067
+test:  0.8167991239048811
+val:  0.8147798742138365
