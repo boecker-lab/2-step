@@ -673,6 +673,7 @@ def parse_arguments(args=None):
     parser.add_argument('--classes_u_thr', default=0.25, type=float, help=' ')
     parser.add_argument('--void_rt', default=0.0, type=float, help=' ')
     parser.add_argument('--cache_file', default='cached_descs.pkl', help=' ')
+    parser.add_argument('--run_name', default=None, help=' ')
     parser.add_argument('--export_rois', action='store_true', help=' ')
     parser.add_argument('--use_weights', action='store_true', help=' ')
     parser.add_argument('--debug_onehot_sys', action='store_true', help=' ')
@@ -871,9 +872,12 @@ if __name__ == '__main__':
     print(f'test: {eval_(test_y, test_preds):.3f}')
     print(f'val: {eval_(val_y, predict(val_x, ranker, args.batch_size)):.3f}')        
     if (args.export_rois):
-        from datetime import datetime
-        time_str = datetime.now().strftime('%Y%m%d_%H-%M-%S')
-        run_name = f'ranknet_{time_str}'
+        if (args.run_name is None):
+            from datetime import datetime
+            time_str = datetime.now().strftime('%Y%m%d_%H-%M-%S')
+            run_name = f'ranknet_{time_str}'
+        else:
+            run_name = args.run_name
         if not os.path.isdir('runs'):
             os.mkdir('runs')
         export_predictions(data, test_preds, f'runs/{run_name}_test.tsv', 'test')
