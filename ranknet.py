@@ -116,8 +116,8 @@ def csr2tf(csr):
 
 
 def get_rdk_descs(m):
-    return [f(Chem.MolFromSmiles(m)) for _, f in Descriptors.descList]
-
+    mol = Chem.AddHs(Chem.MolFromSmiles(m))
+    return [f(mol) for _, f in Descriptors.descList]
 
 def get_morgan_fps(m, r):
     return AllChem.GetMorganFingerprint(m, r)
