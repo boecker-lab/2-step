@@ -175,10 +175,15 @@ def features(smiles, kind='rdk', cache_file=None, overwrite_cache=False, verbose
     else:
         raise NotImplementedError(f'feature type {kind} not implemented')
     if (cache_file is not None):
+        update_cache = False
         for smile, fs in zip(to_calc, arr):
             if ((smile, kind) not in cached_features or overwrite_cache):
+                update_cache = True
                 cached_features[(smile, kind)] = fs
-        pickle.dump(cached_features, open(cache_file, 'wb'))
+        if (update_cache):
+            print('writing cache ... ', end='')
+            pickle.dump(cached_features, open(cache_file, 'wb'))
+            print('done.')
         to_ret = []
         arr.reverse()
         for s in smiles:
