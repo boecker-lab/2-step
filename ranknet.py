@@ -676,6 +676,7 @@ def parse_arguments(args=None):
                         help='location of the dataset github repository')
     parser.add_argument('-e', '--epochs', default=10, type=int, help=' ')
     parser.add_argument('-v', '--verbose', action='store_true')
+    parser.add_argument('--no_bar', action='store_true', help='no progress-bar')
     parser.add_argument('--balance', action='store_true')
     parser.add_argument('--sizes',
                         type=int,
@@ -881,7 +882,7 @@ if __name__ == '__main__':
                                     # tf.keras.callbacks.TensorBoard(update_freq='epoch', histogram_freq=1,)
                                 ],
                          epochs=args.epochs,
-                         verbose=1,
+                         verbose=1 if not args.no_bar else 2,
                          validation_data=BatchGenerator(
                              val_x, val_y, args.batch_size, pair_step=args.pair_step,
                              pair_stop=args.pair_stop, use_weights=args.use_weights))
