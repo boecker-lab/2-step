@@ -7,7 +7,7 @@ import tensorflow as tf
 from keras import backend as K
 from LambdaRankNN import RankNetNN
 from rdkit import Chem, rdBase
-from rdkit.Chem import AllChem, Descriptors
+from rdkit.Chem import AllChem, Descriptors, Descriptors3D
 from mordred import Calculator, descriptors
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
@@ -123,7 +123,8 @@ def get_morgan_fps(m, r):
     return AllChem.GetMorganFingerprint(m, r)
 
 
-def features(smiles, kind='rdk', cache_file=None, overwrite_cache=False, verbose=False):
+def features(smiles, kind='rdk', cache_file=None, overwrite_cache=False, verbose=False,
+             custom_features=[]):
     def drop_nans(l):
         """drops all columns that have at least one NaN / non-numeric value"""
         x = np.array(l, dtype=np.float64)
@@ -151,27 +152,54 @@ def features(smiles, kind='rdk', cache_file=None, overwrite_cache=False, verbose
         pool = mp.Pool(mp.cpu_count())
         arr = pool.map(get_rdk_descs, to_calc)
         pool.close()
+    elif (kind == '3d'):
+        descs = [('Asphericity', Descriptors3D.Asphericity),
+                 ('Eccentricity', Descriptors3D.Eccentricity),
+                 ('InertialShapeFactor', Descriptors3D.InertialShapeFactor),
+                 ('NPR1', Descriptors3D.NPR1), ('NPR2', Descriptors3D.NPR2),
+                 ('PMI1', Descriptors3D.PMI1), ('PMI2', Descriptors3D.PMI2),
+                 ('PMI3', Descriptors3D.PMI3),
+                 ('RadiusOfGyration', Descriptors3D.RadiusOfGyration),
+                 ('SpherocityIndex', Descriptors3D.SpherocityIndex)]
+        # cache not supported
+        cache_file = None
+        arr = []
+        for smile in to_calc:
+            mol = Chem.AddHs(Chem.MolFromSmiles(smile))
+            AllChem.EmbedMolecule(mol)
+            arr.append([f(mol) for _, f in descs])
+    elif (kind == 'all'):
+        pool = mp.Pool(mp.cpu_count())
+        arr = pool.map(get_rdk_descs, to_calc)
+        pool.close()
+        descs = [('Asphericity', Descriptors3D.Asphericity),
+                 ('Eccentricity', Descriptors3D.Eccentricity),
+                 ('InertialShapeFactor', Descriptors3D.InertialShapeFactor),
+                 ('NPR1', Descriptors3D.NPR1), ('NPR2', Descriptors3D.NPR2),
+                 ('PMI1', Descriptors3D.PMI1), ('PMI2', Descriptors3D.PMI2),
+                 ('PMI3', Descriptors3D.PMI3),
+                 ('RadiusOfGyration', Descriptors3D.RadiusOfGyration),
+                 ('SpherocityIndex', Descriptors3D.SpherocityIndex)]
+        # cache not supported
+        cache_file = None
+        arr2 = []
+        for smile in to_calc:
+            mol = Chem.AddHs(Chem.MolFromSmiles(smile))
+            AllChem.EmbedMolecule(mol)
+            arr2.append([f(mol) for _, f in descs])
+        all = np.concatenate([arr, arr2], axis=1)
     elif (kind == 'mordred'):
         calc = Calculator(descriptors)
         arr = list(calc.map(map(Chem.MolFromSmiles, to_calc), nmols=len(to_calc)))
-    # elif (kind[:-1] == 'morgan'):
-    #     r = int(kind[-1])
-    #     # pool = mp.Pool(mp.cpu_count())
-    #     # arr = np.array(pool.starmap(get_morgan_fps, zip(smiles, [r] * len(smiles))))
-    #     # pool.close()
-    #     row_indices = []
-    #     col_indices = []
-    #     values = []
-    #     fp_size = 0
-    #     for i, s in enumerate(to_calc):
-    #         fp = AllChem.GetMorganFingerprint(Chem.MolFromSmiles(s), r, useFeatures=True)
-    #         for k, v in fp.GetNonzeroElements().items():
-    #             row_indices.append(i)
-    #             col_indices.append(k)
-    #             values.append(v)
-    #         if (fp.GetLength() > fp_size): # should always be the same, still sanity check
-    #             fp_size = fp.GetLength()
-    #     return csr_matrix((values, (row_indices, col_indices)), (len(to_calc), fp_size))
+    elif (kind == 'custom'):
+        # cache not supported
+        cache_file = None
+        avail_features = {k: v for k, v in Descriptors.descList}
+        arr = []
+        for smile in to_calc:
+            mol = Chem.AddHs(Chem.MolFromSmiles(smile))
+            AllChem.EmbedMolecule(mol)
+            arr.append([avail_features[f](mol) for f in custom_features])
     else:
         raise NotImplementedError(f'feature type {kind} not implemented')
     if (cache_file is not None):
@@ -274,7 +302,8 @@ def eval_(y, preds):
 class Data:
     def __init__(self, df=None, use_compound_classes=False,
                  use_system_information=False, cache_file='cached_descs.pkl',
-                 classes_l_thr=0.005, classes_u_thr=0.025, use_usp_codes=False):
+                 classes_l_thr=0.005, classes_u_thr=0.025, use_usp_codes=False,
+                 custom_features=[]):
         "docstring"
         self.df = df
         self.x_features = None
@@ -299,6 +328,7 @@ class Data:
         self.classes_u_thr = classes_u_thr
         self.datasets_df = None
         self.use_usp_codes = use_usp_codes
+        self.custom_features = custom_features
 
     def get_y(self):
         return np.array(self.df.rt)
@@ -401,7 +431,8 @@ class Data:
             return
         smiles_unique = list(set(self.df.smiles))
         smiles_pos = [smiles_unique.index(s) for s in self.df.smiles]
-        features_unique = features(smiles_unique, features_type, self.cache_file, verbose=verbose)
+        features_unique = features(smiles_unique, features_type, self.cache_file, verbose=verbose,
+                                   custom_features=self.custom_features)
         self.x_features = features_unique[smiles_pos]
         if (n_thr is not None):
             self.x_features = self.x_features[:, :n_thr]
@@ -662,9 +693,11 @@ def parse_arguments(args=None):
                         nargs='+')
     parser.add_argument('-t', '--type', help='type of features',
                         default='rdk',
-                        choices=['rdk', 'mordred', 'morgan3'])
+                        choices=['rdk', 'mordred', 'morgan3', 'custom', '3d', 'all'])
     parser.add_argument('--test', help='dataset to test on',
                         default=[], nargs='+')
+    parser.add_argument('-f', '--features', default=[], help='custom features',
+                        nargs='+')
     parser.add_argument('--standardize', action='store_true')
     parser.add_argument('--reduce_features', action='store_true')    
     parser.add_argument('-b', '--batch_size', default=1024, type=int,
@@ -798,7 +831,7 @@ if __name__ == '__main__':
     else:
         # args = parse_arguments('-i 0045 0019 0063 0047 0017 0062 0024 0064 0048 0068 0086 0091 0096 0097 0080 0085 0087 0088 0098 0095 0100 0099 0077 0138 0179 0181 0182 0076 0084 0089 0090 -t rdk -e 100 -b 65536 --sizes 64 64 --standardize --sysinfo --balance --cclasses --classes_u_thr 0.8 --classes_l_thr 0.0005'.split())
         # args = parse_arguments('-i 0033 -t rdk -e 50 -b 131072 --standardize --sizes 256 256 --use_weights --sysinfo'.split())
-        args = parse_arguments('-i 0006 0037 0068 0117 -t rdk -e 50 -b 131072 --standardize --sizes 256 256 --use_weights --sysinfo'.split())
+        args = parse_arguments('-i 0006 0037 0068 0117 -t rdk -e 50 -b 131072 --standardize --sizes 256 256 --use_weights --sysinfo -f MolLogP -t custom'.split())
     if (args.verbose):
         print(args)
     else:
@@ -827,7 +860,7 @@ if __name__ == '__main__':
         # dataset IDs
         data = Data(use_compound_classes=args.cclasses, use_system_information=args.sysinfo,
                     classes_l_thr=args.classes_l_thr, classes_u_thr=args.classes_u_thr,
-                    use_usp_codes=args.usp_codes)
+                    use_usp_codes=args.usp_codes, custom_features=args.features)
         data.cache_file = args.cache_file
         for did in args.input:
             data.add_dataset_id(did, kind=args.dataset_kind,
@@ -912,7 +945,7 @@ if __name__ == '__main__':
         for ds in args.input:
             d = Data(use_compound_classes=args.cclasses, use_system_information=args.sysinfo,
                      classes_l_thr=args.classes_l_thr, classes_u_thr=args.classes_u_thr,
-                     use_usp_codes=args.usp_codes)
+                     use_usp_codes=args.usp_codes, custom_features=args.features)
             d.cache_file = args.cache_file
             d.add_dataset_id(ds, kind=args.dataset_kind,
                              repo_root_folder=args.repo_root_folder,
@@ -942,7 +975,7 @@ if __name__ == '__main__':
         for ds in args.test:
             d = Data(use_compound_classes=args.cclasses, use_system_information=args.sysinfo,
                      classes_l_thr=args.classes_l_thr, classes_u_thr=args.classes_u_thr,
-                     use_usp_codes=args.usp_codes)
+                     use_usp_codes=args.usp_codes, custom_features=args.features)
             d.cache_file = args.cache_file
             d.add_dataset_id(ds, kind=args.dataset_kind,
                              repo_root_folder=args.repo_root_folder,
