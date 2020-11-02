@@ -198,7 +198,7 @@ def features(smiles, kind='rdk', cache_file=None, overwrite_cache=False, verbose
                 arr.append([avail_features[f](mol) for f in custom_features])
         else:
             raise NotImplementedError(f'feature type {kind} not implemented')
-    if (cache_file is not None):
+    if (kind != 'custom' and cache_file is not None):
         update_cache = False
         for smile, fs in zip(to_calc, arr):
             if ((smile, kind) not in features.cached_features or overwrite_cache):
