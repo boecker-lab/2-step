@@ -354,11 +354,11 @@ class Data:
         f = os.path.join(repo_root_folder, 'processed_data', dataset_id,
                          f'{dataset_id}_rtdata_canonical_success.txt')
         df = pd.read_csv(f, sep='\t')
-        df.set_index('id', inplace=True)
+        df.set_index('id', inplace=True, drop=False)
         f_iso = os.path.join(repo_root_folder, 'processed_data', dataset_id,
                          f'{dataset_id}_rtdata_isomeric_success.txt')
         df_iso = pd.read_csv(f_iso, sep='\t')
-        df_iso.set_index('id', inplace=True)
+        df_iso.set_index('id', inplace=True, drop=False)
         df.update(df_iso)
         df.file = f
         if self.use_system_information:
