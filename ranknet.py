@@ -130,17 +130,19 @@ def features(smiles, kind='rdk', cache_file=None, overwrite_cache=False, verbose
         x = np.array(l, dtype=np.float64)
         return x
         return x[:, ~np.isnan(x).any(axis=0)]
-    if (cache_file is not None):
-        if (os.path.exists(cache_file)):
-            cached_features = pickle.load(open(cache_file, 'rb'))
-        else:
-            print('cache file does not yet exist, creating...')
-            cached_features = {}
+    if (kind != 'custom' and cache_file is not None):
+        if (not hasattr(features, 'cached_features')):
+            if (os.path.exists(cache_file)):
+                features.cached_features = pickle.load(open(cache_file, 'rb'))
+            else:
+                print('cache file does not yet exist')
+                features.cached_features = {}
         cached = {}
         to_calc = []
+        arr = []
         for smile in smiles:
-            if (smile, kind) in cached_features:
-                cached[smile] = cached_features[(smile, kind)]
+            if ((smile, kind) in features.cached_features):
+                cached[smile] = features.cached_features[(smile, kind)]
             else:
                 to_calc.append(smile)
         if (verbose):
@@ -148,69 +150,63 @@ def features(smiles, kind='rdk', cache_file=None, overwrite_cache=False, verbose
                   f'{len(to_calc)} have to be calculated...')
     else:
         to_calc = smiles
-    if (kind == 'rdk'):
-        pool = mp.Pool(mp.cpu_count())
-        arr = pool.map(get_rdk_descs, to_calc)
-        pool.close()
-    elif (kind == '3d'):
-        descs = [('Asphericity', Descriptors3D.Asphericity),
-                 ('Eccentricity', Descriptors3D.Eccentricity),
-                 ('InertialShapeFactor', Descriptors3D.InertialShapeFactor),
-                 ('NPR1', Descriptors3D.NPR1), ('NPR2', Descriptors3D.NPR2),
-                 ('PMI1', Descriptors3D.PMI1), ('PMI2', Descriptors3D.PMI2),
-                 ('PMI3', Descriptors3D.PMI3),
-                 ('RadiusOfGyration', Descriptors3D.RadiusOfGyration),
-                 ('SpherocityIndex', Descriptors3D.SpherocityIndex)]
-        # cache not supported
-        cache_file = None
-        arr = []
-        for smile in to_calc:
-            mol = Chem.AddHs(Chem.MolFromSmiles(smile))
-            AllChem.EmbedMolecule(mol)
-            arr.append([f(mol) for _, f in descs])
-    elif (kind == 'all'):
-        pool = mp.Pool(mp.cpu_count())
-        arr = pool.map(get_rdk_descs, to_calc)
-        pool.close()
-        descs = [('Asphericity', Descriptors3D.Asphericity),
-                 ('Eccentricity', Descriptors3D.Eccentricity),
-                 ('InertialShapeFactor', Descriptors3D.InertialShapeFactor),
-                 ('NPR1', Descriptors3D.NPR1), ('NPR2', Descriptors3D.NPR2),
-                 ('PMI1', Descriptors3D.PMI1), ('PMI2', Descriptors3D.PMI2),
-                 ('PMI3', Descriptors3D.PMI3),
-                 ('RadiusOfGyration', Descriptors3D.RadiusOfGyration),
-                 ('SpherocityIndex', Descriptors3D.SpherocityIndex)]
-        # cache not supported
-        cache_file = None
-        arr2 = []
-        for smile in to_calc:
-            mol = Chem.AddHs(Chem.MolFromSmiles(smile))
-            AllChem.EmbedMolecule(mol)
-            arr2.append([f(mol) for _, f in descs])
-        all = np.concatenate([arr, arr2], axis=1)
-    elif (kind == 'mordred'):
-        calc = Calculator(descriptors)
-        arr = list(calc.map(map(Chem.MolFromSmiles, to_calc), nmols=len(to_calc)))
-    elif (kind == 'custom'):
-        # cache not supported
-        cache_file = None
-        avail_features = {k: v for k, v in Descriptors.descList}
-        arr = []
-        for smile in to_calc:
-            mol = Chem.AddHs(Chem.MolFromSmiles(smile))
-            AllChem.EmbedMolecule(mol)
-            arr.append([avail_features[f](mol) for f in custom_features])
-    else:
-        raise NotImplementedError(f'feature type {kind} not implemented')
+    if (len(to_calc) > 0):
+        if (kind == 'rdk'):
+            pool = mp.Pool(mp.cpu_count())
+            arr = pool.map(get_rdk_descs, to_calc)
+            pool.close()
+        elif (kind == '3d'):
+            descs = [('Asphericity', Descriptors3D.Asphericity),
+                     ('Eccentricity', Descriptors3D.Eccentricity),
+                     ('InertialShapeFactor', Descriptors3D.InertialShapeFactor),
+                     ('NPR1', Descriptors3D.NPR1), ('NPR2', Descriptors3D.NPR2),
+                     ('PMI1', Descriptors3D.PMI1), ('PMI2', Descriptors3D.PMI2),
+                     ('PMI3', Descriptors3D.PMI3),
+                     ('RadiusOfGyration', Descriptors3D.RadiusOfGyration),
+                     ('SpherocityIndex', Descriptors3D.SpherocityIndex)]
+            arr = []
+            for smile in to_calc:
+                mol = Chem.AddHs(Chem.MolFromSmiles(smile))
+                AllChem.EmbedMolecule(mol)
+                arr.append([f(mol) for _, f in descs])
+        elif (kind == 'all'):
+            pool = mp.Pool(mp.cpu_count())
+            arr = pool.map(get_rdk_descs, to_calc)
+            pool.close()
+            descs = [('Asphericity', Descriptors3D.Asphericity),
+                     ('Eccentricity', Descriptors3D.Eccentricity),
+                     ('InertialShapeFactor', Descriptors3D.InertialShapeFactor),
+                     ('NPR1', Descriptors3D.NPR1), ('NPR2', Descriptors3D.NPR2),
+                     ('PMI1', Descriptors3D.PMI1), ('PMI2', Descriptors3D.PMI2), ('PMI3', Descriptors3D.PMI3),
+                     ('RadiusOfGyration', Descriptors3D.RadiusOfGyration),
+                     ('SpherocityIndex', Descriptors3D.SpherocityIndex)]
+            arr2 = []
+            for smile in to_calc:
+                mol = Chem.AddHs(Chem.MolFromSmiles(smile))
+                AllChem.EmbedMolecule(mol)
+                arr2.append([f(mol) for _, f in descs])
+            all = np.concatenate([arr, arr2], axis=1)
+        elif (kind == 'mordred'):
+            calc = Calculator(descriptors)
+            arr = list(calc.map(map(Chem.MolFromSmiles, to_calc), nmols=len(to_calc)))
+        elif (kind == 'custom'):
+            avail_features = {k: v for k, v in Descriptors.descList}
+            arr = []
+            for smile in to_calc:
+                mol = Chem.AddHs(Chem.MolFromSmiles(smile))
+                AllChem.EmbedMolecule(mol)
+                arr.append([avail_features[f](mol) for f in custom_features])
+        else:
+            raise NotImplementedError(f'feature type {kind} not implemented')
     if (cache_file is not None):
         update_cache = False
         for smile, fs in zip(to_calc, arr):
-            if ((smile, kind) not in cached_features or overwrite_cache):
+            if ((smile, kind) not in features.cached_features or overwrite_cache):
                 update_cache = True
-                cached_features[(smile, kind)] = fs
+                features.cached_features[(smile, kind)] = fs
         if (update_cache):
             print('writing cache ... ', end='')
-            pickle.dump(cached_features, open(cache_file, 'wb'))
+            pickle.dump(features.cached_features, open(cache_file, 'wb'))
             print('done.')
         to_ret = []
         arr.reverse()
