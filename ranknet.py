@@ -352,13 +352,18 @@ class Data:
                              if self.use_compound_classes else None)
         return xs
 
-    def add_dataset_id(self, dataset_id, kind='canonical',
+    def add_dataset_id(self, dataset_id,
                        repo_root_folder='/home/fleming/Documents/Projects/RtPredTrainingData/',
                        void_rt=0.0):
-        # TODO: balance so that every dataset has equal amount of data + stratify when splitting
         f = os.path.join(repo_root_folder, 'processed_data', dataset_id,
-                         f'{dataset_id}_rtdata_{kind}_success.txt')
+                         f'{dataset_id}_rtdata_canonical_success.txt')
         df = pd.read_csv(f, sep='\t')
+        df.set_index('id', inplace=True)
+        f_iso = os.path.join(repo_root_folder, 'processed_data', dataset_id,
+                         f'{dataset_id}_rtdata_isomeric_success.txt')
+        df_iso = pd.read_csv(f_iso, sep='\t')
+        df_iso.set_index('id', inplace=True)
+        df.update(df_iso)
         df.file = f
         if self.use_system_information:
             # only numeric values from metadata
@@ -708,8 +713,6 @@ def parse_arguments(args=None):
                         'as additional features if available')
     parser.add_argument('--usp_codes', action='store_true', help='use column usp codes '
                         'as onehot system features (only if `--sysinfo` is set)')
-    parser.add_argument('--dataset_kind', choices=['canonical', 'isomeric'],
-                        default='canonical', help='type of dataset to use')
     parser.add_argument('--repo_root_folder', default='/home/fleming/Documents/Projects/RtPredTrainingData/',
                         help='location of the dataset github repository')
     parser.add_argument('-e', '--epochs', default=10, type=int, help=' ')
@@ -863,7 +866,7 @@ if __name__ == '__main__':
                     use_usp_codes=args.usp_codes, custom_features=args.features)
         data.cache_file = args.cache_file
         for did in args.input:
-            data.add_dataset_id(did, kind=args.dataset_kind,
+            data.add_dataset_id(did,
                                 repo_root_folder=args.repo_root_folder,
                                 void_rt=args.void_rt)
         if (args.balance and len(args.input) > 1):
@@ -947,7 +950,7 @@ if __name__ == '__main__':
                      classes_l_thr=args.classes_l_thr, classes_u_thr=args.classes_u_thr,
                      use_usp_codes=args.usp_codes, custom_features=args.features)
             d.cache_file = args.cache_file
-            d.add_dataset_id(ds, kind=args.dataset_kind,
+            d.add_dataset_id(ds,
                              repo_root_folder=args.repo_root_folder,
                              void_rt=args.void_rt)
             perc = len(d.df.loc[d.df.id.isin(data.heldout.id)]) / len(d.df)
@@ -977,7 +980,7 @@ if __name__ == '__main__':
                      classes_l_thr=args.classes_l_thr, classes_u_thr=args.classes_u_thr,
                      use_usp_codes=args.usp_codes, custom_features=args.features)
             d.cache_file = args.cache_file
-            d.add_dataset_id(ds, kind=args.dataset_kind,
+            d.add_dataset_id(ds,
                              repo_root_folder=args.repo_root_folder,
                              void_rt=args.void_rt)
             d.compute_features(features_type=args.type, n_thr=args.num_features, verbose=args.verbose)
