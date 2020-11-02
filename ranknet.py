@@ -269,7 +269,7 @@ def eval_(y, preds):
 class Data:
     def __init__(self, df=None, use_compound_classes=False,
                  use_system_information=False, cache_file='cached_descs.pkl',
-                 classes_l_thr=0.005, classes_u_thr=0.025):
+                 classes_l_thr=0.005, classes_u_thr=0.025, use_usp_codes=False):
         "docstring"
         self.df = df
         self.x_features = None
@@ -292,6 +292,8 @@ class Data:
         self.cache_file = None
         self.classes_l_thr = classes_l_thr
         self.classes_u_thr = classes_u_thr
+        self.datasets_df = None
+        self.use_usp_codes = use_usp_codes
 
     def get_y(self):
         return np.array(self.df.rt)
@@ -305,7 +307,7 @@ class Data:
         if (self.use_compound_classes and self.x_classes is None):
             self.compute_classes()
         if (self.use_system_information and self.x_info is None):
-            self.compute_system_information()
+            self.compute_system_information(use_usp_codes=self.use_usp_codes)
         xs = np.concatenate(list(filter(lambda x: x is not None, (self.x_features, self.x_info, self.x_classes))),
                             axis=1)
         self.info_indices = ([self.features_indices[-1] + 1,
@@ -328,9 +330,13 @@ class Data:
             column_information = pd.read_csv(os.path.join(
                 repo_root_folder, 'processed_data', dataset_id,
                 f'{dataset_id}_metadata.txt'),
-                sep='\t').iloc[:, 3:]
+                sep='\t').iloc[:, 1:]
             df = df.join(
                 pd.concat([column_information] * len(df), ignore_index=True))
+            # if (self.datasets_df is None):
+            #     self.datasets_df = pd.read_csv(
+            #         os.path.join(repo_root_folder, 'raw_data', 'studies.txt'), sep='\t')
+            # df = df.join(pd.concat())
         # rows without RT data are useless
         df = df[~pd.isna(df.rt)]
         # filter rows below void RT threshold
@@ -426,7 +432,8 @@ class Data:
             self.x_classes = np.array([get_binary(oids, l_thr=self.classes_l_thr, u_thr=self.classes_u_thr)
                                        for oids in classes])
 
-    def compute_system_information(self, onehot_ids=False, other_dataset_ids=None, use_rel_columns=True):
+    def compute_system_information(self, onehot_ids=False, other_dataset_ids=None, use_rel_columns=True,
+                                   use_usp_codes=False):
         if (onehot_ids):
             if (other_dataset_ids is None):
                 self.sorted_dataset_ids = sorted(set(_.split('_')[0] for _ in self.df.id))
@@ -477,7 +484,8 @@ class Data:
                             19.805234761621197, 22.35040133405753, 5.429808030931624,
                             1.0])
         info_columns = [c for c in self.df.columns
-                        if re.match(r'^(column|gradient|eluent)\..*', c)]
+                        if re.match(r'^(column|gradient|eluent)\..*', c)
+                        and 'name' not in c and 'usp.code' not in c]
         if (use_rel_columns):
             rel_columns = ['column.length', 'column.id', 'column.particle.size', 'column.temperature',
                            'column.flowrate', 'eluent.A.h2o', 'eluent.A.meoh', 'eluent.A.acn',
@@ -492,7 +500,14 @@ class Data:
             raise Exception('no column info in df!')
         means = means[:len(info_columns)]
         scales = scales[:len(info_columns)]
-        self.x_info = np.nan_to_num((self.df[info_columns].values - means) / scales)
+        fields = [np.nan_to_num((self.df[info_columns].values - means) / scales)]
+        if (use_usp_codes):
+            codes = ['L1', 'L10', 'L11', 'L43', 'L109']
+            codes_vector = (lambda code: np.eye(len(codes))[codes.index(code)]
+                            if code in codes else np.zeros(len(codes)))
+            code_fields = np.array([codes_vector(c) for c in self.df['column.usp.code']])
+            fields.append(code_fields)
+        self.x_info = np.concatenate(fields, axis=1)
 
     def standardize(self, other_scaler=None):
         if (self.train_x is None):
@@ -653,6 +668,8 @@ def parse_arguments(args=None):
                         'compound classes as additional features if available')
     parser.add_argument('--sysinfo', action='store_true', help='use column information '
                         'as additional features if available')
+    parser.add_argument('--usp_codes', action='store_true', help='use column usp codes '
+                        'as onehot system features (only if `--sysinfo` is set)')
     parser.add_argument('--dataset_kind', choices=['canonical', 'isomeric'],
                         default='canonical', help='type of dataset to use')
     parser.add_argument('--repo_root_folder', default='/home/fleming/Documents/Projects/RtPredTrainingData/',
@@ -773,7 +790,9 @@ if __name__ == '__main__':
     if '__file__' in globals():
         args = parse_arguments()
     else:
-        args = parse_arguments('-i 0045 0019 0063 0047 0017 0062 0024 0064 0048 0068 0086 0091 0096 0097 0080 0085 0087 0088 0098 0095 0100 0099 0077 0138 0179 0181 0182 0076 0084 0089 0090 -t rdk -e 100 -b 65536 --sizes 64 64 --standardize --sysinfo --balance --cclasses --classes_u_thr 0.8 --classes_l_thr 0.0005'.split())
+        # args = parse_arguments('-i 0045 0019 0063 0047 0017 0062 0024 0064 0048 0068 0086 0091 0096 0097 0080 0085 0087 0088 0098 0095 0100 0099 0077 0138 0179 0181 0182 0076 0084 0089 0090 -t rdk -e 100 -b 65536 --sizes 64 64 --standardize --sysinfo --balance --cclasses --classes_u_thr 0.8 --classes_l_thr 0.0005'.split())
+        # args = parse_arguments('-i 0033 -t rdk -e 50 -b 131072 --standardize --sizes 256 256 --use_weights --sysinfo'.split())
+        args = parse_arguments('-i 0006 0037 0068 0117 -t rdk -e 50 -b 131072 --standardize --sizes 256 256 --use_weights --sysinfo'.split())
     if (args.verbose):
         print(args)
     else:
@@ -801,7 +820,8 @@ if __name__ == '__main__':
     elif (all(re.match(r'\d{4}', i) for i in args.input)):
         # dataset IDs
         data = Data(use_compound_classes=args.cclasses, use_system_information=args.sysinfo,
-                    classes_l_thr=args.classes_l_thr, classes_u_thr=args.classes_u_thr)
+                    classes_l_thr=args.classes_l_thr, classes_u_thr=args.classes_u_thr,
+                    use_usp_codes=args.usp_codes)
         data.cache_file = args.cache_file
         for did in args.input:
             data.add_dataset_id(did, kind=args.dataset_kind,
@@ -814,7 +834,7 @@ if __name__ == '__main__':
     data.compute_features(features_type=args.type, n_thr=args.num_features, verbose=args.verbose)
     if args.debug_onehot_sys:
         sorted_dataset_ids = sorted(set(args.input) | set(args.test))
-        data.compute_system_information(True, sorted_dataset_ids)
+        data.compute_system_information(True, sorted_dataset_ids, use_usp_codes=args.usp_codes)
     if (args.verbose):
         print('done. preprocessing...')
     data.split_data()
@@ -870,7 +890,7 @@ if __name__ == '__main__':
     print(f'train: {eval_(train_y, predict(train_x, ranker, args.batch_size)):.3f}')
     test_preds = predict(test_x, ranker, args.batch_size)
     print(f'test: {eval_(test_y, test_preds):.3f}')
-    print(f'val: {eval_(val_y, predict(val_x, ranker, args.batch_size)):.3f}')        
+    print(f'val: {eval_(val_y, predict(val_x, ranker, args.batch_size)):.3f}')
     if (args.export_rois):
         if (args.run_name is None):
             from datetime import datetime
@@ -885,7 +905,8 @@ if __name__ == '__main__':
         print('evaluating on data left-out when balancing')
         for ds in args.input:
             d = Data(use_compound_classes=args.cclasses, use_system_information=args.sysinfo,
-                     classes_l_thr=args.classes_l_thr, classes_u_thr=args.classes_u_thr)
+                     classes_l_thr=args.classes_l_thr, classes_u_thr=args.classes_u_thr,
+                     use_usp_codes=args.usp_codes)
             d.cache_file = args.cache_file
             d.add_dataset_id(ds, kind=args.dataset_kind,
                              repo_root_folder=args.repo_root_folder,
@@ -897,7 +918,7 @@ if __name__ == '__main__':
                 continue
             d.compute_features(features_type=args.type, n_thr=args.num_features, verbose=args.verbose)
             if args.debug_onehot_sys:
-                d.compute_system_information(True, sorted_dataset_ids)
+                d.compute_system_information(True, sorted_dataset_ids, use_usp_codes=args.usp_codes)
             d.split_data()
             if (args.standardize):
                 d.standardize(data.scaler)
@@ -914,14 +935,15 @@ if __name__ == '__main__':
         print(f'evaluating on different dataset(s) ({args.test})')
         for ds in args.test:
             d = Data(use_compound_classes=args.cclasses, use_system_information=args.sysinfo,
-                     classes_l_thr=args.classes_l_thr, classes_u_thr=args.classes_u_thr)
+                     classes_l_thr=args.classes_l_thr, classes_u_thr=args.classes_u_thr,
+                     use_usp_codes=args.usp_codes)
             d.cache_file = args.cache_file
             d.add_dataset_id(ds, kind=args.dataset_kind,
                              repo_root_folder=args.repo_root_folder,
                              void_rt=args.void_rt)
             d.compute_features(features_type=args.type, n_thr=args.num_features, verbose=args.verbose)
             if args.debug_onehot_sys:
-                d.compute_system_information(True, sorted_dataset_ids)
+                d.compute_system_information(True, sorted_dataset_ids, use_usp_codes=args.usp_codes)
             d.split_data()
             if (args.standardize):
                 d.standardize(data.scaler)
