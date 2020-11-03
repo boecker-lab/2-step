@@ -150,6 +150,7 @@ def features(smiles, kind='rdk', cache_file=None, overwrite_cache=False, verbose
                   f'{len(to_calc)} have to be calculated...')
     else:
         to_calc = smiles
+    no_3d = 0
     if (len(to_calc) > 0):
         if (kind == 'rdk'):
             pool = mp.Pool(mp.cpu_count())
@@ -167,8 +168,12 @@ def features(smiles, kind='rdk', cache_file=None, overwrite_cache=False, verbose
             arr = []
             for smile in to_calc:
                 mol = Chem.AddHs(Chem.MolFromSmiles(smile))
-                AllChem.EmbedMolecule(mol)
-                arr.append([f(mol) for _, f in descs])
+                if (AllChem.EmbedMolecule(mol) != 0):
+                    # error generating conformers -> no 3D Descriptors
+                    arr.append([np.nan for _, f in descs])
+                    no_3d += 1
+                else:
+                    arr.append([f(mol) for _, f in descs])
         elif (kind == 'all'):
             pool = mp.Pool(mp.cpu_count())
             arr = pool.map(get_rdk_descs, to_calc)
@@ -183,9 +188,13 @@ def features(smiles, kind='rdk', cache_file=None, overwrite_cache=False, verbose
             arr2 = []
             for smile in to_calc:
                 mol = Chem.AddHs(Chem.MolFromSmiles(smile))
-                AllChem.EmbedMolecule(mol)
-                arr2.append([f(mol) for _, f in descs])
-            all = np.concatenate([arr, arr2], axis=1)
+                if (AllChem.EmbedMolecule(mol) != 0):
+                    # error generating conformers
+                    arr2.append([np.nan for _, f in descs])
+                    no_3d += 1
+                else:
+                    arr2.append([f(mol) for _, f in descs])
+            arr = np.concatenate([arr, arr2], axis=1)
         elif (kind == 'mordred'):
             calc = Calculator(descriptors)
             arr = list(calc.map(map(Chem.MolFromSmiles, to_calc), nmols=len(to_calc)))
@@ -198,6 +207,7 @@ def features(smiles, kind='rdk', cache_file=None, overwrite_cache=False, verbose
                 arr.append([avail_features[f](mol) for f in custom_features])
         else:
             raise NotImplementedError(f'feature type {kind} not implemented')
+    print(f'could not generate 3D descriptors for {no_3d} molecules')
     if (kind != 'custom' and cache_file is not None):
         update_cache = False
         for smile, fs in zip(to_calc, arr):
@@ -830,7 +840,8 @@ if __name__ == '__main__':
     else:
         # args = parse_arguments('-i 0045 0019 0063 0047 0017 0062 0024 0064 0048 0068 0086 0091 0096 0097 0080 0085 0087 0088 0098 0095 0100 0099 0077 0138 0179 0181 0182 0076 0084 0089 0090 -t rdk -e 100 -b 65536 --sizes 64 64 --standardize --sysinfo --balance --cclasses --classes_u_thr 0.8 --classes_l_thr 0.0005'.split())
         # args = parse_arguments('-i 0033 -t rdk -e 50 -b 131072 --standardize --sizes 256 256 --use_weights --sysinfo'.split())
-        args = parse_arguments('-i 0006 0037 0068 0117 -t rdk -e 50 -b 131072 --standardize --sizes 256 256 --use_weights --sysinfo -f MolLogP -t custom'.split())
+        # args = parse_arguments('-i 0006 0037 0068 0117 -t rdk -e 50 -b 131072 --standardize --sizes 256 256 --use_weights --sysinfo -f MolLogP -t custom'.split())
+        args = parse_arguments('-i 0024 -t 3d -e 50 -b 131072 --standardize --sizes 256 256 --use_weights --sysinfo'.split())
     if (args.verbose):
         print(args)
     else:
