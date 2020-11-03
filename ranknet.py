@@ -194,7 +194,7 @@ def features(smiles, kind='rdk', cache_file=None, overwrite_cache=False, verbose
                     no_3d += 1
                 else:
                     arr2.append([f(mol) for _, f in descs])
-            arr = np.concatenate([arr, arr2], axis=1)
+            arr = np.concatenate([arr, arr2], axis=1).tolist()
         elif (kind == 'mordred'):
             calc = Calculator(descriptors)
             arr = list(calc.map(map(Chem.MolFromSmiles, to_calc), nmols=len(to_calc)))
