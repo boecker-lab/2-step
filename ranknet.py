@@ -360,16 +360,17 @@ class Data:
 
     def add_dataset_id(self, dataset_id,
                        repo_root_folder='/home/fleming/Documents/Projects/RtPredTrainingData/',
-                       void_rt=0.0):
+                       void_rt=0.0, isomeric=True):
         f = os.path.join(repo_root_folder, 'processed_data', dataset_id,
                          f'{dataset_id}_rtdata_canonical_success.txt')
         df = pd.read_csv(f, sep='\t')
         df.set_index('id', inplace=True, drop=False)
-        f_iso = os.path.join(repo_root_folder, 'processed_data', dataset_id,
-                         f'{dataset_id}_rtdata_isomeric_success.txt')
-        df_iso = pd.read_csv(f_iso, sep='\t')
-        df_iso.set_index('id', inplace=True, drop=False)
-        df.update(df_iso)
+        if (isomeric):
+            f_iso = os.path.join(repo_root_folder, 'processed_data', dataset_id,
+                             f'{dataset_id}_rtdata_isomeric_success.txt')
+            df_iso = pd.read_csv(f_iso, sep='\t')
+            df_iso.set_index('id', inplace=True, drop=False)
+            df.update(df_iso)
         df.file = f
         if self.use_system_information:
             # only numeric values from metadata
@@ -719,6 +720,7 @@ def parse_arguments(args=None):
                         'as additional features if available')
     parser.add_argument('--usp_codes', action='store_true', help='use column usp codes '
                         'as onehot system features (only if `--sysinfo` is set)')
+    parser.add_argument('--isomeric', action='store_true', help=' ')
     parser.add_argument('--repo_root_folder', default='/home/fleming/Documents/Projects/RtPredTrainingData/',
                         help='location of the dataset github repository')
     parser.add_argument('-e', '--epochs', default=10, type=int, help=' ')
@@ -875,7 +877,8 @@ if __name__ == '__main__':
         for did in args.input:
             data.add_dataset_id(did,
                                 repo_root_folder=args.repo_root_folder,
-                                void_rt=args.void_rt)
+                                void_rt=args.void_rt,
+                                isomeric=args.isomeric)
         if (args.balance and len(args.input) > 1):
             data.balance()
     else:
@@ -959,7 +962,8 @@ if __name__ == '__main__':
             d.cache_file = args.cache_file
             d.add_dataset_id(ds,
                              repo_root_folder=args.repo_root_folder,
-                             void_rt=args.void_rt)
+                             void_rt=args.void_rt,
+                             isomeric=args.isomeric)
             perc = len(d.df.loc[d.df.id.isin(data.heldout.id)]) / len(d.df)
             d.df.drop(d.df.loc[~d.df.id.isin(data.heldout.id)].index, inplace=True)
             if (len(d.df) == 0):
@@ -989,7 +993,8 @@ if __name__ == '__main__':
             d.cache_file = args.cache_file
             d.add_dataset_id(ds,
                              repo_root_folder=args.repo_root_folder,
-                             void_rt=args.void_rt)
+                             void_rt=args.void_rt,
+                             isomeric=args.isomeric)
             d.compute_features(features_type=args.type, n_thr=args.num_features, verbose=args.verbose)
             if args.debug_onehot_sys:
                 d.compute_system_information(True, sorted_dataset_ids, use_usp_codes=args.usp_codes)
