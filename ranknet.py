@@ -69,12 +69,12 @@ class BatchGenerator(tf.keras.utils.Sequence):
                 else:
                     x1_indices.append(neg_idx)
                     x2_indices.append(pos_idx)
-                    y_trans.append(0)                
+                    y_trans.append(0)
                 weights.append(self.weight_fn(y[pos_idx] - y[neg_idx])
                                if self.use_weights else 1)
         return np.asarray(x1_indices), np.asarray(x2_indices), np.asarray(
             y_trans), np.asarray(weights)
-    
+
     def __len__(self):
         return np.ceil(self.y_trans.shape[0] / self.batch_size).astype(int)
 
@@ -101,7 +101,7 @@ def csr2tf(csr):
         values.append(v)
     return tf.sparse.SparseTensor(indices, values, csr.shape)
 
-    
+
 # m = Chem.MolFromSmiles('C1C(C(OC2=CC(=CC(=C21)O)O)C3=CC(=C(C=C3)O)O)OC(=O)C4=CC(=C(C(=C4)O)O)O')
 # Chem.MolToInchi(m)
 # GraphDescriptors.Chi4v(m)
@@ -231,7 +231,7 @@ def split_arrays(x, y, sizes: tuple):
      train_indices, test_indices) = train_test_split(x,
                                                      y,
                                                      np.arange(x.shape[0]),
-                                                     test_size=sizes[0])    
+                                                     test_size=sizes[0])
     train_x, val_x, train_y, val_y, train_indices, val_indices = train_test_split(train_x,
                                                                       train_y,
                                                                       train_indices,
@@ -293,7 +293,7 @@ class Data:
     def get_y(self):
         return np.array(self.df.rt)
 
-    def get_x(self):        
+    def get_x(self):
         if (self.x_features is None):
             self.compute_features()
         self.features_indices = [0, self.x_features.shape[1] - 1]
@@ -705,7 +705,7 @@ def parse_arguments(args=None):
 
 
 def multi_eval_(bgs, its=3, ranker_args={
-        'hidden_layer_sizes': (3, 3), 'activation': ('relu', 'relu'),        
+        'hidden_layer_sizes': (3, 3), 'activation': ('relu', 'relu'),
         'solver': 'adam'}, batch_size=2048, epochs=2):
     for bg in bgs:
         print(f'running with {bg.name}')
@@ -754,7 +754,7 @@ def run_multi(args):
         bg.test_x = test_x
         bg.test_y = test_y
         bg.name =  'kind'
-        bgs.append(bg)    
+        bgs.append(bg)
     multi_eval_(bgs)
 
 
@@ -788,7 +788,7 @@ def export_predictions(data, preds, out, mode='all'):
         raise NotImplementedError(mode)
     df['roi'] = preds
     df[['smiles', 'rt', 'roi']].to_csv(out, sep='\t', index=False, header=False)
-     
+
 
 if __name__ == '__main__':
     if '__file__' in globals():
