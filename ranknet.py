@@ -115,122 +115,76 @@ def csr2tf(csr):
 # descc = {g: f(m) for g, f in Descriptors.descList}
 
 
-def get_rdk_descs(m):
-    mol = Chem.AddHs(Chem.MolFromSmiles(m))
-    return [f(mol) for _, f in Descriptors.descList]
-
 def get_morgan_fps(m, r):
     return AllChem.GetMorganFingerprint(m, r)
 
+def get_descriptors():
+    features = []
+    features.extend([(name, fun, 'rdk') for name, fun in Descriptors.descList])
+    features.extend([(name, fun, '3d') for name, fun in
+                     [('Asphericity', Descriptors3D.Asphericity),
+                      ('Eccentricity', Descriptors3D.Eccentricity),
+                      ('InertialShapeFactor', Descriptors3D.InertialShapeFactor),
+                      ('NPR1', Descriptors3D.NPR1), ('NPR2', Descriptors3D.NPR2),
+                      ('PMI1', Descriptors3D.PMI1), ('PMI2', Descriptors3D.PMI2), ('PMI3', Descriptors3D.PMI3),
+                      ('RadiusOfGyration', Descriptors3D.RadiusOfGyration),
+                      ('SpherocityIndex', Descriptors3D.SpherocityIndex)]])
+    return features
 
-def features(smiles, kind='rdk', cache_file=None, overwrite_cache=False, verbose=False,
+def features(smiles, filter_='rdk', overwrite_cache=False, verbose=False,
              custom_features=[]):
-    def drop_nans(l):
-        """drops all columns that have at least one NaN / non-numeric value"""
-        x = np.array(l, dtype=np.float64)
-        return x
-        return x[:, ~np.isnan(x).any(axis=0)]
-    if (kind != 'custom' and cache_file is not None):
-        if (not hasattr(features, 'cached_features')):
-            if (os.path.exists(cache_file)):
-                features.cached_features = pickle.load(open(cache_file, 'rb'))
-            else:
-                print('cache file does not yet exist')
-                features.cached_features = {}
-        cached = {}
-        to_calc = []
-        arr = []
-        for smile in smiles:
-            if ((smile, kind) in features.cached_features):
-                cached[smile] = features.cached_features[(smile, kind)]
-            else:
-                to_calc.append(smile)
-        if (verbose):
-            print(f'of {len(smiles)} smiles, features for {len(cached)} are cached, '
-                  f'{len(to_calc)} have to be calculated...')
-    else:
-        to_calc = smiles
-    no_3d = 0
+    assert (len(smiles) == len(set(smiles))), 'smiles have to be unique'
+    if (not hasattr(features, 'cached')):
+        features.cached = {}
+    descriptors = get_descriptors()
+    if (filter_ is not None):
+        filter_fun = {'rdk': lambda t: t[2] == 'rdk',
+                      '3d': lambda t: t[2] == '3d',
+                      }[filter_]
+        descriptors = list(filter(filter_fun, descriptors))
+    if (len(custom_features) > 0):
+        descriptors = sorted(list(filter(lambda t: t[0] in custom_features, descriptors)),
+                          key=lambda t: custom_features.index(t[0]))
+    features.descriptors = {name: fun for name, fun, _ in descriptors}
+    to_calc = {}
+    for s in smiles:
+        for fname, ffun, _ in descriptors:
+            if ((s, fname) not in features.cached
+                or overwrite_cache):
+                to_calc.setdefault(s, []).append(fname)
+    to_calc = [(smile, descriptors) for smile, descriptors in to_calc.items()]
     if (len(to_calc) > 0):
-        if (kind == 'rdk'):
-            pool = mp.Pool(mp.cpu_count())
-            arr = pool.map(get_rdk_descs, to_calc)
-            pool.close()
-        elif (kind == '3d'):
-            descs = [('Asphericity', Descriptors3D.Asphericity),
-                     ('Eccentricity', Descriptors3D.Eccentricity),
-                     ('InertialShapeFactor', Descriptors3D.InertialShapeFactor),
-                     ('NPR1', Descriptors3D.NPR1), ('NPR2', Descriptors3D.NPR2),
-                     ('PMI1', Descriptors3D.PMI1), ('PMI2', Descriptors3D.PMI2),
-                     ('PMI3', Descriptors3D.PMI3),
-                     ('RadiusOfGyration', Descriptors3D.RadiusOfGyration),
-                     ('SpherocityIndex', Descriptors3D.SpherocityIndex)]
-            arr = []
-            for smile in to_calc:
-                mol = Chem.AddHs(Chem.MolFromSmiles(smile))
-                if (AllChem.EmbedMolecule(mol) != 0):
-                    # error generating conformers -> no 3D Descriptors
-                    arr.append([np.nan for _, f in descs])
-                    no_3d += 1
-                else:
-                    arr.append([f(mol) for _, f in descs])
-        elif (kind == 'all'):
-            pool = mp.Pool(mp.cpu_count())
-            arr = pool.map(get_rdk_descs, to_calc)
-            pool.close()
-            descs = [('Asphericity', Descriptors3D.Asphericity),
-                     ('Eccentricity', Descriptors3D.Eccentricity),
-                     ('InertialShapeFactor', Descriptors3D.InertialShapeFactor),
-                     ('NPR1', Descriptors3D.NPR1), ('NPR2', Descriptors3D.NPR2),
-                     ('PMI1', Descriptors3D.PMI1), ('PMI2', Descriptors3D.PMI2), ('PMI3', Descriptors3D.PMI3),
-                     ('RadiusOfGyration', Descriptors3D.RadiusOfGyration),
-                     ('SpherocityIndex', Descriptors3D.SpherocityIndex)]
-            arr2 = []
-            for smile in to_calc:
-                mol = Chem.AddHs(Chem.MolFromSmiles(smile))
-                if (AllChem.EmbedMolecule(mol) != 0):
-                    # error generating conformers
-                    arr2.append([np.nan for _, f in descs])
-                    no_3d += 1
-                else:
-                    arr2.append([f(mol) for _, f in descs])
-            arr = np.concatenate([np.array(arr), np.array(arr2)], axis=1).tolist()
-        elif (kind == 'mordred'):
-            calc = Calculator(descriptors)
-            arr = list(calc.map(map(Chem.MolFromSmiles, to_calc), nmols=len(to_calc)))
-        elif (kind == 'custom'):
-            avail_features = {k: v for k, v in Descriptors.descList}
-            arr = []
-            for smile in to_calc:
-                mol = Chem.AddHs(Chem.MolFromSmiles(smile))
-                AllChem.EmbedMolecule(mol)
-                arr.append([avail_features[f](mol) for f in custom_features])
-        else:
-            raise NotImplementedError(f'feature type {kind} not implemented')
-    print(f'could not generate 3D descriptors for {no_3d} molecules')
-    if (kind != 'custom' and cache_file is not None):
-        update_cache = False
-        for smile, fs in zip(to_calc, arr):
-            if ((smile, kind) not in features.cached_features or overwrite_cache):
-                update_cache = True
-                features.cached_features[(smile, kind)] = fs
-        if (update_cache):
-            print('writing cache ... ', end='')
-            pickle.dump(features.cached_features, open(cache_file, 'wb'))
-            print('done.')
-        to_ret = []
-        arr.reverse()
-        for s in smiles:
-            if (s in cached):
-                to_ret.append(cached[s])
-            else:
-                to_ret.append(arr.pop())
-        assert len(smiles) == len(to_ret)
-        arr = to_ret
-    return drop_nans(arr)
+        features.write_cache = True # cache has to be written in the end
+        pool = mp.Pool(mp.cpu_count())
+        res = pool.starmap(compute_descriptors, to_calc)
+        pool.close()
+        res_new = []
+        for descs, values, failed in res:
+            if (len(failed) > 0 and verbose):
+                print('failed', failed)
+            res_new.append([(d, v) for d, v in zip(descs, values)])
+        features.cached.update({(smile[0], desc): value for smile, smile_res in zip(to_calc, res_new)
+                                for desc, value in smile_res})
+    return np.array([[features.cached[(smile, desc[0])] for desc in descriptors]
+                     for smile in smiles])
 
-
-# bla = pd.DataFrame(features(test_data.smiles[:50]), columns=[d[0] for d in Descriptors.descList])
+def compute_descriptors(smile, descriptors):
+    try:
+        mol = Chem.AddHs(Chem.MolFromSmiles(smile))
+        AllChem.EmbedMolecule(mol)
+    except:
+        return [descriptors, [np.nan for d in descriptors], descriptors]
+    values = []
+    failed = []
+    for name in descriptors:
+        fun = features.descriptors[name]
+        try:
+            val = fun(mol)
+        except:
+            val = np.nan
+            failed.append(name)
+        values.append(val)
+    return [descriptors, values, failed]
 
 
 def reduce_features(values, r_squared_thr=0.96, std_thr=0.01, verbose=True):
@@ -432,7 +386,7 @@ class Data:
             raise Exception('could not load cache!')
 
     def compute_features(self,
-                         features_type='rdk',
+                         filter_features=None,
                          n_thr=None,
                          recompute=False,
                          verbose=False):
@@ -443,7 +397,7 @@ class Data:
             return
         smiles_unique = list(set(self.df.smiles))
         smiles_pos = [smiles_unique.index(s) for s in self.df.smiles]
-        features_unique = features(smiles_unique, features_type, self.cache_file, verbose=verbose,
+        features_unique = features(smiles_unique, filter_=filter_features, verbose=verbose,
                                    custom_features=self.custom_features)
         self.x_features = features_unique[smiles_pos]
         if (n_thr is not None):
@@ -705,13 +659,13 @@ def parse_arguments(args=None):
                         nargs='+')
     parser.add_argument('-t', '--type', help='type of features',
                         default='rdk',
-                        choices=['rdk', 'mordred', 'morgan3', 'custom', '3d', 'all'])
+                        choices=['rdk', 'mordred', 'morgan3', '3d', 'all'])
     parser.add_argument('--test', help='dataset to test on',
                         default=[], nargs='+')
     parser.add_argument('-f', '--features', default=[], help='custom features',
                         nargs='+')
     parser.add_argument('--standardize', action='store_true')
-    parser.add_argument('--reduce_features', action='store_true')    
+    parser.add_argument('--reduce_features', action='store_true')
     parser.add_argument('-b', '--batch_size', default=1024, type=int,
                         help=' ')
     parser.add_argument('--cclasses', action='store_true', help='use classyfire '
@@ -844,36 +798,31 @@ if __name__ == '__main__':
         # args = parse_arguments('-i 0033 -t rdk -e 50 -b 131072 --standardize --sizes 256 256 --use_weights --sysinfo'.split())
         # args = parse_arguments('-i 0006 0037 0068 0117 -t rdk -e 50 -b 131072 --standardize --sizes 256 256 --use_weights --sysinfo -f MolLogP -t custom'.split())
         args = parse_arguments('-i 0024 -t 3d -e 50 -b 131072 --standardize --sizes 256 256 --use_weights --sysinfo'.split())
+    if (args.type == 'all'):
+        args.type = None        # type ~= filter
     if (args.verbose):
         print(args)
     else:
         rdBase.DisableLog('rdApp.warning')
-    # generate data cache
-    # (train_x, train_y), (val_x, val_y), (test_x, test_y) = load_example_data(
-    #     args.input,
-    #     features_type=args.type,
-    #     standardize=True,
-    #     reduce_f=True,
-    #     n_features=None,
-    #     cached=(not args.no_cache),
-    #     write_cache=args.write_cache)
-    # run_multi(args)
-    # exit(0)
+    if (args.cache_file is not None):
+        features.write_cache = False # flag for reporting changes to cache
+        if (args.verbose):
+            print('reading in cache...')
+        if (os.path.exists(args.cache_file)):
+            features.cached = pickle.load(open(args.cache_file, 'rb'))
+        else:
+            features.cached = {}
+            if (args.verbose):
+                print('cache file does not exist yet')
     if (args.verbose):
         print('reading in data and computing features...')
     if (len(args.input) == 1 and os.path.exists(args.input[0])):
         data = Data.from_raw_file(args.input[0], void_rt=args.void_rt)
-        # cache_file = f'{splitext(basename(args.input[0]))[0]}_{args.type}.pkl'
-        # if (not args.no_cache and os.path.exists(cache_file)):
-        #     data.features_from_cache(cache_file)
-        # else:
-        data.cache_file = args.cache_file        
     elif (all(re.match(r'\d{4}', i) for i in args.input)):
         # dataset IDs
         data = Data(use_compound_classes=args.cclasses, use_system_information=args.sysinfo,
                     classes_l_thr=args.classes_l_thr, classes_u_thr=args.classes_u_thr,
                     use_usp_codes=args.usp_codes, custom_features=args.features)
-        data.cache_file = args.cache_file
         for did in args.input:
             data.add_dataset_id(did,
                                 repo_root_folder=args.repo_root_folder,
@@ -883,7 +832,7 @@ if __name__ == '__main__':
             data.balance()
     else:
         raise Exception(f'input {args.input} not supported')
-    data.compute_features(features_type=args.type, n_thr=args.num_features, verbose=args.verbose)
+    data.compute_features(filter_features=args.type, n_thr=args.num_features, verbose=args.verbose)
     if args.debug_onehot_sys:
         sorted_dataset_ids = sorted(set(args.input) | set(args.test))
         data.compute_system_information(True, sorted_dataset_ids, use_usp_codes=args.usp_codes)
@@ -959,7 +908,6 @@ if __name__ == '__main__':
             d = Data(use_compound_classes=args.cclasses, use_system_information=args.sysinfo,
                      classes_l_thr=args.classes_l_thr, classes_u_thr=args.classes_u_thr,
                      use_usp_codes=args.usp_codes, custom_features=args.features)
-            d.cache_file = args.cache_file
             d.add_dataset_id(ds,
                              repo_root_folder=args.repo_root_folder,
                              void_rt=args.void_rt,
@@ -969,7 +917,7 @@ if __name__ == '__main__':
             if (len(d.df) == 0):
                 print(f'no data left for {ds}')
                 continue
-            d.compute_features(features_type=args.type, n_thr=args.num_features, verbose=args.verbose)
+            d.compute_features(filter_features=args.type, n_thr=args.num_features, verbose=args.verbose)
             if args.debug_onehot_sys:
                 d.compute_system_information(True, sorted_dataset_ids, use_usp_codes=args.usp_codes)
             d.split_data()
@@ -990,12 +938,11 @@ if __name__ == '__main__':
             d = Data(use_compound_classes=args.cclasses, use_system_information=args.sysinfo,
                      classes_l_thr=args.classes_l_thr, classes_u_thr=args.classes_u_thr,
                      use_usp_codes=args.usp_codes, custom_features=args.features)
-            d.cache_file = args.cache_file
             d.add_dataset_id(ds,
                              repo_root_folder=args.repo_root_folder,
                              void_rt=args.void_rt,
                              isomeric=args.isomeric)
-            d.compute_features(features_type=args.type, n_thr=args.num_features, verbose=args.verbose)
+            d.compute_features(filter_features=args.type, n_thr=args.num_features, verbose=args.verbose)
             if args.debug_onehot_sys:
                 d.compute_system_information(True, sorted_dataset_ids, use_usp_codes=args.usp_codes)
             d.split_data()
@@ -1010,3 +957,7 @@ if __name__ == '__main__':
             print(f'{ds}: {eval_(Y, preds):.3f} \t (#data: {len(Y)})')
             if (args.export_rois):
                 export_predictions(d, preds, f'runs/{run_name}_{ds}.tsv')
+    if (args.cache_file is not None and features.write_cache):
+        if (args.verbose):
+            print('writing cache, don\'t interrupt!!')
+        pickle.dump(features.cached, open(args.cache_file, 'wb'))
