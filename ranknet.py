@@ -244,7 +244,7 @@ def get_data(df, kind='rdk'):
     return features(df.smiles, kind), (np.array(df.rt) * 10).astype(int)
 
 
-def eval_(y, preds):
+def eval_(y, preds, epsilon=1):
     assert len(y) == len(preds)
     if (not any(preds)):
         return 0.0
@@ -253,7 +253,7 @@ def eval_(y, preds):
     total = 0
     for i, j in combinations(range(len(y)), 2):
         diff = y[i] - y[j]
-        if (diff < 1):
+        if (diff < epsilon):
             matches += 1
         total += 1
     return matches / total if not total == 0 else np.nan
@@ -701,6 +701,8 @@ def parse_arguments(args=None):
     parser.add_argument('--device', default=None,
                         help='can be `mirrored`, a specific device name like `gpu:1` '
                         'or `None` which automatically selects an option')
+    parser.add_argument('--epsilon', type=float, default=1.,
+                        help='difference in evaluation measure below which to ignore falsely predicted pairs')
     return parser.parse_args() if args is None else parser.parse_args(args)
 
 
@@ -888,10 +890,10 @@ if __name__ == '__main__':
                              pair_stop=args.pair_stop, use_weights=args.use_weights))
     except KeyboardInterrupt:
         print('interrupted training, evaluating...')
-    print(f'train: {eval_(train_y, predict(train_x, ranker, args.batch_size)):.3f}')
+    print(f'train: {eval_(train_y, predict(train_x, ranker, args.batch_size), args.epsilon):.3f}')
     test_preds = predict(test_x, ranker, args.batch_size)
-    print(f'test: {eval_(test_y, test_preds):.3f}')
-    print(f'val: {eval_(val_y, predict(val_x, ranker, args.batch_size)):.3f}')
+    print(f'test: {eval_(test_y, test_preds, args.epsilon):.3f}')
+    print(f'val: {eval_(val_y, predict(val_x, ranker, args.batch_size), args.epsilon):.3f}')
     if (args.export_rois):
         if (args.run_name is None):
             from datetime import datetime
@@ -929,7 +931,7 @@ if __name__ == '__main__':
             X = np.concatenate((train_x, test_x, val_x))
             Y = np.concatenate((train_y, test_y, val_y))
             preds = predict(X, ranker, args.batch_size)
-            print(f'{ds}: {eval_(Y, preds):.3f} \t (#data: {len(Y)}, held-out percentage: {perc:.2f})')
+            print(f'{ds}: {eval_(Y, preds, args.epsilon):.3f} \t (#data: {len(Y)}, held-out percentage: {perc:.2f})')
             if (args.export_rois):
                 export_predictions(d, preds, f'runs/{run_name}_heldout_{ds}.tsv')
     if (len(args.test) > 0):
@@ -954,7 +956,7 @@ if __name__ == '__main__':
             X = np.concatenate((train_x, test_x, val_x))
             Y = np.concatenate((train_y, test_y, val_y))
             preds = predict(X, ranker, args.batch_size)
-            print(f'{ds}: {eval_(Y, preds):.3f} \t (#data: {len(Y)})')
+            print(f'{ds}: {eval_(Y, preds, args.epsilon):.3f} \t (#data: {len(Y)})')
             if (args.export_rois):
                 export_predictions(d, preds, f'runs/{run_name}_{ds}.tsv')
     if (args.cache_file is not None and features.write_cache):
