@@ -258,13 +258,35 @@ def eval_(y, preds, epsilon=1):
         total += 1
     return matches / total if not total == 0 else np.nan
 
+def get_column_scaling(cols):
+    if (not hasattr(get_column_scaling, '_data')):
+        ds = pd.read_csv('/home/fleming/Documents/Projects/rtdata_exploration/data/dataset_info_all.tsv',
+                         sep='\t')
+        info_columns = [c for c in ds.columns
+                        if re.match(r'^(column|gradient|eluent)\..*', c)
+                        and 'name' not in c and 'usp.code' not in c]
+        # empirical
+        s = StandardScaler()
+        s.fit(ds[info_columns])
+        get_column_scaling._data = {col: {'mean': mean, 'std': scale}
+                                    for col, mean, scale
+                                    in zip(info_columns, s.mean_, s.scale_)}
+        # manual
+        get_column_scaling._data.update({col: {'mean': 50., 'std': 50.} # values 0-100
+                                         for col in info_columns
+                                         if (col.startswith('eluent.')
+                                             or col.startswith('gradient.'))})
+    return (np.array([get_column_scaling._data[c]['mean'] for c in cols]),
+            np.array([get_column_scaling._data[c]['std'] for c in cols]))
+
 
 class Data:
     def __init__(self, df=None, use_compound_classes=False,
                  use_system_information=False, cache_file='cached_descs.pkl',
                  classes_l_thr=0.005, classes_u_thr=0.025, use_usp_codes=False,
-                 custom_features=[]):
-        "docstring"
+                 custom_features=[], use_hsm=False,
+                 hsm_data='/home/fleming/Documents/Projects/RtPredTrainingData/hsm.tsv',
+                 custom_column_fields=None, columns_remove_na=True):
         self.df = df
         self.x_features = None
         self.x_classes = None
@@ -289,6 +311,10 @@ class Data:
         self.datasets_df = None
         self.use_usp_codes = use_usp_codes
         self.custom_features = custom_features
+        self.use_hsm = use_hsm
+        self.hsm_data = hsm_data
+        self.custom_column_fields = custom_column_fields
+        self.columns_remove_na = columns_remove_na
 
     def get_y(self):
         return np.array(self.df.rt)
@@ -302,7 +328,11 @@ class Data:
         if (self.use_compound_classes and self.x_classes is None):
             self.compute_classes()
         if (self.use_system_information and self.x_info is None):
-            self.compute_system_information(use_usp_codes=self.use_usp_codes)
+            self.compute_system_information(use_usp_codes=self.use_usp_codes,
+                                            use_hsm=self.use_hsm,
+                                            hsm_data=self.hsm_data,
+                                            custom_column_fields=self.custom_column_fields,
+                                            remove_na=self.columns_remove_na)
         xs = np.concatenate(list(filter(lambda x: x is not None, (self.x_features, self.x_info, self.x_classes))),
                             axis=1)
         self.info_indices = ([self.features_indices[-1] + 1,
@@ -326,14 +356,16 @@ class Data:
             df_iso.set_index('id', inplace=True, drop=False)
             df.update(df_iso)
         df.file = f
+        df['dataset_id'] = df.id.str.split('_', expand=True)[0]
         if self.use_system_information:
             # only numeric values from metadata
             column_information = pd.read_csv(os.path.join(
                 repo_root_folder, 'processed_data', dataset_id,
                 f'{dataset_id}_metadata.txt'),
-                sep='\t').iloc[:, 1:]
-            df = df.join(
-                pd.concat([column_information] * len(df), ignore_index=True))
+                sep='\t')
+            column_information['dataset_id'] = [str(x).rjust(4, '0') for x in column_information['id']]
+            del column_information['id']
+            df = df.merge(column_information, on='dataset_id')
             # if (self.datasets_df is None):
             #     self.datasets_df = pd.read_csv(
             #         os.path.join(repo_root_folder, 'raw_data', 'studies.txt'), sep='\t')
@@ -347,7 +379,6 @@ class Data:
         else:
             self.df = self.df.append(df, ignore_index=True)
         self.df['smiles'] = self.df['smiles.std']
-        self.df['dataset_id'] = self.df.id.str.split('_', expand=True)[0]
 
     @staticmethod
     def from_raw_file(f, header=None, void_rt=0.0):
@@ -434,8 +465,10 @@ class Data:
             self.x_classes = np.array([get_binary(oids, l_thr=self.classes_l_thr, u_thr=self.classes_u_thr)
                                        for oids in classes])
 
-    def compute_system_information(self, onehot_ids=False, other_dataset_ids=None, use_rel_columns=True,
-                                   use_usp_codes=False):
+    def compute_system_information(self, onehot_ids=False, other_dataset_ids=None,
+                                   use_usp_codes=False, use_hsm=False,
+                                   hsm_data='/home/fleming/Documents/Projects/RtPredTrainingData/hsm.tsv',
+                                   custom_column_fields=None, remove_na=True):
         if (onehot_ids):
             if (other_dataset_ids is None):
                 self.sorted_dataset_ids = sorted(set(_.split('_')[0] for _ in self.df.id))
@@ -444,72 +477,56 @@ class Data:
             eye = np.eye(len(self.sorted_dataset_ids))
             self.x_info = eye[list(map(self.sorted_dataset_ids.index, (_.split('_')[0] for _ in self.df.id)))]
             return
-        # means and scales computed from all datasets for standardizing
-        means = np.array([ 112.0059880239521, 2.1520958083832338,
-                           2.6988165680473366, 35.13636363636363, 0.3216768292682927,
-                           97.02240437158468, 0.0, 2.9453551912568305, 0.0, 0.0, 0.0,
-                           0.0, 0.0, 0.0, 0.13598901098901095, 0.004371584699453552,
-                           0.0016393442622950822, 0.0, 1.7032967032967032,
-                           0.8677595628415301, 0.0, 0.0, 0.0, 0.008469945355191256,
-                           0.0, 0.0, 0.0, 0.0, 3.759562841530055, 47.322404371584696,
-                           47.437704918032786, 1.2568306010928962,
-                           0.2185792349726776, 0.0, 0.0, 0.0, 0.0,
-                           0.0766120218579235, 0.004371584699453552,
-                           0.001092896174863388, 0.0, 1.6483516483516483,
-                           0.7296703296703297, 0.0546448087431694, 0.0, 0.0,
-                           0.001092896174863388, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
-                           0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
-                           0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
-                           0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
-                           0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
-                           73.45906432748538, 25.371345029239766, 0.0, 0.0,
-                           13.064327485380117, 85.16374269005848, 0.546448087431694,
-                           0.0])
-        scales = np.array([ 31.42837060863367, 0.4615566376328146,
-                            0.9967989099835707, 7.411879006920117, 0.2158556975065611,
-                            16.218507633176753, 1.0, 16.21162194464283, 1.0, 1.0, 1.0,
-                            1.0, 1.0, 1.0, 0.5203750864986451, 0.0204462152282729,
-                            0.012698306053139069, 1.0, 4.108406031632993,
-                            2.8877353062600064, 1.0, 1.0, 1.0, 0.030597116252154118,
-                            1.0, 1.0, 1.0, 1.0, 14.909457292228417, 49.69788387827555,
-                            47.848540061212205, 10.030262668040313,
-                            2.0793767858404864, 1.0, 1.0, 1.0, 1.0,
-                            0.09071963215728787, 0.0204462152282729,
-                            0.010396883929202431, 1.0, 3.819768206458177,
-                            2.5794408843648373, 0.737198773947106, 1.0, 1.0,
-                            0.010396883929202431, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
-                            1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
-                            1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
-                            1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
-                            1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
-                            39.467524102401455, 38.74845173972741, 1.0, 1.0,
-                            19.805234761621197, 22.35040133405753, 5.429808030931624,
-                            1.0])
-        info_columns = [c for c in self.df.columns
-                        if re.match(r'^(column|gradient|eluent)\..*', c)
-                        and 'name' not in c and 'usp.code' not in c]
-        if (use_rel_columns):
+
+        fields = []
+        names = []
+        if (use_hsm):
+            hsm = pd.read_csv(hsm_data, sep='\t', index_col=0)
+            cols = ['H', 'S*', 'A', 'B', 'C (pH 2.8)', 'C (pH 7.0)']
+            if (any(c not in hsm.index for c in self.df['column.name'])):
+                raise Exception(
+                    f'no HSM data for {", ".join([str(c) for c in set(self.df["column.name"]) if c not in hsm.index])}')
+            # NOTE: not scaled!
+            fields.append(hsm.loc[self.df['column.name'], cols].values)
+        if (custom_column_fields is not None):
+            na_columns = [col for col in custom_column_fields if self.df[col].isna().any()]
+            if (remove_na):
+                print('removed columns containing NA values: ' + ', '.join(na_columns))
+                custom_column_fields = [col for col in custom_column_fields if col not in na_columns]
+            elif (len(na_columns) > 0):
+                print('WARNING: system data contains NA values, the option to remove these columns was disabled though! '
+                      + ', '.join(na_columns))
+            means, scales = get_column_scaling(custom_column_fields)
+            fields.append((self.df[custom_column_fields].values - means) / scales)
+            names.extend(custom_column_fields)
+        else:
             rel_columns = ['column.length', 'column.id', 'column.particle.size', 'column.temperature',
                            'column.flowrate', 'eluent.A.h2o', 'eluent.A.meoh', 'eluent.A.acn',
                            'eluent.A.formic', 'eluent.A.nh4ac', 'eluent.A.nh4form',
                            'eluent.B.h2o', 'eluent.B.meoh', 'eluent.B.acn', 'eluent.B.formic',
                            'eluent.B.nh4ac', 'eluent.B.nh4form', 'gradient.start.A',
                            'gradient.end.A']
-            means = np.array(means[:5].tolist() + [50.] * (len(rel_columns) - 5))
-            scales = np.array(scales[:5].tolist() + [50.] * (len(rel_columns) - 5))
-            info_columns = rel_columns
-        if (len(info_columns) == 0):
-            raise Exception('no column info in df!')
-        means = means[:len(info_columns)]
-        scales = scales[:len(info_columns)]
-        fields = [np.nan_to_num((self.df[info_columns].values - means) / scales)]
+            na_columns = [col for col in rel_columns if self.df[col].isna().any()]
+            if (len(na_columns) > 0):
+                if (remove_na):
+                    print('removed columns containing NA values: ' + ', '.join(na_columns))
+                    rel_columns = [col for col in rel_columns if col not in na_columns]
+                else:
+                    print('WARNING: system data contains NA values, the option to remove these columns was disabled though! '
+                          + ', '.join(na_columns))
+            means, scales = get_column_scaling(rel_columns)
+            fields.append((self.df[rel_columns].values - means) / scales)
+            names.extend(rel_columns)
         if (use_usp_codes):
             codes = ['L1', 'L10', 'L11', 'L43', 'L109']
             codes_vector = (lambda code: np.eye(len(codes))[codes.index(code)]
                             if code in codes else np.zeros(len(codes)))
             code_fields = np.array([codes_vector(c) for c in self.df['column.usp.code']])
+            # NOTE: not scaled!
             fields.append(code_fields)
+        np.savetxt('/tmp/sys_array.txt', np.concatenate(fields, axis=1), fmt='%.2f')
         self.x_info = np.concatenate(fields, axis=1)
+        self.custom_column_fields = names
 
     def standardize(self, other_scaler=None):
         if (self.train_x is None):
@@ -703,6 +720,15 @@ def parse_arguments(args=None):
                         'or `None` which automatically selects an option')
     parser.add_argument('--epsilon', type=float, default=1.,
                         help='difference in evaluation measure below which to ignore falsely predicted pairs')
+    parser.add_argument('--columns_use_hsm', action='store_true', help=' ')
+    parser.add_argument('--columns_hsm_data', default=
+                        '/home/fleming/Documents/Projects/RtPredTrainingData/hsm.tsv',
+                        help=' ')
+    parser.add_argument('--custom_column_fields', default=None,
+                        nargs='*', help=' ')
+    parser.add_argument('--remove_train_compounds', action='store_true', help=' ')
+    parser.add_argument('--remove_train_compounds_mode', default='all',
+                        choices=['all', 'column', 'threshold'], help=' ')
     return parser.parse_args() if args is None else parser.parse_args(args)
 
 
@@ -799,7 +825,7 @@ if __name__ == '__main__':
         # args = parse_arguments('-i 0045 0019 0063 0047 0017 0062 0024 0064 0048 0068 0086 0091 0096 0097 0080 0085 0087 0088 0098 0095 0100 0099 0077 0138 0179 0181 0182 0076 0084 0089 0090 -t rdk -e 100 -b 65536 --sizes 64 64 --standardize --sysinfo --balance --cclasses --classes_u_thr 0.8 --classes_l_thr 0.0005'.split())
         # args = parse_arguments('-i 0033 -t rdk -e 50 -b 131072 --standardize --sizes 256 256 --use_weights --sysinfo'.split())
         # args = parse_arguments('-i 0006 0037 0068 0117 -t rdk -e 50 -b 131072 --standardize --sizes 256 256 --use_weights --sysinfo -f MolLogP -t custom'.split())
-        args = parse_arguments('-i 0024 -t 3d -e 50 -b 131072 --standardize --sizes 256 256 --use_weights --sysinfo'.split())
+        args = parse_arguments('-i 0024 0089 -t rdk -e 50 -b 131072 --standardize --sizes 256 256 --use_weights --sysinfo'.split())
     if (args.type == 'all'):
         args.type = None        # type ~= filter
     if (args.verbose):
@@ -824,7 +850,9 @@ if __name__ == '__main__':
         # dataset IDs
         data = Data(use_compound_classes=args.cclasses, use_system_information=args.sysinfo,
                     classes_l_thr=args.classes_l_thr, classes_u_thr=args.classes_u_thr,
-                    use_usp_codes=args.usp_codes, custom_features=args.features)
+                    use_usp_codes=args.usp_codes, custom_features=args.features,
+                    use_hsm=args.columns_use_hsm, hsm_data=args.columns_hsm_data,
+                    custom_column_fields=args.custom_column_fields)
         for did in args.input:
             data.add_dataset_id(did,
                                 repo_root_folder=args.repo_root_folder,
@@ -832,12 +860,16 @@ if __name__ == '__main__':
                                 isomeric=args.isomeric)
         if (args.balance and len(args.input) > 1):
             data.balance()
+        if (args.verbose):
+            print('added data for datasets:')
+            print('\n'.join([f'  - {did} ({name})' for did, name in
+                             set(data.df[['dataset_id', 'column.name']].itertuples(index=False))]))
     else:
         raise Exception(f'input {args.input} not supported')
     data.compute_features(filter_features=args.type, n_thr=args.num_features, verbose=args.verbose)
     if args.debug_onehot_sys:
         sorted_dataset_ids = sorted(set(args.input) | set(args.test))
-        data.compute_system_information(True, sorted_dataset_ids, use_usp_codes=args.usp_codes)
+        data.compute_system_information(True, sorted_dataset_ids)
     if (args.verbose):
         print('done. preprocessing...')
     data.split_data()
@@ -904,12 +936,14 @@ if __name__ == '__main__':
         if not os.path.isdir('runs'):
             os.mkdir('runs')
         export_predictions(data, test_preds, f'runs/{run_name}_test.tsv', 'test')
-    if (args.balance and len(args.input) > 1):
+    if (args.balance and len(args.input) > 1):  # ===LEFT-OUT EVAL===
         print('evaluating on data left-out when balancing')
         for ds in args.input:
             d = Data(use_compound_classes=args.cclasses, use_system_information=args.sysinfo,
                      classes_l_thr=args.classes_l_thr, classes_u_thr=args.classes_u_thr,
-                     use_usp_codes=args.usp_codes, custom_features=args.features)
+                     use_usp_codes=args.usp_codes, custom_features=args.features,
+                     use_hsm=args.columns_use_hsm, hsm_data=args.columns_hsm_data,
+                     custom_column_fields=data.custom_column_fields, columns_remove_na=False)
             d.add_dataset_id(ds,
                              repo_root_folder=args.repo_root_folder,
                              void_rt=args.void_rt,
@@ -934,16 +968,34 @@ if __name__ == '__main__':
             print(f'{ds}: {eval_(Y, preds, args.epsilon):.3f} \t (#data: {len(Y)}, held-out percentage: {perc:.2f})')
             if (args.export_rois):
                 export_predictions(d, preds, f'runs/{run_name}_heldout_{ds}.tsv')
-    if (len(args.test) > 0):
+    if (len(args.test) > 0):    # ===TESTING===
         print(f'evaluating on different dataset(s) ({args.test})')
         for ds in args.test:
             d = Data(use_compound_classes=args.cclasses, use_system_information=args.sysinfo,
                      classes_l_thr=args.classes_l_thr, classes_u_thr=args.classes_u_thr,
-                     use_usp_codes=args.usp_codes, custom_features=args.features)
+                     use_usp_codes=args.usp_codes, custom_features=args.features,
+                     use_hsm=args.columns_use_hsm, hsm_data=args.columns_hsm_data,
+                     custom_column_fields=data.custom_column_fields, columns_remove_na=False)
             d.add_dataset_id(ds,
                              repo_root_folder=args.repo_root_folder,
                              void_rt=args.void_rt,
                              isomeric=args.isomeric)
+            if (args.remove_train_compounds):
+                if (args.remove_train_compounds_mode == 'all'):
+                    train_compounds = set(data.df['inchi.std'])
+                elif (args.remove_train_compounds_mode == 'column'):
+                    this_column = d.df['column.name'].values[0]
+                    train_compounds = set(data.df.loc[data.df['column.name'] == this_column, 'inchi.std'])
+                else:
+                    raise NotImplementedError(args.remove_train_compounds_mode)
+                prev_len = len(d.df)
+                d.df = d.df.loc[~d.df['inchi.std'].isin(train_compounds)]
+                if args.verbose:
+                    print(f'{ds} evaluation: removed {prev_len - len(d.df)} compounds also appearing '
+                          f'in the training data (now {len(d.df)} compounds)')
+                if (len(d.df) < 2):
+                    print(f'too few compounds ({len(d.df)}), skipping ...')
+                    continue
             d.compute_features(filter_features=args.type, n_thr=args.num_features, verbose=args.verbose)
             if args.debug_onehot_sys:
                 d.compute_system_information(True, sorted_dataset_ids, use_usp_codes=args.usp_codes)
