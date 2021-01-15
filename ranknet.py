@@ -22,7 +22,21 @@ import re
 from classyfire import get_onehot, get_binary
 from pprint import pprint
 import contextlib
+import matplotlib.pyplot as plt
+import plotly.express as px
+from pygam import LinearGAM
+from PIL import Image
+from matplotlib.offsetbox import OffsetImage, AnnotationBbox
+from rdkit.Chem.Draw import MolToImage
+from rdkit.Chem import MolFromSmiles
 # from directranker.DirectRanker import directRanker
+
+REL_COLUMNS = ['column.length', 'column.id', 'column.particle.size', 'column.temperature',
+               'column.flowrate', 'eluent.A.h2o', 'eluent.A.meoh', 'eluent.A.acn',
+               'eluent.A.formic', 'eluent.A.nh4ac', 'eluent.A.nh4form',
+               'eluent.B.h2o', 'eluent.B.meoh', 'eluent.B.acn', 'eluent.B.formic',
+               'eluent.B.nh4ac', 'eluent.B.nh4form', 'gradient.start.A',
+               'gradient.end.A']
 
 
 class BatchGenerator(tf.keras.utils.Sequence):
@@ -113,6 +127,11 @@ def csr2tf(csr):
 # m = Chem.MolFromSmiles(test_data.iloc[0, 1])
 # Chem.MolFromI
 # descc = {g: f(m) for g, f in Descriptors.descList}
+
+def generic_run_name():
+    from datetime import datetime
+    time_str = datetime.now().strftime('%Y%m%d_%H-%M-%S')
+    return f'ranknet_{time_str}'
 
 
 def get_morgan_fps(m, r):
@@ -251,12 +270,70 @@ def eval_(y, preds, epsilon=1):
     preds, y = zip(*sorted(zip(preds, y)))
     matches = 0
     total = 0
+    matches_v = [0 for i in range(len(y))]
     for i, j in combinations(range(len(y)), 2):
         diff = y[i] - y[j]
         if (diff < epsilon):
             matches += 1
+            matches_v[i] += 1
+            matches_v[j] += 1
         total += 1
     return matches / total if not total == 0 else np.nan
+
+def eval2(df, epsilon=1, classyfire_level=None):
+    df_eval = df.dropna(subset=['rt', 'roi'])
+    classes = (list(set(df_eval[classyfire_level].dropna().tolist()))
+               if classyfire_level is not None else []) + ['total']
+    matches = {c: [0 for i in range(len(df_eval))] for c in classes}
+    total = {c: 0 for c in classes}
+    for i, j in combinations(range(len(df_eval)), 2):
+        rt_diff = df_eval.rt[i] - df_eval.rt[j]
+        for c in classes:
+            if (c != 'total' and
+                df_eval[classyfire_level][i] == c or df_eval[classyfire_level][j] == c):
+                match = 0
+            else:
+                match = ((np.sign(rt_diff) == np.sign(df_eval.roi[i] - df_eval.roi[j]))
+                         or (np.abs(rt_diff) < epsilon)).astype(int)
+                total[c] += 2
+            matches[c][i] += match
+            matches[c][j] += match
+    df_eval['matches'] = matches['total']
+    df_eval['matches_perc'] = df_eval.matches / total['total']
+    df_classes = pd.DataFrame({'matches': matches})
+    return (df_eval.matches.sum() / total['total'], df_eval,
+            {'matches': {c: np.sum(matches[c]) for c in classes},
+             'matches_perc': {c: np.sum(matches[c]) / total[c] for c in classes}})
+
+def rt_roi_diffs(data, y, preds, k=3):
+    """for all pairs x, y:
+    is |rt_x - rt_y| very different from |roi_x - roi_y|?
+    - increment outl[x], outl[y]
+    - at the end return k u_i's with highest outl[u_i]
+    """
+    assert len(y) == len(preds)
+    scale_roi = max(preds) - min(preds)
+    scale_rt = max(y) - min(y)
+    df = pd.DataFrame(data.df.iloc[np.concatenate((data.train_indices, data.test_indices, data.val_indices))])
+    df['roi'] = preds
+    df.dropna(subset=['roi', 'rt'], inplace=True)
+    df.sort_values(by='rt', inplace=True)
+    # diffs = np.zeros((len(df)))
+    # for i, j in combinations(range(len(y)), 2):
+    #     diff_roi = np.abs(preds[i] - preds[j]) * scale_roi
+    #     diff_rt = np.abs(y[i] - y[j]) * scale_rt
+    #     diffs[i] += np.abs(diff_roi - diff_rt) / (len(y) ** 2)
+    #     diffs[j] += np.abs(diff_roi - diff_rt) / (len(y) ** 2)
+    # for i in range(k, len(df) - k):
+    #     window = np.concatenate((df.roi[i-k:i], df.roi[i+1:i+k+1]))
+    #     roi_mean = np.mean(window)
+    #     diffs[i] = np.abs(df.roi[i] - roi_mean)
+    gam = LinearGAM().fit(df.rt, df.roi)
+    df['diffs'] = np.abs(df.roi - gam.predict(df.rt))
+    df['rt_gam'] = LinearGAM().fit(df.roi, df.rt).predict(df.roi)
+    df['diffs'] = (df['diffs'] > 0.2 * (np.sum(np.abs([min(df.roi), max(df.roi)])))).astype(int)
+    return df
+
 
 def get_column_scaling(cols):
     if (not hasattr(get_column_scaling, '_data')):
@@ -285,8 +362,9 @@ class Data:
                  use_system_information=False, cache_file='cached_descs.pkl',
                  classes_l_thr=0.005, classes_u_thr=0.025, use_usp_codes=False,
                  custom_features=[], use_hsm=False,
-                 hsm_data='/home/fleming/Documents/Projects/RtPredTrainingData/hsm.tsv',
-                 custom_column_fields=None, columns_remove_na=True):
+                 hsm_data='/home/fleming/Documents/Projects/RtPredTrainingData/resources/hsm_database/hsm_database.txt',
+                 custom_column_fields=None, columns_remove_na=True,
+                 hsm_fields=['H', 'S*', 'A', 'B', 'C (pH 2.8)', 'C (pH 7.0)']):
         self.df = df
         self.x_features = None
         self.x_classes = None
@@ -315,6 +393,7 @@ class Data:
         self.hsm_data = hsm_data
         self.custom_column_fields = custom_column_fields
         self.columns_remove_na = columns_remove_na
+        self.hsm_fields = hsm_fields
 
     def get_y(self):
         return np.array(self.df.rt)
@@ -332,7 +411,8 @@ class Data:
                                             use_hsm=self.use_hsm,
                                             hsm_data=self.hsm_data,
                                             custom_column_fields=self.custom_column_fields,
-                                            remove_na=self.columns_remove_na)
+                                            remove_na=self.columns_remove_na,
+                                            hsm_fields=self.hsm_fields)
         xs = np.concatenate(list(filter(lambda x: x is not None, (self.x_features, self.x_info, self.x_classes))),
                             axis=1)
         self.info_indices = ([self.features_indices[-1] + 1,
@@ -340,6 +420,9 @@ class Data:
                                 if self.use_system_information else None)
         self.classes_indices = ([xs.shape[1] - self.x_classes.shape[1], xs.shape[1] - 1]
                              if self.use_compound_classes else None)
+        print(f'{np.diff(self.features_indices) + 1} molecule features, '
+              f'{(np.diff(self.info_indices) + 1) if self.info_indices is not None else 0} column features, '
+              f'{(np.diff(self.classes_indices) + 1) if self.classes_indices is not None else 0} molecule class features')
         return xs
 
     def add_dataset_id(self, dataset_id,
@@ -467,8 +550,9 @@ class Data:
 
     def compute_system_information(self, onehot_ids=False, other_dataset_ids=None,
                                    use_usp_codes=False, use_hsm=False,
-                                   hsm_data='/home/fleming/Documents/Projects/RtPredTrainingData/hsm.tsv',
-                                   custom_column_fields=None, remove_na=True):
+                                   hsm_data='/home/fleming/Documents/Projects/RtPredTrainingData/resources/hsm_database/hsm_database.txt',
+                                   custom_column_fields=None, remove_na=True, drop_hsm_dups=True,
+                                   hsm_fields=['H', 'S*', 'A', 'B', 'C (pH 2.8)', 'C (pH 7.0)']):
         if (onehot_ids):
             if (other_dataset_ids is None):
                 self.sorted_dataset_ids = sorted(set(_.split('_')[0] for _ in self.df.id))
@@ -481,13 +565,15 @@ class Data:
         fields = []
         names = []
         if (use_hsm):
-            hsm = pd.read_csv(hsm_data, sep='\t', index_col=0)
-            cols = ['H', 'S*', 'A', 'B', 'C (pH 2.8)', 'C (pH 7.0)']
-            if (any(c not in hsm.index for c in self.df['column.name'])):
+            hsm = pd.read_csv(hsm_data, sep='\t')
+            if (drop_hsm_dups):
+                hsm.drop_duplicates(['normalized notation'], keep=False, inplace=True)
+            hsm.set_index('normalized notation', drop=False, verify_integrity=drop_hsm_dups, inplace=True)
+            if (any(c not in hsm['normalized notation'].tolist() for c in self.df['column.name'])):
                 raise Exception(
-                    f'no HSM data for {", ".join([str(c) for c in set(self.df["column.name"]) if c not in hsm.index])}')
+                    f'no HSM data for {", ".join([str(c) for c in set(self.df["column.name"]) if c not in hsm["normalized notation"].tolist()])}')
             # NOTE: not scaled!
-            fields.append(hsm.loc[self.df['column.name'], cols].values)
+            fields.append(hsm.loc[self.df['column.name'], hsm_fields].values)
         if (custom_column_fields is not None):
             na_columns = [col for col in custom_column_fields if self.df[col].isna().any()]
             if (remove_na):
@@ -500,23 +586,17 @@ class Data:
             fields.append((self.df[custom_column_fields].values - means) / scales)
             names.extend(custom_column_fields)
         else:
-            rel_columns = ['column.length', 'column.id', 'column.particle.size', 'column.temperature',
-                           'column.flowrate', 'eluent.A.h2o', 'eluent.A.meoh', 'eluent.A.acn',
-                           'eluent.A.formic', 'eluent.A.nh4ac', 'eluent.A.nh4form',
-                           'eluent.B.h2o', 'eluent.B.meoh', 'eluent.B.acn', 'eluent.B.formic',
-                           'eluent.B.nh4ac', 'eluent.B.nh4form', 'gradient.start.A',
-                           'gradient.end.A']
-            na_columns = [col for col in rel_columns if self.df[col].isna().any()]
+            na_columns = [col for col in REL_COLUMNS if self.df[col].isna().any()]
             if (len(na_columns) > 0):
                 if (remove_na):
                     print('removed columns containing NA values: ' + ', '.join(na_columns))
-                    rel_columns = [col for col in rel_columns if col not in na_columns]
+                    REL_COLUMNS = [col for col in REL_COLUMNS if col not in na_columns]
                 else:
                     print('WARNING: system data contains NA values, the option to remove these columns was disabled though! '
                           + ', '.join(na_columns))
-            means, scales = get_column_scaling(rel_columns)
-            fields.append((self.df[rel_columns].values - means) / scales)
-            names.extend(rel_columns)
+            means, scales = get_column_scaling(REL_COLUMNS)
+            fields.append((self.df[REL_COLUMNS].values - means) / scales)
+            names.extend(REL_COLUMNS)
         if (use_usp_codes):
             codes = ['L1', 'L10', 'L11', 'L43', 'L109']
             codes_vector = (lambda code: np.eye(len(codes))[codes.index(code)]
@@ -722,13 +802,21 @@ def parse_arguments(args=None):
                         help='difference in evaluation measure below which to ignore falsely predicted pairs')
     parser.add_argument('--columns_use_hsm', action='store_true', help=' ')
     parser.add_argument('--columns_hsm_data', default=
-                        '/home/fleming/Documents/Projects/RtPredTrainingData/hsm.tsv',
+                        '/home/fleming/Documents/Projects/RtPredTrainingData/resources/hsm_database/hsm_database.txt',
                         help=' ')
     parser.add_argument('--custom_column_fields', default=None,
                         nargs='*', help=' ')
+    parser.add_argument('--hsm_fields', default=['H', 'S*', 'A', 'B', 'C (pH 2.8)', 'C (pH 7.0)'],
+                        nargs='*', help=' ')
     parser.add_argument('--remove_train_compounds', action='store_true', help=' ')
     parser.add_argument('--remove_train_compounds_mode', default='all',
-                        choices=['all', 'column', 'threshold'], help=' ')
+                        choices=['all', 'column', 'threshold', 'print', 'train'], help=' ')
+    parser.add_argument('--plot_diffs', action='store_true', help=' ')
+    parser.add_argument('--test_stats', action='store_true', help=' ')
+    parser.add_argument('--diffs', action='store_true', help=' ')
+    parser.add_argument('--save', action='store_true', help=' ')
+    parser.add_argument('--load', default=None, help=' ')
+    parser.add_argument('--classyfire', action='store_true', help=' ')
     return parser.parse_args() if args is None else parser.parse_args(args)
 
 
@@ -786,9 +874,9 @@ def run_multi(args):
     multi_eval_(bgs)
 
 
-def predict(X, ranker, batch_size):
+def predict(X, model, batch_size):
     preds = []
-    ranker_output = K.function([ranker.model.layers[0].input], [ranker.model.layers[-3].get_output_at(0)])
+    ranker_output = K.function([model.layers[0].input], [model.layers[-3].get_output_at(0)])
     for x in np.array_split(X, np.ceil(X.shape[0] / batch_size * 10)):
         preds.append(ranker_output([x])[0].ravel())
     return np.concatenate(preds)
@@ -818,14 +906,101 @@ def export_predictions(data, preds, out, mode='all'):
     df[['smiles', 'rt', 'roi']].to_csv(out, sep='\t', index=False, header=False)
 
 
+def visualize_df(df):
+    fig = plt.figure()
+    ax = fig.add_subplot(111)
+    points = ax.scatter(df.rt, df.roi, c=df.diffs, cmap='coolwarm')
+    ax.set_xlabel('rt')
+    ax.set_ylabel('roi')
+    ax.set_title(df.id[0].split('_')[0])
+
+    # blank image
+    imm = Image.new('RGBA', (300, 300))
+    im = OffsetImage(np.array(imm), zoom=0.5)
+    xybox=(100., 100.)
+    ab = AnnotationBbox(im, (0,0), xybox=xybox, xycoords='data',
+            boxcoords="offset points",  pad=0.3,  arrowprops=dict(arrowstyle="->"))
+    # add it to the axes and make it invisible
+    ax.add_artist(ab)
+    ab.set_visible(False)
+
+    def recolor(df, ind, points, k=5):
+        # find k points with closest rt
+        rts = df.rt.values
+        rt = rts[ind]
+        rt_inds = np.argsort(np.abs(rts - rt))[:k]
+        # find k points with closest roi
+        rois = df.roi.values
+        roi = rois[ind]
+        roi_inds = np.argsort(np.abs(rois - roi))[:k]
+        cols = {(True, False): [0, 0, 1, 1],
+                (False, True): [1, 1, 0, 1],
+                (True, True): [0, 1, 0, 1],
+                (False, False): [0, 0, 0, 1]}
+        colors = [cols[(p in rt_inds, p in roi_inds)] for p in range(len(rts))]
+        return colors
+
+
+    def hover(event):
+        if (not hasattr(points, 'def_colors')):
+            points.def_colors = points.get_facecolors()
+        # if the mouse is over the scatter points
+        if points.contains(event)[0]:
+            # find out the index within the array from the event
+            ind = points.contains(event)[1]["ind"][0]
+            points.set_facecolors(recolor(df, ind, points))
+            # get the figure size
+            w,h = fig.get_size_inches()*fig.dpi
+            ws = (event.x > w/2.)*-1 + (event.x <= w/2.)
+            hs = (event.y > h/2.)*-1 + (event.y <= h/2.)
+            # if event occurs in the top or right quadrant of the figure,
+            # change the annotation box position relative to mouse.
+            ab.xybox = (xybox[0]*ws, xybox[1]*hs)
+            # make annotation box visible
+            ab.set_visible(True)
+            # place it at the position of the hovered scatter point
+            ab.xy =(df.rt.iloc[ind], df.roi.iloc[ind])
+            # set the image corresponding to that point
+            im.set_data(np.array(MolToImage(MolFromSmiles(df.smiles.iloc[ind]), (300, 300))))
+        else:
+            #if the mouse is not over a scatter point
+            ab.set_visible(False)
+            points.set_facecolors(points.def_colors)
+        fig.canvas.draw_idle()
+
+    fig.canvas.mpl_connect('motion_notify_event', hover)
+    plt.show()
+
+
+def data_stats(d, data, custom_column_fields=None):
+    train_compounds_all = set(data.df['inchi.std'])
+    this_column = d.df['column.name'].values[0]
+    train_compounds_col = set(data.df.loc[data.df['column.name'] == this_column, 'inchi.std'])
+    test_compounds = set(d.df['inchi.std'])
+    system_fields = custom_column_fields if custom_column_fields is not None else REL_COLUMNS
+    train_configs = [t[1:] for t in set(data.df[['dataset_id', 'column.name'] + system_fields]
+                                        .itertuples(index=False, name=None))]
+    test_config = tuple(d.df[['column.name'] + system_fields].iloc[0].tolist())
+    same_config = len([t for t in train_configs if t == test_config])
+    same_column = len([t for t in train_configs if t[0] == test_config[0]])
+    return {'num_data': len(test_compounds),
+            'compound_overlap_all': (len(test_compounds & train_compounds_all)
+                                           / len(test_compounds)),
+            'compound_overlap_column': (len(test_compounds & train_compounds_col)
+                                              / len(test_compounds)),
+            'column_occurences': same_column,
+            'config_occurences': same_config}
+
 if __name__ == '__main__':
+    pd.options.display.float_format = '{:.2%}'.format
     if '__file__' in globals():
         args = parse_arguments()
     else:
         # args = parse_arguments('-i 0045 0019 0063 0047 0017 0062 0024 0064 0048 0068 0086 0091 0096 0097 0080 0085 0087 0088 0098 0095 0100 0099 0077 0138 0179 0181 0182 0076 0084 0089 0090 -t rdk -e 100 -b 65536 --sizes 64 64 --standardize --sysinfo --balance --cclasses --classes_u_thr 0.8 --classes_l_thr 0.0005'.split())
         # args = parse_arguments('-i 0033 -t rdk -e 50 -b 131072 --standardize --sizes 256 256 --use_weights --sysinfo'.split())
         # args = parse_arguments('-i 0006 0037 0068 0117 -t rdk -e 50 -b 131072 --standardize --sizes 256 256 --use_weights --sysinfo -f MolLogP -t custom'.split())
-        args = parse_arguments('-i 0024 0089 -t rdk -e 50 -b 131072 --standardize --sizes 256 256 --use_weights --sysinfo'.split())
+        # args = parse_arguments('-i 0001 0002 0005 -t rdk -e 10 -b 131072 --standardize --sizes 256 256 --use_weights --sysinfo --columns_use_hsm --custom_column_fields column.flowrate column.length column.id --test 0001 0003 --diffs --plot_diffs'.split())
+        args = parse_arguments('-b 524288 --standardize -t rdk --sysinfo --columns_use_hsm --custom_column_fields column.flowrate column.length column.id --test 0129 0040 0030 0125 0070 0096 --test_stats --classyfire --load hsm_new.tf'.split())
     if (args.type == 'all'):
         args.type = None        # type ~= filter
     if (args.verbose):
@@ -844,158 +1019,194 @@ if __name__ == '__main__':
                 print('cache file does not exist yet')
     if (args.verbose):
         print('reading in data and computing features...')
-    if (len(args.input) == 1 and os.path.exists(args.input[0])):
-        data = Data.from_raw_file(args.input[0], void_rt=args.void_rt)
-    elif (all(re.match(r'\d{4}', i) for i in args.input)):
-        # dataset IDs
-        data = Data(use_compound_classes=args.cclasses, use_system_information=args.sysinfo,
-                    classes_l_thr=args.classes_l_thr, classes_u_thr=args.classes_u_thr,
-                    use_usp_codes=args.usp_codes, custom_features=args.features,
-                    use_hsm=args.columns_use_hsm, hsm_data=args.columns_hsm_data,
-                    custom_column_fields=args.custom_column_fields)
-        for did in args.input:
-            data.add_dataset_id(did,
-                                repo_root_folder=args.repo_root_folder,
-                                void_rt=args.void_rt,
-                                isomeric=args.isomeric)
-        if (args.balance and len(args.input) > 1):
-            data.balance()
-        if (args.verbose):
-            print('added data for datasets:')
-            print('\n'.join([f'  - {did} ({name})' for did, name in
-                             set(data.df[['dataset_id', 'column.name']].itertuples(index=False))]))
-    else:
-        raise Exception(f'input {args.input} not supported')
-    data.compute_features(filter_features=args.type, n_thr=args.num_features, verbose=args.verbose)
-    if args.debug_onehot_sys:
-        sorted_dataset_ids = sorted(set(args.input) | set(args.test))
-        data.compute_system_information(True, sorted_dataset_ids)
-    if (args.verbose):
-        print('done. preprocessing...')
-    data.split_data()
-    if (args.standardize):
-        data.standardize()
-    if (args.reduce_features):
-        data.reduce_f()
-    (train_x, train_y), (val_x, val_y), (test_x, test_y) = data.get_split_data()
-    if (args.verbose):
-        print('done. Initializing BatchGenerator...')
-    bg = BatchGenerator(train_x, train_y, args.batch_size, pair_step=args.pair_step,
-                        pair_stop=args.pair_stop, use_weights=args.use_weights)
-    if (args.device is not None and re.match(r'[cg]pu:\d', args.device.lower())):
-        print(f'attempting to use device {args.device}')
-        strategy = tf.distribute.OneDeviceStrategy(f'/{args.device.lower()}')
-        context = strategy.scope()
-    elif (len([dev for dev in tf.config.get_visible_devices() if dev.device_type == 'GPU']) > 1
-        or args.device == 'mirrored'):
-        # more than one gpu -> MirroredStrategy
-        print('Using MirroredStrategy')
-        strategy = tf.distribute.MirroredStrategy()
-        context = strategy.scope()
-    else:
-        context = contextlib.nullcontext()
-    if (args.verbose):
-        print('done. Creating model...')
-    with context:
-        v = tf.Variable(1.0)
-        if (args.verbose):
-            print(f'using {v.device}')
-        ranker = RankNetNN(input_size=train_x.shape[1],
-                           hidden_layer_sizes=args.sizes,
-                           activation=(['relu'] * len(args.sizes)),
-                           solver='adam',
-                           dropout_rate=args.dropout_rate)
-    es = tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience=2,
-                                          restore_best_weights=True)
-    if (args.verbose):
-        ranker.model.summary()
-        print('done. Training...')
-    try:
-        ranker.model.fit(bg,
-                         callbacks=[es,
-                                    # tf.keras.callbacks.TensorBoard(update_freq='epoch', histogram_freq=1,)
-                                ],
-                         epochs=args.epochs,
-                         verbose=1 if not args.no_bar else 2,
-                         validation_data=BatchGenerator(
-                             val_x, val_y, args.batch_size, pair_step=args.pair_step,
-                             pair_stop=args.pair_stop, use_weights=args.use_weights))
-    except KeyboardInterrupt:
-        print('interrupted training, evaluating...')
-    print(f'train: {eval_(train_y, predict(train_x, ranker, args.batch_size), args.epsilon):.3f}')
-    test_preds = predict(test_x, ranker, args.batch_size)
-    print(f'test: {eval_(test_y, test_preds, args.epsilon):.3f}')
-    print(f'val: {eval_(val_y, predict(val_x, ranker, args.batch_size), args.epsilon):.3f}')
-    if (args.export_rois):
-        if (args.run_name is None):
-            from datetime import datetime
-            time_str = datetime.now().strftime('%Y%m%d_%H-%M-%S')
-            run_name = f'ranknet_{time_str}'
+    if (args.load is None):
+        if (len(args.input) == 1 and os.path.exists(args.input[0])):
+            data = Data.from_raw_file(args.input[0], void_rt=args.void_rt)
+        elif (all(re.match(r'\d{4}', i) for i in args.input)):
+            # dataset IDs
+            data = Data(use_compound_classes=args.cclasses, use_system_information=args.sysinfo,
+                        classes_l_thr=args.classes_l_thr, classes_u_thr=args.classes_u_thr,
+                        use_usp_codes=args.usp_codes, custom_features=args.features,
+                        use_hsm=args.columns_use_hsm, hsm_data=args.columns_hsm_data,
+                        custom_column_fields=args.custom_column_fields,
+                        hsm_fields=args.hsm_fields)
+            for did in args.input:
+                data.add_dataset_id(did,
+                                    repo_root_folder=args.repo_root_folder,
+                                    void_rt=args.void_rt,
+                                    isomeric=args.isomeric)
+            if (args.remove_train_compounds and args.remove_train_compounds_mode == 'train'
+                and len(args.test) > 0):
+                d_temp = Data()
+                for t in args.test:
+                    d_temp.add_dataset_id(t, repo_root_folder=args.repo_root_folder,
+                                          isomeric=args.isomeric)
+                compounds_to_remove = set(d_temp.df['inchi.std'].tolist())
+                data.df = data.df.loc[~data.df['inchi.std'].isin(compounds_to_remove)]
+                print(f'removed {len(compounds_to_remove)} compounds occuring '
+                      'in test data from training data')
+            if (args.balance and len(args.input) > 1):
+                data.balance()
+            if (args.verbose):
+                print('added data for datasets:')
+                print('\n'.join([f'  - {did} ({name})' for did, name in
+                                 set(data.df[['dataset_id', 'column.name']].itertuples(index=False))]))
         else:
-            run_name = args.run_name
-        if not os.path.isdir('runs'):
-            os.mkdir('runs')
-        export_predictions(data, test_preds, f'runs/{run_name}_test.tsv', 'test')
-    if (args.balance and len(args.input) > 1):  # ===LEFT-OUT EVAL===
-        print('evaluating on data left-out when balancing')
-        for ds in args.input:
-            d = Data(use_compound_classes=args.cclasses, use_system_information=args.sysinfo,
-                     classes_l_thr=args.classes_l_thr, classes_u_thr=args.classes_u_thr,
-                     use_usp_codes=args.usp_codes, custom_features=args.features,
-                     use_hsm=args.columns_use_hsm, hsm_data=args.columns_hsm_data,
-                     custom_column_fields=data.custom_column_fields, columns_remove_na=False)
-            d.add_dataset_id(ds,
-                             repo_root_folder=args.repo_root_folder,
-                             void_rt=args.void_rt,
-                             isomeric=args.isomeric)
-            perc = len(d.df.loc[d.df.id.isin(data.heldout.id)]) / len(d.df)
-            d.df.drop(d.df.loc[~d.df.id.isin(data.heldout.id)].index, inplace=True)
-            if (len(d.df) == 0):
-                print(f'no data left for {ds}')
-                continue
-            d.compute_features(filter_features=args.type, n_thr=args.num_features, verbose=args.verbose)
-            if args.debug_onehot_sys:
-                d.compute_system_information(True, sorted_dataset_ids, use_usp_codes=args.usp_codes)
-            d.split_data()
-            if (args.standardize):
-                d.standardize(data.scaler)
-            if (args.reduce_features):
-                d.reduce_f()
-            (train_x, train_y), (val_x, val_y), (test_x, test_y) = d.get_split_data()
-            X = np.concatenate((train_x, test_x, val_x))
-            Y = np.concatenate((train_y, test_y, val_y))
-            preds = predict(X, ranker, args.batch_size)
-            print(f'{ds}: {eval_(Y, preds, args.epsilon):.3f} \t (#data: {len(Y)}, held-out percentage: {perc:.2f})')
-            if (args.export_rois):
-                export_predictions(d, preds, f'runs/{run_name}_heldout_{ds}.tsv')
+            raise Exception(f'input {args.input} not supported')
+        data.compute_features(filter_features=args.type, n_thr=args.num_features, verbose=args.verbose)
+        if args.debug_onehot_sys:
+            sorted_dataset_ids = sorted(set(args.input) | set(args.test))
+            data.compute_system_information(True, sorted_dataset_ids)
+        if (args.verbose):
+            print('done. preprocessing...')
+        data.split_data()
+        if (args.standardize):
+            data.standardize()
+        if (args.reduce_features):
+            data.reduce_f()
+        (train_x, train_y), (val_x, val_y), (test_x, test_y) = data.get_split_data()
+        if (args.verbose):
+            print('done. Initializing BatchGenerator...')
+        bg = BatchGenerator(train_x, train_y, args.batch_size, pair_step=args.pair_step,
+                            pair_stop=args.pair_stop, use_weights=args.use_weights)
+        if (args.device is not None and re.match(r'[cg]pu:\d', args.device.lower())):
+            print(f'attempting to use device {args.device}')
+            strategy = tf.distribute.OneDeviceStrategy(f'/{args.device.lower()}')
+            context = strategy.scope()
+        elif (len([dev for dev in tf.config.get_visible_devices() if dev.device_type == 'GPU']) > 1
+            or args.device == 'mirrored'):
+            # more than one gpu -> MirroredStrategy
+            print('Using MirroredStrategy')
+            strategy = tf.distribute.MirroredStrategy()
+            context = strategy.scope()
+        else:
+            context = contextlib.nullcontext()
+        if (args.verbose):
+            print('done. Creating model...')
+        with context:
+            v = tf.Variable(1.0)
+            if (args.verbose):
+                print(f'using {v.device}')
+            ranker = RankNetNN(input_size=train_x.shape[1],
+                               hidden_layer_sizes=args.sizes,
+                               activation=(['relu'] * len(args.sizes)),
+                               solver='adam',
+                               dropout_rate=args.dropout_rate)
+        es = tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience=2,
+                                              restore_best_weights=True)
+        if (args.verbose):
+            ranker.model.summary()
+            print('done. Training...')
+        try:
+            ranker.model.fit(bg,
+                             callbacks=[es,
+                                        # tf.keras.callbacks.TensorBoard(update_freq='epoch', histogram_freq=1,)
+                                    ],
+                             epochs=args.epochs,
+                             verbose=1 if not args.no_bar else 2,
+                             validation_data=BatchGenerator(
+                                 val_x, val_y, args.batch_size, pair_step=args.pair_step,
+                                 pair_stop=args.pair_stop, use_weights=args.use_weights))
+        except KeyboardInterrupt:
+            print('interrupted training, evaluating...')
+        if (args.save):
+            path = (args.run_name if args.run_name is not None else generic_run_name()) + '.tf'
+            ranker.model.save(path, overwrite=True)
+            pickle.dump(data, open(os.path.join(path, 'assets', 'data.pkl'), 'wb'))
+            print(f'model written to {path}')
+        print(f'train: {eval_(train_y, predict(train_x, ranker.model, args.batch_size), args.epsilon):.3f}')
+        test_preds = predict(test_x, ranker.model, args.batch_size)
+        print(f'test: {eval_(test_y, test_preds, args.epsilon):.3f}')
+        print(f'val: {eval_(val_y, predict(val_x, ranker.model, args.batch_size), args.epsilon):.3f}')
+        if (False and args.classyfire):
+            fig = px.treemap(data.df.dropna(subset=['classyfire.kingdom', 'classyfire.superclass', 'classyfire.class']),
+                             path=['classyfire.kingdom', 'classyfire.superclass', 'classyfire.class'],
+                             title='training data')
+            fig.show(renderer='browser')
+        if (args.export_rois):
+            if (args.run_name is None):
+                run_name = generic_run_name()
+            else:
+                run_name = args.run_name
+            if not os.path.isdir('runs'):
+                os.mkdir('runs')
+            export_predictions(data, test_preds, f'runs/{run_name}_test.tsv', 'test')
+        if (args.balance and len(args.input) > 1):  # ===LEFT-OUT EVAL===
+            print('evaluating on data left-out when balancing')
+            for ds in args.input:
+                d = Data(use_compound_classes=args.cclasses, use_system_information=args.sysinfo,
+                         classes_l_thr=args.classes_l_thr, classes_u_thr=args.classes_u_thr,
+                         use_usp_codes=args.usp_codes, custom_features=args.features,
+                         use_hsm=args.columns_use_hsm, hsm_data=args.columns_hsm_data,
+                         custom_column_fields=data.custom_column_fields, columns_remove_na=False,
+                         hsm_fields=args.hsm_fields)
+                d.add_dataset_id(ds,
+                                 repo_root_folder=args.repo_root_folder,
+                                 void_rt=args.void_rt,
+                                 isomeric=args.isomeric)
+                perc = len(d.df.loc[d.df.id.isin(data.heldout.id)]) / len(d.df)
+                d.df.drop(d.df.loc[~d.df.id.isin(data.heldout.id)].index, inplace=True)
+                if (len(d.df) == 0):
+                    print(f'no data left for {ds}')
+                    continue
+                d.compute_features(filter_features=args.type, n_thr=args.num_features, verbose=args.verbose)
+                if args.debug_onehot_sys:
+                    d.compute_system_information(True, sorted_dataset_ids, use_usp_codes=args.usp_codes)
+                d.split_data()
+                if (args.standardize):
+                    d.standardize(data.scaler)
+                if (args.reduce_features):
+                    d.reduce_f()
+                (train_x, train_y), (val_x, val_y), (test_x, test_y) = d.get_split_data()
+                X = np.concatenate((train_x, test_x, val_x))
+                Y = np.concatenate((train_y, test_y, val_y))
+                preds = predict(X, ranker.model, args.batch_size)
+                print(f'{ds}: {eval_(Y, preds, args.epsilon):.3f} \t (#data: {len(Y)}, held-out percentage: {perc:.2f})')
+                if (args.export_rois):
+                    export_predictions(d, preds, f'runs/{run_name}_heldout_{ds}.tsv')
+    else:
+        # only use loaded model for predicting
+        import types
+        ranker = types.SimpleNamespace()
+        ranker.model = tf.keras.models.load_model(args.load)
+        data = pickle.load(open(os.path.join(args.load, 'assets', 'data.pkl'), 'rb'))
     if (len(args.test) > 0):    # ===TESTING===
+        test_stats = []
         print(f'evaluating on different dataset(s) ({args.test})')
         for ds in args.test:
             d = Data(use_compound_classes=args.cclasses, use_system_information=args.sysinfo,
                      classes_l_thr=args.classes_l_thr, classes_u_thr=args.classes_u_thr,
                      use_usp_codes=args.usp_codes, custom_features=args.features,
                      use_hsm=args.columns_use_hsm, hsm_data=args.columns_hsm_data,
-                     custom_column_fields=data.custom_column_fields, columns_remove_na=False)
+                     custom_column_fields=data.custom_column_fields, columns_remove_na=False,
+                     hsm_fields=args.hsm_fields)
             d.add_dataset_id(ds,
                              repo_root_folder=args.repo_root_folder,
                              void_rt=args.void_rt,
                              isomeric=args.isomeric)
-            if (args.remove_train_compounds):
-                if (args.remove_train_compounds_mode == 'all'):
-                    train_compounds = set(data.df['inchi.std'])
-                elif (args.remove_train_compounds_mode == 'column'):
-                    this_column = d.df['column.name'].values[0]
-                    train_compounds = set(data.df.loc[data.df['column.name'] == this_column, 'inchi.std'])
+            if (args.remove_train_compounds and args.remove_train_compounds_mode != 'train'):
+                train_compounds_all = set(data.df['inchi.std'])
+                this_column = d.df['column.name'].values[0]
+                train_compounds_col = set(data.df.loc[data.df['column.name'] == this_column, 'inchi.std'])
+                if (args.remove_train_compounds_mode == 'print'):
+                    print('compounds overlap to training data: '
+                          + f'{len(set(d.df["inchi.std"]) & train_compounds_all) / len(set(d.df["inchi.std"])) * 100:.0f}% (all), '
+                          + f'{len(set(d.df["inchi.std"]) & train_compounds_col) / len(set(d.df["inchi.std"])) * 100:.0f}% (same column)')
                 else:
-                    raise NotImplementedError(args.remove_train_compounds_mode)
-                prev_len = len(d.df)
-                d.df = d.df.loc[~d.df['inchi.std'].isin(train_compounds)]
-                if args.verbose:
-                    print(f'{ds} evaluation: removed {prev_len - len(d.df)} compounds also appearing '
-                          f'in the training data (now {len(d.df)} compounds)')
-                if (len(d.df) < 2):
-                    print(f'too few compounds ({len(d.df)}), skipping ...')
-                    continue
+                    if (args.remove_train_compounds_mode == 'all'):
+                        train_compounds = train_compounds_all
+                    elif (args.remove_train_compounds_mode == 'column'):
+                        train_compounds = train_compounds_col
+                    else:
+                        raise NotImplementedError(args.remove_train_compounds_mode)
+                    prev_len = len(d.df)
+                    d.df = d.df.loc[~d.df['inchi.std'].isin(train_compounds)]
+                    if args.verbose:
+                        print(f'{ds} evaluation: removed {prev_len - len(d.df)} compounds also appearing '
+                              f'in the training data (now {len(d.df)} compounds)')
+                    if (len(d.df) < 2):
+                        print(f'too few compounds ({len(d.df)}), skipping ...')
+                        continue
             d.compute_features(filter_features=args.type, n_thr=args.num_features, verbose=args.verbose)
             if args.debug_onehot_sys:
                 d.compute_system_information(True, sorted_dataset_ids, use_usp_codes=args.usp_codes)
@@ -1007,10 +1218,62 @@ if __name__ == '__main__':
             (train_x, train_y), (val_x, val_y), (test_x, test_y) = d.get_split_data()
             X = np.concatenate((train_x, test_x, val_x))
             Y = np.concatenate((train_y, test_y, val_y))
-            preds = predict(X, ranker, args.batch_size)
-            print(f'{ds}: {eval_(Y, preds, args.epsilon):.3f} \t (#data: {len(Y)})')
+            preds = predict(X, ranker.model, args.batch_size)
+            acc = eval_(Y, preds, args.epsilon)
+            d.df['roi'] = preds[np.arange(len(d.df.rt))[ # restore correct order
+                np.argsort(np.concatenate([d.train_indices, d.test_indices, d.val_indices]))]]
+            # acc2, results = eval2(d.df, args.epsilon)
+            acc2, results, matches = eval2(d.df, args.epsilon, 'classyfire.class')
+            if (args.classyfire):
+                print(f'{ds}: ({acc:.2%} ({acc2:.2%}) accuracy)')
+                groups = results.groupby('classyfire.class')
+                results['matches_perc'] = results.matches_perc * len(results)
+                # print(groups.matches_perc.agg(['mean', 'median', 'std', 'count']))
+                # print(results.groupby('classyfire.class').matches_perc.agg(['mean', 'median', 'std', 'count']))
+                matches_df = pd.DataFrame.from_dict(matches['matches_perc'], orient='index', columns=['acc_without'])
+                matches_df['acc_without_diff'] = matches_df.acc_without - acc2
+                matches_df['num_compounds'] = ([len(d.df.loc[d.df['classyfire.class'] == c])
+                                                for c in matches_df.index.tolist()[:-1]]
+                                               + [len(d.df)])
+                matches_df['class_perc'] = matches_df.num_compounds / len(d.df)
+                train_compounds = []
+                train_compounds_all = len(set(data.df['inchi.std'].tolist()))
+                for c in matches_df.index.tolist()[:-1]:
+                    compounds_perc = len(set(data.df.loc[data.df['classyfire.class'] == c,
+                                                    'inchi.std'].tolist())) / train_compounds_all
+                    train_compounds.append(compounds_perc)
+                matches_df['class_perc_train'] = train_compounds + [1.0]
+                matches_df.index = [re.sub(r' \(CHEMONTID:\d+\)', '', i) for i in matches_df.index]
+                print(matches_df.sort_values(by='acc_without_diff', ascending=False)[
+                    ['acc_without_diff', 'num_compounds', 'class_perc', 'class_perc_train']])
+                if False:       # plotting
+                    matches_df.drop('total').sort_values(by='acc_without_diff', ascending=False)[
+                        ['acc_without_diff', 'class_perc', 'class_perc_train']].plot(rot=20)
+                    plt.tight_layout()
+                    plt.show()
+            if (args.test_stats):
+                stats = data_stats(d, data, args.custom_column_fields)
+                stats.update({'acc': acc, 'id': ds})
+                test_stats.append(stats)
+            else:
+                print(f'{ds}: {acc:.3f} \t (#data: {len(Y)})')
+            if (args.diffs):
+                df = rt_roi_diffs(d, Y, preds)
+                # with pd.option_context('display.max_rows', None):
+                #     print(df.sort_values(by='rt')[['id', 'rt', 'roi', 'diffs']])
+                print('outliers:')
+                print(df.loc[df.diffs == 1, ['id', 'roi', 'rt', 'rt_gam']])
+                if (args.plot_diffs):
+                    visualize_df(df)
             if (args.export_rois):
                 export_predictions(d, preds, f'runs/{run_name}_{ds}.tsv')
+            if (False and args.classyfire):
+                fig = px.treemap(d.df.dropna(subset=['classyfire.kingdom', 'classyfire.superclass', 'classyfire.class']),
+                                 path=['classyfire.kingdom', 'classyfire.superclass', 'classyfire.class'],
+                                 title=f'{ds} data ({acc:.2%} accuracy)')
+                fig.show(renderer='browser')
+        if (args.test_stats):
+            print(pd.DataFrame.from_records(test_stats, index='id'))
     if (args.cache_file is not None and features.write_cache):
         if (args.verbose):
             print('writing cache, don\'t interrupt!!')
