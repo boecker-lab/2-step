@@ -1,4 +1,5 @@
-from ranknet import features
+from features import features
+from utils import Data
 
 def test_features():
     smiles = ['C1CC(=O)N[C@@H]1C(=O)O',
@@ -48,5 +49,10 @@ def test_features():
     res2 = features(smiles, 'rdk')
     res2_old = features_old(smiles, 'rdk')
     print(res2)
-    print(res2_old)    
+    print(res2_old)
     return np.isclose(res2, res2_old, equal_nan=True).all()
+
+
+def test_data_csv():
+    csvfile = '/home/fleming/Documents/Projects/rtranknet/data/metlin_retention_times.csv'
+    data = Data.from_raw_file(csvfile)
