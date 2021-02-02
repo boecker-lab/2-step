@@ -312,7 +312,8 @@ class Data:
                          recompute=False,
                          mode='rdkit',
                          verbose=False,
-                         add_descs=False):
+                         add_descs=False,
+                         add_desc_file='/home/fleming/Documents/Projects/rtranknet/data/qm_merged.csv'):
         if (self.x_features is not None and self.get_y() is not None and not recompute):
             print(
                 'features are already computed and `recompute` is not specified, do nothing'
@@ -322,7 +323,7 @@ class Data:
         smiles_pos = [smiles_unique.index(s) for s in self.df.smiles]
         features_unique, self.descriptors = features(smiles_unique, filter_=filter_features, verbose=verbose,
                                                      custom_features=self.custom_features, mode=mode,
-                                                     add_descs=add_descs)
+                                                     add_descs=add_descs, add_desc_file=add_desc_file)
         if (verbose):
             print('features:', self.descriptors)
         self.x_features = features_unique[smiles_pos]

@@ -196,6 +196,8 @@ def parse_arguments(args=None):
     parser.add_argument('--isomeric', action='store_true', help=' ')
     parser.add_argument('--repo_root_folder', default='/home/fleming/Documents/Projects/RtPredTrainingData/',
                         help='location of the dataset github repository')
+    parser.add_argument('--add_desc_file', default='/home/fleming/Documents/Projects/RtPredTrainingData/',
+                        help='csv with additional features with smiles as identifier')
     parser.add_argument('-v', '--verbose', action='store_true')
     parser.add_argument('--no_bar', action='store_true', help='no progress-bar')
     parser.add_argument('--void_rt', default=0.0, type=float, help=' ')
@@ -289,7 +291,8 @@ if __name__ == '__main__':
         if (len(d.df) < 2):
             print(f'too few compounds ({len(d.df)}), skipping ...')
             continue
-        d.compute_features(verbose=args.verbose, mode=features_type, add_descs=features_add)
+        d.compute_features(verbose=args.verbose, mode=features_type, add_descs=features_add,
+                           add_desc_file=args.add_desc_file)
         # if args.debug_onehot_sys:
         #     d.compute_system_information(True, config['training_sets'], use_usp_codes=data.usp_codes)
         d.split_data()

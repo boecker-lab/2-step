@@ -69,16 +69,16 @@ def get_ae_features(smile, s1, s2):
     return (out[0])
 
 
-def get_add_descs(smiles):
+def get_add_descs(smiles, add_desc_file='/home/fleming/Documents/Projects/rtranknet/data/qm_merged.csv'):
     if (not hasattr(get_add_descs, 'd')):
         import pandas as pd
-        get_add_descs.d = pd.read_csv('/home/fleming/Documents/Projects/rtranknet/data/qm_merged.csv', index_col=0)
+        get_add_descs.d = pd.read_csv(add_desc_file, index_col=0)
         get_add_descs.d = get_add_descs.d[~get_add_descs.d.index.duplicated()]
     return get_add_descs.d.loc[smiles].values, get_add_descs.d.columns.tolist()
 
 def features(smiles, filter_='rdk', overwrite_cache=False, verbose=False,
              custom_features=[], mode='rdkit', load_factor=0.75,
-             add_descs=False):
+             add_descs=False, add_desc_file='/home/fleming/Documents/Projects/rtranknet/data/qm_merged.csv'):
     """computes and returns features as well as an ordered list of descriptors.
 
     If `custom_features` ~= ["morgan\d"], use morgan fingerprints, ignoring `filter_`
@@ -139,7 +139,7 @@ def features(smiles, filter_='rdk', overwrite_cache=False, verbose=False,
         # return np.array([[features.cached[(smile, desc[0])] for desc in descriptors]
         #                  for smile in smiles]), [desc[0] for desc in descriptors]
     if (add_descs):
-        out, names = get_add_descs(smiles)
+        out, names = get_add_descs(smiles, add_desc_file=add_desc_file)
         out_arrays.append(out)
         out_names.extend(names)
     out = np.concatenate(out_arrays, axis=1)

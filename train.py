@@ -46,6 +46,8 @@ def parse_arguments(args=None):
     parser.add_argument('--add_descs', action='store_true', help='use additional stored descriptors (e.g, qm8)')
     parser.add_argument('--repo_root_folder', default='/home/fleming/Documents/Projects/RtPredTrainingData/',
                         help='location of the dataset github repository')
+    parser.add_argument('--add_desc_file', default='/home/fleming/Documents/Projects/RtPredTrainingData/',
+                        help='csv with additional features with smiles as identifier')
     parser.add_argument('-e', '--epochs', default=10, type=int, help=' ')
     parser.add_argument('-v', '--verbose', action='store_true')
     parser.add_argument('--no_bar', action='store_true', help='no progress-bar')
