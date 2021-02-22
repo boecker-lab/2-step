@@ -88,6 +88,8 @@ def features(smiles, filter_='rdk', overwrite_cache=False, verbose=False,
         features.cached = {}
     out_arrays = []
     out_names = []
+    if (mode is None):
+        mode = ''
     if (mode.startswith('morgan')):
         bits = 1024
         radius = 2
@@ -144,6 +146,7 @@ def features(smiles, filter_='rdk', overwrite_cache=False, verbose=False,
         out_names.extend(names)
     out = np.concatenate(out_arrays, axis=1)
     assert (out.shape[1] == len(out_names)), '#descriptor names ≠ #descriptors'
+    print('features:', out_names)
     return out, out_names
 
 
@@ -152,4 +155,6 @@ def parse_feature_spec(spec):
     if spec.startswith('rdk'):
         filter_ = None if spec == 'rdkall' else spec[3:]
         return {'mode': 'rdkit', 'filter_features': filter_}
+    if (spec.lower() == 'none'):
+        spec = None
     return {'mode': spec, 'filter_features': None}

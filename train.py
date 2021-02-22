@@ -28,7 +28,7 @@ def parse_arguments(args=None):
                         nargs='+')
     parser.add_argument('-t', '--type', help='type of features',
                         default='rdk',
-                        choices=['rdkall', 'rdk2d', 'rdk3d']
+                        choices=['None', 'rdkall', 'rdk2d', 'rdk3d']
                         + [f'ae{i}{j}' for i, j in product(range(2), range(3))])
     parser.add_argument('-f', '--features', default=[], help='custom features',
                         nargs='+')
