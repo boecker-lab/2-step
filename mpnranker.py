@@ -43,6 +43,8 @@ def predict(df, ranker, epsilon=0.5):
 def train(ranker: MPNranker, bg: BatchGenerator, epochs=2,
           writer:SummaryWriter=None, val_g: BatchGenerator=None,
           epsilon=0.5, val_writer:SummaryWriter=None):
+    ranker.to(ranker.encoder.device)
+    print('device:', ranker.encoder.device)
     optimizer = optim.Adam(ranker.parameters())
     loss_fun = nn.MarginRankingLoss(0.1)
     ranker.train()
@@ -53,7 +55,9 @@ def train(ranker: MPNranker, bg: BatchGenerator, epochs=2,
             ranker.zero_grad()
             pred = ranker([x[0].tolist(), x[1].tolist()])
             y[y == 0] = -1
-            loss = (loss_fun(*pred, torch.Tensor([y]).transpose(0, 1)) * torch.Tensor(weights)).sum() / bg.batch_size
+            y = torch.Tensor([y]).to(ranker.encoder.device)
+            weights = torch.Tensor(weights).to(ranker.encoder.device)
+            loss = (loss_fun(*pred, y.transpose(0, 1)) * weights).sum() / bg.batch_size
             loss_sum += loss.detach().item()
             iter_count += 1
             loss.backward()
@@ -69,8 +73,10 @@ def train(ranker: MPNranker, bg: BatchGenerator, epochs=2,
                 for x, y, weights in val_g:
                     val_preds = ranker([x[0].tolist(), x[1].tolist()])
                     y[y == 0] = -1
-                    val_loss_sum += (loss_fun(*val_preds, torch.Tensor([y]).transpose(0, 1))
-                                     * torch.Tensor(weights)).sum().detach().item() / val_g.batch_size
+                    y = torch.Tensor([y]).to(ranker.encoder.device)
+                    weights = torch.Tensor(weights).to(ranker.encoder.device)
+                    val_loss_sum += (loss_fun(*val_preds, y.transpose(0, 1))
+                                     * weights).sum().detach().item() / val_g.batch_size
                 val_writer.add_scalar('loss', val_loss_sum / iter_count, iter_count)
                 ranker.train()
         ranker.eval()
