@@ -12,7 +12,7 @@ import os
 import re
 from classyfire import get_onehot, get_binary
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Optional, List
 
 from features import features
 
@@ -176,12 +176,12 @@ class Data:
     classes_l_thr: float = 0.005
     classes_u_thr: float = 0.025
     use_usp_codes: bool = False
-    custom_features: list[str] = field(default_factory=list)
+    custom_features: List[str] = field(default_factory=list)
     use_hsm: bool = False
     hsm_data: str = '/home/fleming/Documents/Projects/RtPredTrainingData/resources/hsm_database/hsm_database.txt'
     custom_column_fields: Optional[list] = None
     columns_remove_na: bool = True
-    hsm_fields: list[str] = field(default_factory=lambda: ['H', 'S*', 'A', 'B', 'C (pH 2.8)', 'C (pH 7.0)'])
+    hsm_fields: List[str] = field(default_factory=lambda: ['H', 'S*', 'A', 'B', 'C (pH 2.8)', 'C (pH 7.0)'])
 
     def __post_init__(self):
         self.x_features = None

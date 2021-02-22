@@ -150,7 +150,7 @@ if __name__ == '__main__':
     else:
         raise Exception(f'input {args.input} not supported')
     data.compute_features(**parse_feature_spec(args.type), n_thr=args.num_features, verbose=args.verbose,
-                          add_descs=args.add_descs)
+                          add_descs=args.add_descs, add_desc_file=args.add_desc_file)
     if (args.cache_file is not None and features.write_cache):
         if (args.verbose):
             print('writing cache, don\'t interrupt!!')
@@ -256,7 +256,8 @@ if __name__ == '__main__':
             if (len(d.df) == 0):
                 print(f'no data left for {ds}')
                 continue
-            d.compute_features(mode=parse_feature_spec(args.type), n_thr=args.num_features, verbose=args.verbose)
+            d.compute_features(mode=parse_feature_spec(args.type), n_thr=args.num_features, verbose=args.verbose,
+                               add_descs=args.add_descs, add_desc_file=args.add_desc_file)
             if args.debug_onehot_sys:
                 d.compute_system_information(True, sorted_dataset_ids, use_usp_codes=args.usp_codes)
             d.split_data()

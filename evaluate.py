@@ -1,10 +1,7 @@
 from itertools import combinations
 import pandas as pd
 import numpy as np
-import matplotlib.pyplot as plt
-from pygam import LinearGAM
 from PIL import Image
-from matplotlib.offsetbox import OffsetImage, AnnotationBbox
 from rdkit.Chem.Draw import MolToImage
 from rdkit.Chem import MolFromSmiles
 from keras import backend as K
@@ -67,6 +64,7 @@ def rt_roi_diffs(data, y, preds, k=3):
     - increment outl[x], outl[y]
     - at the end return k u_i's with highest outl[u_i]
     """
+    from pygam import LinearGAM
     assert len(y) == len(preds)
     scale_roi = max(preds) - min(preds)
     scale_rt = max(y) - min(y)
@@ -91,6 +89,8 @@ def rt_roi_diffs(data, y, preds, k=3):
     return df
 
 def visualize_df(df):
+    import matplotlib.pyplot as plt
+    from matplotlib.offsetbox import OffsetImage, AnnotationBbox
     fig = plt.figure()
     ax = fig.add_subplot(111)
     points = ax.scatter(df.rt, df.roi, c=df.diffs, cmap='coolwarm')
@@ -332,6 +332,7 @@ if __name__ == '__main__':
             if False:       # plotting
                 matches_df.drop('total').sort_values(by='acc_without_diff', ascending=False)[
                     ['acc_without_diff', 'class_perc', 'class_perc_train']].plot(rot=20)
+                import matplotlib.pyplot as plt
                 plt.tight_layout()
                 plt.show()
         if (args.test_stats):
