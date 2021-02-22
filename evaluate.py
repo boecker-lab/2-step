@@ -196,7 +196,7 @@ def parse_arguments(args=None):
     parser.add_argument('--isomeric', action='store_true', help=' ')
     parser.add_argument('--repo_root_folder', default='/home/fleming/Documents/Projects/RtPredTrainingData/',
                         help='location of the dataset github repository')
-    parser.add_argument('--add_desc_file', default='/home/fleming/Documents/Projects/RtPredTrainingData/',
+    parser.add_argument('--add_desc_file', default='/home/fleming/Documents/Projects/rtranknet/data/qm_merged.csv',
                         help='csv with additional features with smiles as identifier')
     parser.add_argument('-v', '--verbose', action='store_true')
     parser.add_argument('--no_bar', action='store_true', help='no progress-bar')
@@ -233,6 +233,7 @@ if __name__ == '__main__':
     config = json.load(open(os.path.join(args.model, 'assets', 'config.json')))
     features_type = parse_feature_spec(config['args']['type'])['mode']
     features_add = config['args']['add_descs']
+    n_thr = config['args']['num_features']
 
     # load cached descriptors
     if (args.cache_file is not None):
@@ -292,7 +293,7 @@ if __name__ == '__main__':
             print(f'too few compounds ({len(d.df)}), skipping ...')
             continue
         d.compute_features(verbose=args.verbose, mode=features_type, add_descs=features_add,
-                           add_desc_file=args.add_desc_file)
+                           add_desc_file=args.add_desc_file, n_thr=n_thr)
         # if args.debug_onehot_sys:
         #     d.compute_system_information(True, config['training_sets'], use_usp_codes=data.usp_codes)
         d.split_data()

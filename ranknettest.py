@@ -1,5 +1,8 @@
 from features import features
 from utils import Data
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
 
 def test_features():
     smiles = ['C1CC(=O)N[C@@H]1C(=O)O',
@@ -56,3 +59,17 @@ def test_features():
 def test_data_csv():
     csvfile = '/home/fleming/Documents/Projects/rtranknet/data/metlin_retention_times.csv'
     data = Data.from_raw_file(csvfile)
+
+def test_void_est():
+    from glob import glob
+    from utils import naive_void_est
+    rtdata = glob('/home/fleming/Documents/Projects/RtPredTrainingData/processed_data/*/*_rtdata_canonical_success.txt')
+    nrows = len(rtdata) // 2
+    fig, axes = plt.subplots(nrows, 2, figsize=(12, 22))
+    for f, ax in zip(rtdata, axes.ravel()):
+        df = pd.read_csv(f, sep='\t', index_col=0)
+        index = np.arange(0, len(df))
+        void_i = [rt for rt in sorted(df.rt) if rt >= naive_void_est(df)][0]
+        ax.plot(index, sorted(df.rt))
+        ax.axvline(void_i)
+    plt.savefig('void.pdf')

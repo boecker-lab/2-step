@@ -2,30 +2,33 @@ import obonet
 import networkx
 import numpy as np
 
-graph = obonet.read_obo('ChemOnt_2_1.obo')
-encodings = {}
-for node in graph.nodes:
-    rank = len(networkx.descendants(graph, node)) - 1
-    encodings.setdefault(rank, {})[node] = len(
-        encodings[rank]) if rank in encodings else 0
+def get_encodings_():
+    graph = obonet.read_obo('ChemOnt_2_1.obo')
+    encodings = {}
+    for node in graph.nodes:
+        rank = len(networkx.descendants(graph, node)) - 1
+        encodings.setdefault(rank, {})[node] = len(
+            encodings[rank]) if rank in encodings else 0
+    return encodings
 
 
-id_to_name = {id_: data.get('name') for id_, data in graph.nodes(data=True)}
-name_to_id = {data['name']: id_ for id_,
-              data in graph.nodes(data=True) if 'name' in data}
+# id_to_name = {id_: data.get('name') for id_, data in graph.nodes(data=True)}
+# name_to_id = {data['name']: id_ for id_,
+#               data in graph.nodes(data=True) if 'name' in data}
 
 
 def get_onehot(oid, rank=None):
-    global encodings
+    if (not hasattr(get_onehot, 'encodings')):
+        get_onehot.encodings = get_encodings_()
     if rank is None:
-        for r in encodings:
-            if oid in encodings[r]:
+        for r in get_onehot.encodings:
+            if oid in get_onehot.encodings[r]:
                 rank = r
         if (rank is None):
             raise Exception('rank not found!')
-    return (np.eye(len(encodings[rank]))[encodings[rank][oid]]
-            if (oid in encodings[rank])
-            else np.zeros((len(encodings[rank]), )))
+    return (np.eye(len(get_onehot.encodings[rank]))[get_onehot.encodings[rank][oid]]
+            if (oid in get_onehot.encodings[rank])
+            else np.zeros((len(get_onehot.encodings[rank]), )))
 
 def get_binary(oid, l_thr=0.005, u_thr=0.25):
     if not hasattr(get_binary, 'occs'):
@@ -37,4 +40,3 @@ def get_binary(oid, l_thr=0.005, u_thr=0.25):
         return (get_binary.classes_m[get_binary.classes.index(oid)] if oid in get_binary.classes
                 else get_binary.zeros)
     return np.array([c in oid for c in get_binary.classes]).astype(np.float)
-    

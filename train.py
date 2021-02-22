@@ -28,7 +28,7 @@ def parse_arguments(args=None):
                         nargs='+')
     parser.add_argument('-t', '--type', help='type of features',
                         default='rdk',
-                        choices=['rdkall', 'rdk2d', 'rdk3d']
+                        choices=['None', 'rdkall', 'rdk2d', 'rdk3d']
                         + [f'ae{i}{j}' for i, j in product(range(2), range(3))])
     parser.add_argument('-f', '--features', default=[], help='custom features',
                         nargs='+')
@@ -150,7 +150,7 @@ if __name__ == '__main__':
     else:
         raise Exception(f'input {args.input} not supported')
     data.compute_features(**parse_feature_spec(args.type), n_thr=args.num_features, verbose=args.verbose,
-                          add_descs=args.add_descs)
+                          add_descs=args.add_descs, add_desc_file=args.add_desc_file)
     if (args.cache_file is not None and features.write_cache):
         if (args.verbose):
             print('writing cache, don\'t interrupt!!')

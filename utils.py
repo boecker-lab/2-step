@@ -37,7 +37,7 @@ def csr2tf(csr):
 class BatchGenerator(tf.keras.utils.Sequence):
     def __init__(self, x, y, batch_size=32, shuffle=True, delta=1,
                  pair_step=1, pair_stop=None, use_weights=True,
-                 weight_steep=4, weight_mid=0.75):
+                 weight_steep=4, weight_mid=0.75, void=None):
         self.x = x
         self.y = y
         self.delta = delta
@@ -46,6 +46,7 @@ class BatchGenerator(tf.keras.utils.Sequence):
         self.weight_mid = weight_mid
         self.pair_step = pair_step
         self.pair_stop = pair_stop
+        self.void = void
         self.x1_indices, self.x2_indices, self.y_trans, self.weights = self._transform_pairwise(
             x, y)
         if (shuffle):
@@ -73,6 +74,11 @@ class BatchGenerator(tf.keras.utils.Sequence):
                 # if (np.abs(self.y[i] - self.y[j]) <= self.delta):
                 #     continue
                 pos_idx, neg_idx = (i, j) if y[i] > y[j] else (j, i)
+                # void
+                if (self.void is not None and y[i] < self.void
+                    and y[j] < self.void):
+                    # don't take pairs where both compounds are in void volume
+                    continue
                 # balanced class
                 if 1 != (-1)**(pos_idx + neg_idx):
                     x1_indices.append(pos_idx)
@@ -104,6 +110,9 @@ class BatchGenerator(tf.keras.utils.Sequence):
         # )  # possibly prevents getting stuck at *some* local minima
         return [X1_trans,
                 X2_trans], self.y_trans[i:(i + self.batch_size)], self.weights[i:(i + self.batch_size)]
+
+    def get_df(self, x_desc='features'):
+        return pd.DataFrame({x_desc: self.x, 'rt': self.y})
 
 def get_column_scaling(cols):
     if (not hasattr(get_column_scaling, '_data')):
@@ -480,3 +489,9 @@ def export_predictions(data, preds, out, mode='all'):
         raise NotImplementedError(mode)
     df['roi'] = preds
     df[['smiles', 'rt', 'roi']].to_csv(out, sep='\t', index=False, header=False)
+
+def naive_void_est(df, perc_mean=1):
+    sorted_df = df.sort_values(by='rt')
+    x = sorted_df.rt.values - np.concatenate([sorted_df.rt.values[:1], sorted_df.rt.values])[:-1]
+    i = max(0, (x < (np.mean(x) * perc_mean)).argmin(0))
+    return sorted_df.rt.iloc[i]
