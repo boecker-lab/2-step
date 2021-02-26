@@ -17,10 +17,12 @@ if __name__ == '__main__':
         # '/home/fleming/Documents/Projects/chemprop/tmp/all_smrt_test.csv',
         sys.argv[2],
         names=['smiles', 'rt'], header=0)
-    batch_size = 8192
+    # batch_size = 16384
+    batch_size = 4096
 
     writer = SummaryWriter(comment='_train'); val_writer = SummaryWriter(comment='_val')
     train_df = train_set.iloc[:70_000].sample(70_000)
+    # train_df = train_set.iloc[:70_000].sample(100)
     val_df = train_set.iloc[70_000:].loc[train_set.rt > 8].sample(1000)
     print('computing mol graphs...')
     train_df['graphs'] = [mol2graph([s]) for s in train_df.smiles]
@@ -35,10 +37,11 @@ if __name__ == '__main__':
                            void=8)
     ranker = MPNranker()
     print('done. Starting training')
-    train(ranker, bg, 4, writer, val_g, val_writer=val_writer)
-    train_acc, val_acc, test_acc = (predict(train_df, ranker),
-                                    predict(val_df, ranker),
-                                    predict(test_set, ranker))
+    train(ranker, bg, 3, writer, val_g, val_writer=val_writer,
+          steps_train_loss=30, steps_val_loss=60, batch_size=batch_size)
+    train_acc, val_acc, test_acc = (predict(train_df, ranker, batch_size=batch_size),
+                                    predict(val_df, ranker, batch_size=batch_size),
+                                    predict(test_set, ranker, batch_size=batch_size))
     print(f'{train_acc=:.2%}, {val_acc=:.2%}, {test_acc=:.2%}')
     writer.export_scalars_to_json('./all_scalars.json')
     writer.close(); val_writer.close()
