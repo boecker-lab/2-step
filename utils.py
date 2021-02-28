@@ -37,7 +37,8 @@ def csr2tf(csr):
 class BatchGenerator(tf.keras.utils.Sequence):
     def __init__(self, x, y, batch_size=32, shuffle=True, delta=1,
                  pair_step=1, pair_stop=None, use_weights=True,
-                 weight_steep=4, weight_mid=0.75, void=None):
+                 weight_steep=4, weight_mid=0.75, void=None,
+                 y_neg=False):
         self.x = x
         self.y = y
         self.delta = delta
@@ -47,6 +48,7 @@ class BatchGenerator(tf.keras.utils.Sequence):
         self.pair_step = pair_step
         self.pair_stop = pair_stop
         self.void = void
+        self.y_neg = y_neg
         self.x1_indices, self.x2_indices, self.y_trans, self.weights = self._transform_pairwise(
             x, y)
         if (shuffle):
@@ -87,7 +89,7 @@ class BatchGenerator(tf.keras.utils.Sequence):
                 else:
                     x1_indices.append(neg_idx)
                     x2_indices.append(pos_idx)
-                    y_trans.append(0)
+                    y_trans.append(-1 if self.y_neg else 0)
                 weights.append(self.weight_fn(y[pos_idx] - y[neg_idx],
                                               self.weight_steep, self.weight_mid)
                                if self.use_weights else 1)
@@ -105,9 +107,6 @@ class BatchGenerator(tf.keras.utils.Sequence):
             # convert to sparse TF tensor
             X1_trans = csr2tf(X1_trans)
             X2_trans = csr2tf(X2_trans)
-        # weights = np.asarray(
-        #     [1] * X1_trans.shape[0]
-        # )  # possibly prevents getting stuck at *some* local minima
         return [X1_trans,
                 X2_trans], self.y_trans[i:(i + self.batch_size)], self.weights[i:(i + self.batch_size)]
 
