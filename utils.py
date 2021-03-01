@@ -12,7 +12,7 @@ import os
 import re
 from classyfire import get_onehot, get_binary
 from dataclasses import dataclass, field
-from typing import Optional, List
+from typing import Optional, List, Tuple, Union
 
 from features import features
 
@@ -38,10 +38,11 @@ class BatchGenerator(tf.keras.utils.Sequence):
     def __init__(self, x, y, batch_size=32, shuffle=True, delta=1,
                  pair_step=1, pair_stop=None, use_weights=True,
                  weight_steep=4, weight_mid=0.75, void=None,
-                 y_neg=False):
+                 y_neg=False, multix=False):
         self.x = x
         self.y = y
         self.delta = delta
+        self.multix = multix
         self.use_weights = use_weights
         self.weight_steep = weight_steep
         self.weight_mid = weight_mid
@@ -101,8 +102,12 @@ class BatchGenerator(tf.keras.utils.Sequence):
 
     def __getitem__(self, index):
         i = index * self.batch_size
-        X1_trans = self.x[self.x1_indices[i:(i + self.batch_size)]]
-        X2_trans = self.x[self.x2_indices[i:(i + self.batch_size)]]
+        if (self.multix):
+            X1_trans = [xi[self.x1_indices[i:(i + self.batch_size)]] for xi in self.x]
+            X2_trans = [xi[self.x2_indices[i:(i + self.batch_size)]] for xi in self.x]
+        else:
+            X1_trans = self.x[self.x1_indices[i:(i + self.batch_size)]]
+            X2_trans = self.x[self.x2_indices[i:(i + self.batch_size)]]
         if (issparse(X1_trans)):
             # convert to sparse TF tensor
             X1_trans = csr2tf(X1_trans)
@@ -134,20 +139,16 @@ def get_column_scaling(cols):
     return (np.array([get_column_scaling._data[c]['mean'] for c in cols]),
             np.array([get_column_scaling._data[c]['std'] for c in cols]))
 
-def split_arrays(x, y, sizes: tuple):
-    assert x.shape[0] == len(y)
-    (train_x, test_x, train_y, test_y,
-     train_indices, test_indices) = train_test_split(x,
-                                                     y,
-                                                     np.arange(x.shape[0]),
-                                                     test_size=sizes[0])
-    train_x, val_x, train_y, val_y, train_indices, val_indices = train_test_split(train_x,
-                                                                      train_y,
-                                                                      train_indices,
-                                                                      test_size=sizes[1])
-    return (train_x, train_y), (val_x, val_y), (test_x, test_y), (
-        train_indices, val_indices, test_indices)
-
+def split_arrays(arrays, sizes: tuple):
+    for a in arrays:            # all same shape
+        assert len(a) == len(arrays[0])
+    indices = np.arange(len(arrays[0]))
+    train_indices, test_indices = train_test_split(indices, test_size=sizes[0])
+    train_indices, val_indices = train_test_split(train_indices, test_size=sizes[1])
+    return ([a[train_indices] for a in arrays],
+            [a[val_indices] for a in arrays],
+            [a[test_indices] for a in arrays],
+            (train_indices, val_indices, test_indices))
 
 def reduce_features(values, r_squared_thr=0.96, std_thr=0.01, verbose=True):
     df = pd.DataFrame(values)
@@ -190,9 +191,11 @@ class Data:
     custom_column_fields: Optional[list] = None
     columns_remove_na: bool = True
     hsm_fields: List[str] = field(default_factory=lambda: ['H', 'S*', 'A', 'B', 'C (pH 2.8)', 'C (pH 7.0)'])
+    graph_mode: bool = False
 
     def __post_init__(self):
         self.x_features = None
+        self.graphs = None
         self.x_classes = None
         self.x_info = None
         self.train_x = None
@@ -239,6 +242,11 @@ class Data:
               f'{(np.diff(self.info_indices) + 1) if self.info_indices is not None else 0} column features, '
               f'{(np.diff(self.classes_indices) + 1) if self.classes_indices is not None else 0} molecule class features')
         return xs
+
+    def get_graphs(self):
+        if (self.graphs is None):
+            self.compute_graphs()
+        return self.graphs
 
     def add_dataset_id(self, dataset_id,
                        repo_root_folder='/home/fleming/Documents/Projects/RtPredTrainingData/',
@@ -313,6 +321,11 @@ class Data:
             self.x_features, self.y = loaded
         else:
             raise Exception('could not load cache!')
+
+    def compute_graphs(self):
+        # TODO: compute only unique smiles + multithreaded
+        from chemprop.features import mol2graph
+        self.graphs = np.array([mol2graph([s]) for s in self.df.smiles])
 
     def compute_features(self,
                          filter_features=None,
@@ -434,6 +447,9 @@ class Data:
             raise Exception('feature standardization should only be applied '
                             'after data splitting')
         # standardize data, but only `features`, NaNs can be transformed to 0
+        if (self.features_indices[1] - self.features_indices[0] + 1) == 0:
+            # no features, don't do anything
+            return
         if (other_scaler is None):
             scaler = StandardScaler()
             scaler.fit(self.train_x[:, :self.features_indices[1]+1])
@@ -461,22 +477,37 @@ class Data:
         self.test_x = np.delete(self.test_x, removed, axis=1)
 
     def split_data(self, split=(0.2, 0.05)):
-        ((self.train_x, self.train_y), (self.val_x, self.val_y),
-         (self.test_x, self.test_y),
-         (self.train_indices, self.val_indices, self.test_indices)) = split_arrays(
-             self.get_x(), self.get_y(), split)
+        if (self.graph_mode):
+            ((self.train_graphs, self.train_x, self.train_y),
+             (self.val_graphs, self.val_x, self.val_y),
+             (self.test_graphs, self.test_x, self.test_y),
+             (self.train_indices, self.val_indices, self.test_indices)) = split_arrays(
+                 (self.get_graphs(), self.get_x(), self.get_y()), split)
+        else:
+            ((self.train_x, self.train_y), (self.val_x, self.val_y),
+             (self.test_x, self.test_y),
+             (self.train_indices, self.val_indices, self.test_indices)) = split_arrays(
+                 (self.get_x(), self.get_y()), split)
 
     def get_raw_data(self):
-        return self.get_x(), self.get_y()
+        if (self.graph_mode):
+            return self.get_graphs(), self.get_x(), self.get_y()
+        else:
+            return self.get_x(), self.get_y()
 
     def get_split_data(self, split=(0.2, 0.05)):
         if ((any(d is None for d in [
                 self.train_x, self.train_y, self.val_x, self.val_y,
                 self.test_x, self.test_y
-        ]))):
+        ] + ([self.train_graphs, self.val_graphs, self.test_graphs] if self.graph_mode else [])))):
             self.split_data(split)
-        return ((self.train_x, self.train_y), (self.val_x, self.val_y),
-                (self.test_x, self.test_y))
+        if (self.graph_mode):
+            return ((self.train_graphs, self.train_x, self.train_y),
+                    (self.val_graphs, self.val_x, self.val_y),
+                    (self.test_graphs, self.test_x, self.test_y))
+        else:
+            return ((self.train_x, self.train_y), (self.val_x, self.val_y),
+                    (self.test_x, self.test_y))
 
 
 def export_predictions(data, preds, out, mode='all'):

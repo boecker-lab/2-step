@@ -144,7 +144,10 @@ def features(smiles, filter_='rdk', overwrite_cache=False, verbose=False,
         out, names = get_add_descs(smiles, add_desc_file=add_desc_file)
         out_arrays.append(out)
         out_names.extend(names)
-    out = np.concatenate(out_arrays, axis=1)
+    if (len(out_arrays) > 0):
+        out = np.concatenate(out_arrays, axis=1)
+    else:
+        out = np.array([]).reshape((len(smiles), 0))
     assert (out.shape[1] == len(out_names)), '#descriptor names ≠ #descriptors'
     print('features:', out_names)
     return out, out_names
