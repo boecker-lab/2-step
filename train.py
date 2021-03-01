@@ -71,6 +71,7 @@ class TrainArgs(Tap):
     repo_root_folder: str = '/home/fleming/Documents/Projects/RtPredTrainingData/'
     add_desc_file: str = '/home/fleming/Documents/Projects/RtPredTrainingData/'
     columns_hsm_data: str = '/home/fleming/Documents/Projects/RtPredTrainingData/resources/hsm_database/hsm_database.txt'
+    column_scale_data: str = '/home/fleming/Documents/Projects/rtdata_exploration/data/dataset_info_all.tsv'
     cache_file: str = 'cached_descs.pkl'
     # output control
     verbose: bool = False
@@ -116,6 +117,7 @@ if __name__ == '__main__':
                     classes_l_thr=args.classes_l_thr, classes_u_thr=args.classes_u_thr,
                     use_usp_codes=args.usp_codes, custom_features=args.features,
                     use_hsm=args.columns_use_hsm, hsm_data=args.columns_hsm_data,
+                    column_scale_data=args.column_scale_data,
                     custom_column_fields=args.custom_column_fields or None,
                     hsm_fields=args.hsm_fields, graph_mode=graphs)
         for did in args.input:
@@ -268,6 +270,7 @@ if __name__ == '__main__':
                      classes_l_thr=args.classes_l_thr, classes_u_thr=args.classes_u_thr,
                      use_usp_codes=args.usp_codes, custom_features=data.descriptors,
                      use_hsm=args.columns_use_hsm, hsm_data=args.columns_hsm_data,
+                     column_scale_data=args.column_scale_data,
                      custom_column_fields=data.custom_column_fields, columns_remove_na=False,
                      hsm_fields=args.hsm_fields)
             d.add_dataset_id(ds,

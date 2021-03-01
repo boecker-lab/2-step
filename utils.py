@@ -118,9 +118,9 @@ class BatchGenerator(tf.keras.utils.Sequence):
     def get_df(self, x_desc='features'):
         return pd.DataFrame({x_desc: self.x, 'rt': self.y})
 
-def get_column_scaling(cols):
+def get_column_scaling(cols, data_file='/home/fleming/Documents/Projects/rtdata_exploration/data/dataset_info_all.tsv'):
     if (not hasattr(get_column_scaling, '_data')):
-        ds = pd.read_csv('/home/fleming/Documents/Projects/rtdata_exploration/data/dataset_info_all.tsv',
+        ds = pd.read_csv(data_file,
                          sep='\t')
         info_columns = [c for c in ds.columns
                         if re.match(r'^(column|gradient|eluent)\..*', c)
@@ -188,6 +188,7 @@ class Data:
     custom_features: List[str] = field(default_factory=list)
     use_hsm: bool = False
     hsm_data: str = '/home/fleming/Documents/Projects/RtPredTrainingData/resources/hsm_database/hsm_database.txt'
+    column_scale_data: str = '/home/fleming/Documents/Projects/rtdata_exploration/data/dataset_info_all.tsv'
     custom_column_fields: Optional[list] = None
     columns_remove_na: bool = True
     hsm_fields: List[str] = field(default_factory=lambda: ['H', 'S*', 'A', 'B', 'C (pH 2.8)', 'C (pH 7.0)'])
@@ -228,6 +229,7 @@ class Data:
             self.compute_system_information(use_usp_codes=self.use_usp_codes,
                                             use_hsm=self.use_hsm,
                                             hsm_data=self.hsm_data,
+                                            column_scale_data=self.column_scale_data,
                                             custom_column_fields=self.custom_column_fields,
                                             remove_na=self.columns_remove_na,
                                             hsm_fields=self.hsm_fields)
@@ -385,6 +387,7 @@ class Data:
     def compute_system_information(self, onehot_ids=False, other_dataset_ids=None,
                                    use_usp_codes=False, use_hsm=False,
                                    hsm_data='/home/fleming/Documents/Projects/RtPredTrainingData/resources/hsm_database/hsm_database.txt',
+                                   column_scale_data='/home/fleming/Documents/Projects/rtdata_exploration/data/dataset_info_all.tsv',
                                    custom_column_fields=None, remove_na=True, drop_hsm_dups=True,
                                    hsm_fields=['H', 'S*', 'A', 'B', 'C (pH 2.8)', 'C (pH 7.0)']):
         global REL_COLUMNS
@@ -416,7 +419,7 @@ class Data:
             elif (len(na_columns) > 0):
                 print('WARNING: system data contains NA values, the option to remove these columns was disabled though! '
                       + ', '.join(na_columns))
-            means, scales = get_column_scaling(custom_column_fields)
+            means, scales = get_column_scaling(custom_column_fields, data_file=column_scale_data)
             fields.append((self.df[custom_column_fields].values - means) / scales)
             names.extend(custom_column_fields)
         else:
