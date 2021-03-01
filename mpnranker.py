@@ -60,12 +60,13 @@ def predict(x, ranker, batch_size=8192):
     ranker.eval()
     preds = []
     graphs, extra = x if len(x) == 2 else (x, None)
-    for i in range(np.ceil(len(graphs) / batch_size).astype(int)):
-        start = i * batch_size
-        end = i * batch_size + batch_size
-        preds.append(ranker(((graphs[start:end],
-                              extra[start:end] if extra is not None else None), )
-                            )[0].cpu().detach().numpy())
+    with torch.no_grad():
+        for i in range(np.ceil(len(graphs) / batch_size).astype(int)):
+            start = i * batch_size
+            end = i * batch_size + batch_size
+            preds.append(ranker(((graphs[start:end],
+                                  extra[start:end] if extra is not None else None), )
+                                )[0].cpu().detach().numpy())
     return np.concatenate(preds)
 
 def loss_step(ranker, x, y, weights, loss_fun):
@@ -125,7 +126,7 @@ def train(ranker: MPNranker, bg: BatchGenerator, epochs=2,
                         stop = True
                         break
                     val_pat += 1
-                    last_val_step = val_step
+                last_val_step = min(val_step, last_val_step)
                 ranker.train()
         ranker.eval()
         if writer is not None:

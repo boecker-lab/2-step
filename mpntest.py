@@ -19,8 +19,11 @@ if __name__ == '__main__':
         sys.argv[2],
         names=['smiles', 'rt'], header=0)
     # batch_size = 16384
+    batch_size = 256
     batch_size = int(sys.argv[3])
+    sigmoid = False
     sigmoid = sys.argv[4].lower() == 't'
+    margin = 0.1
     margin = float(sys.argv[5])
     if (len(sys.argv) > 6):
         name = sys.argv[6]
@@ -30,6 +33,10 @@ if __name__ == '__main__':
     train_df = train_set.iloc[:70_000].sample(70_000)
     # train_df = train_set.iloc[:70_000].sample(2000)
     val_df = train_set.iloc[70_000:].loc[train_set.rt > 8].sample(2000)
+    if (len(sys.argv) > 7):
+        hidden_units = list(map(int, sys.argv[7:]))
+    else:
+        hidden_units = []
     print('computing mol graphs...')
     train_df['graphs'] = [mol2graph([s]) for s in train_df.smiles]
     val_df['graphs'] = [mol2graph([s]) for s in val_df.smiles]
@@ -41,7 +48,8 @@ if __name__ == '__main__':
     val_g = BatchGenerator(val_df.graphs.values, val_df.rt.values,
                            pair_step=3, pair_stop=128, batch_size=batch_size,
                            void=8, y_neg=not sigmoid)
-    ranker = MPNranker(sigmoid=sigmoid)
+    ranker = MPNranker(sigmoid=sigmoid, extra_features_dim=0, hidden_units=hidden_units)
+    print(ranker)
     print('done. Starting training')
     train(ranker, bg, 5, writer, val_g, val_writer=val_writer,
           steps_train_loss=np.ceil(len(bg) / 100).astype(int),

@@ -1,4 +1,4 @@
-from features import features
+from features import features, parse_feature_spec
 from utils import Data
 import pandas as pd
 import numpy as np
@@ -73,3 +73,27 @@ def test_void_est():
         ax.plot(index, sorted(df.rt))
         ax.axvline(void_i)
     plt.savefig('void.pdf')
+
+def test_data():
+    for graphs in [True, False]:
+        data_g = Data(use_compound_classes=False, use_system_information=True,
+                      use_hsm=True, custom_column_fields=['column.length', 'column.id'],
+                      graph_mode=graphs)
+        dids = ["0016", "0045", "0071", "0072", "0073", "0074", "0075", "0076"]
+        for did in dids:
+            data_g.add_dataset_id(did, isomeric=True)
+        data_g.compute_features(**parse_feature_spec('none'))
+        if (graphs):
+            data_g.compute_graphs()
+        data_g.split_data((0.2, 0.05))
+        data_g.standardize()
+        if (graphs):
+            ((train_graphs, train_x, train_y), (val_graphs, val_x, val_y),
+             (test_graphs, test_x, test_y)) = data_g.get_split_data((0.2, 0.05))
+            print(', '.join(f'{a}: {eval(a).shape}' for a in [
+                'train_graphs', 'train_x', 'train_y', 'val_graphs', 'val_x', 'val_y',
+                'test_graphs', 'test_x', 'test_y']))
+        else:
+            ((train_x, train_y), (val_x, val_y), (test_x, test_y)) = data_g.get_split_data((0.2, 0.05))
+            print(', '.join(f'{a}: {eval(a).shape}' for a in [
+                'train_x', 'train_y', 'val_x', 'val_y', 'test_x', 'test_y']))
