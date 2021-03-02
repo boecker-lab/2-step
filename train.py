@@ -69,7 +69,7 @@ class TrainArgs(Tap):
     weight_mid: float = 0.75
     # data locations
     repo_root_folder: str = '/home/fleming/Documents/Projects/RtPredTrainingData/'
-    add_desc_file: str = '/home/fleming/Documents/Projects/RtPredTrainingData/'
+    add_desc_file: str = '/home/fleming/Documents/Projects/rtranknet/data/qm_merged.csv'
     columns_hsm_data: str = '/home/fleming/Documents/Projects/RtPredTrainingData/resources/hsm_database/hsm_database.txt'
     column_scale_data: str = '/home/fleming/Documents/Projects/rtdata_exploration/data/dataset_info_all.tsv'
     cache_file: str = 'cached_descs.pkl'
@@ -242,11 +242,11 @@ if __name__ == '__main__':
                   sigmoid_loss=(args.mpn_loss == 'bce'), margin_loss=args.mpn_margin,
                   early_stopping_patience=args.early_stopping_patience)
         if (args.save_data):
-            torch.save(ranker, 'run_name' + '.pt')
+            torch.save(ranker, run_name + '.pt')
             pickle.dump(data, open(os.path.join(f'{run_name}_data.pkl'), 'wb'))
-            json.dump({'train_sets': args.input, 'name': run_name},
+            json.dump({'train_sets': args.input, 'name': run_name,
+                       'args': args._log_all()},
                       open(f'{run_name}_config.json', 'w'), indent=2)
-            args.save(f'{run_name}_args.json')
         train_preds = mpn_predict((train_graphs, train_x), ranker, batch_size=args.batch_size)
         val_preds = mpn_predict((val_graphs, val_x), ranker, batch_size=args.batch_size)
         test_preds = mpn_predict((test_graphs, test_x), ranker, batch_size=args.batch_size)

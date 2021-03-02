@@ -11,6 +11,10 @@ import tensorflow as tf
 import pickle
 import json
 import re
+from tap import Tap
+from typing import List, Optional, Literal, Tuple, Union
+
+import torch
 
 from utils import REL_COLUMNS, Data, export_predictions
 from features import features, parse_feature_spec
@@ -183,55 +187,51 @@ def predict(X, model, batch_size):
         preds.append(ranker_output([x])[0].ravel())
     return np.concatenate(preds)
 
+class EvalArgs(Tap):
+    model: str # model to load
+    test_sets: List[str] # either CSV or dataset IDs to evaluate on
+    model_type: Literal['ranknet', 'mpn'] = 'ranknet'
+    batch_size: int = 256
+    isomeric: bool = False
+    repo_root_folder: str = '/home/fleming/Documents/Projects/RtPredTrainingData/' # location of the dataset github repository
+    add_desc_file: str = '/home/fleming/Documents/Projects/rtranknet/data/qm_merged.csv' # csv with additional features with smiles as identifier
+    verbose: bool = False
+    no_progbar: bool = False # no progress-bar
+    void_rt: float = 0.0
+    cache_file: str = 'cached_descs.pkl'
+    export_rois: bool = False
+    device: Optional[str] = None # can be `mirrored`, a specific device name like `gpu:1` or `None` which automatically selects an option
+    epsilon: float = 0.5 # difference in evaluation measure below which to ignore falsely predicted pairs
+    columns_hsm_data: str = '/home/fleming/Documents/Projects/RtPredTrainingData/resources/hsm_database/hsm_database.txt'
+    column_scale_data: str = '/home/fleming/Documents/Projects/rtdata_exploration/data/dataset_info_all.tsv'
+    remove_train_compounds: bool = False
+    remove_train_compounds_mode: Literal['all', 'column', 'print'] = 'all'
+    plot_diffs: bool = False
+    test_stats: bool = False
+    diffs: bool = False
+    classyfire: bool = False
 
-def parse_arguments(args=None):
-    parser = argparse.ArgumentParser(
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
-        description='Retention Order index prediction')
-    parser.add_argument('model', help='model (folder) to use')
-    parser.add_argument('test_sets', help='Either CSV or dataset IDs',
-                        nargs='+')
-    parser.add_argument('-b', '--batch_size', default=1024, type=int,
-                        help=' ')
-    parser.add_argument('--isomeric', action='store_true', help=' ')
-    parser.add_argument('--repo_root_folder', default='/home/fleming/Documents/Projects/RtPredTrainingData/',
-                        help='location of the dataset github repository')
-    parser.add_argument('--add_desc_file', default='/home/fleming/Documents/Projects/rtranknet/data/qm_merged.csv',
-                        help='csv with additional features with smiles as identifier')
-    parser.add_argument('-v', '--verbose', action='store_true')
-    parser.add_argument('--no_bar', action='store_true', help='no progress-bar')
-    parser.add_argument('--void_rt', default=0.0, type=float, help=' ')
-    parser.add_argument('--cache_file', default='cached_descs.pkl', help=' ')
-    parser.add_argument('--export_rois', action='store_true', help=' ')
-    parser.add_argument('--device', default=None,
-                        help='can be `mirrored`, a specific device name like `gpu:1` '
-                        'or `None` which automatically selects an option')
-    parser.add_argument('--epsilon', type=float, default=1.,
-                        help='difference in evaluation measure below which to ignore falsely predicted pairs')
-    parser.add_argument('--columns_hsm_data', default=
-                        '/home/fleming/Documents/Projects/RtPredTrainingData/resources/hsm_database/hsm_database.txt',
-                        help=' ')
-    parser.add_argument('--remove_train_compounds', action='store_true', help=' ')
-    parser.add_argument('--remove_train_compounds_mode', default='all',
-                        choices=['all', 'column', 'print'], help=' ')
-    parser.add_argument('--plot_diffs', action='store_true', help=' ')
-    parser.add_argument('--test_stats', action='store_true', help=' ')
-    parser.add_argument('--diffs', action='store_true', help=' ')
-    parser.add_argument('--classyfire', action='store_true', help=' ')
-    return parser.parse_args() if args is None else parser.parse_args(args)
+def load_model(path: str, type_='keras'):
+    if (type_ == 'keras'):
+        model = tf.keras.models.load_model(path)
+        data = pickle.load(open(os.path.join(path, 'assets', 'data.pkl'), 'rb'))
+        config = json.load(open(os.path.join(path, 'assets', 'config.json')))
+    else:
+        model = torch.load(path + '.pt')
+        data = pickle.load(open(f'{path}_data.pkl', 'rb'))
+        config = json.load(open(f'{path}_config.json'))
+    return model, data, config
 
 
 if __name__ == '__main__':
     if '__file__' in globals():
-        args = parse_arguments()
+        args = EvalArgs().parse_args()
     else:
-        args = parse_arguments('hsm_new.tf 0004 --test_stats'.split())
+        args = EvalArgs().parse_args('hsm_new.tf 0004 --test_stats'.split())
 
     # load model
-    model = tf.keras.models.load_model(args.model)
-    data = pickle.load(open(os.path.join(args.model, 'assets', 'data.pkl'), 'rb'))
-    config = json.load(open(os.path.join(args.model, 'assets', 'config.json')))
-    features_type = parse_feature_spec(config['args']['type'])['mode']
+    model, data, config = load_model(args.model, args.model_type)
+    features_type = parse_feature_spec(config['args']['feature_type'])['mode']
     features_add = config['args']['add_descs']
     n_thr = config['args']['num_features']
 
@@ -261,10 +261,12 @@ if __name__ == '__main__':
                      use_usp_codes=data.use_usp_codes,
                      custom_features=data.descriptors,
                      use_hsm=data.use_hsm,
-                     hsm_data=data.hsm_data,
+                     hsm_data=args.columns_hsm_data,
+                     column_scale_data=args.column_scale_data,
                      custom_column_fields=data.custom_column_fields,
                      columns_remove_na=False,
-                     hsm_fields=data.hsm_fields)
+                     hsm_fields=data.hsm_fields,
+                     graph_mode=args.model_type == 'mpn')
             d.add_dataset_id(ds,
                              repo_root_folder=args.repo_root_folder,
                              void_rt=args.void_rt,
@@ -294,15 +296,24 @@ if __name__ == '__main__':
             continue
         d.compute_features(verbose=args.verbose, mode=features_type, add_descs=features_add,
                            add_desc_file=args.add_desc_file, n_thr=n_thr)
-        # if args.debug_onehot_sys:
-        #     d.compute_system_information(True, config['training_sets'], use_usp_codes=data.usp_codes)
+        if (args.model_type == 'mpn'):
+            d.compute_graphs()
         d.split_data()
         if (hasattr(data, 'scaler')):
             d.standardize(data.scaler)
-        (train_x, train_y), (val_x, val_y), (test_x, test_y) = d.get_split_data()
-        X = np.concatenate((train_x, test_x, val_x))
-        Y = np.concatenate((train_y, test_y, val_y))
-        preds = predict(X, model, args.batch_size)
+        if (args.model_type == 'mpn'):
+            from mpnranker import predict as mpn_predict
+            ((train_graphs, train_x, train_y), (val_graphs, val_x, val_y),
+             (test_graphs, test_x, test_y)) = d.get_split_data()
+            graphs = np.concatenate((train_graphs, test_graphs, val_graphs))
+            X = torch.as_tensor(np.concatenate((train_x, test_x, val_x))).float()
+            Y = torch.as_tensor(np.concatenate((train_y, test_y, val_y))).float()
+            preds = mpn_predict((graphs, X), model, batch_size=args.batch_size)
+        else:
+            (train_x, train_y), (val_x, val_y), (test_x, test_y) = d.get_split_data()
+            X = np.concatenate((train_x, test_x, val_x))
+            Y = np.concatenate((train_y, test_y, val_y))
+            preds = predict(X, model, args.batch_size)
         acc = eval_(Y, preds, args.epsilon)
         d.df['roi'] = preds[np.arange(len(d.df.rt))[ # restore correct order
             np.argsort(np.concatenate([d.train_indices, d.test_indices, d.val_indices]))]]
