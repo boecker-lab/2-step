@@ -13,6 +13,7 @@ import re
 from classyfire import get_onehot, get_binary
 from dataclasses import dataclass, field
 from typing import Optional, List, Tuple, Union
+from logging import warning
 
 from features import features
 
@@ -214,115 +215,6 @@ class Data:
         self.datasets_df = None
         self.descriptors = None
 
-    def get_y(self):
-        return np.array(self.df.rt)
-
-    def get_x(self):
-        if (self.x_features is None):
-            self.compute_features()
-        self.features_indices = [0, self.x_features.shape[1] - 1]
-        if (not self.use_compound_classes and not self.use_system_information):
-            return self.x_features
-        if (self.use_compound_classes and self.x_classes is None):
-            self.compute_classes()
-        if (self.use_system_information and self.x_info is None):
-            self.compute_system_information(use_usp_codes=self.use_usp_codes,
-                                            use_hsm=self.use_hsm,
-                                            hsm_data=self.hsm_data,
-                                            column_scale_data=self.column_scale_data,
-                                            custom_column_fields=self.custom_column_fields,
-                                            remove_na=self.columns_remove_na,
-                                            hsm_fields=self.hsm_fields)
-        xs = np.concatenate(list(filter(lambda x: x is not None, (self.x_features, self.x_info, self.x_classes))),
-                            axis=1)
-        self.info_indices = ([self.features_indices[-1] + 1,
-                                self.features_indices[-1] + self.x_info.shape[1]]
-                                if self.use_system_information else None)
-        self.classes_indices = ([xs.shape[1] - self.x_classes.shape[1], xs.shape[1] - 1]
-                             if self.use_compound_classes else None)
-        print(f'{np.diff(self.features_indices) + 1} molecule features, '
-              f'{(np.diff(self.info_indices) + 1) if self.info_indices is not None else 0} column features, '
-              f'{(np.diff(self.classes_indices) + 1) if self.classes_indices is not None else 0} molecule class features')
-        return xs
-
-    def get_graphs(self):
-        if (self.graphs is None):
-            self.compute_graphs()
-        return self.graphs
-
-    def add_dataset_id(self, dataset_id,
-                       repo_root_folder='/home/fleming/Documents/Projects/RtPredTrainingData/',
-                       void_rt=0.0, isomeric=True):
-        f = os.path.join(repo_root_folder, 'processed_data', dataset_id,
-                         f'{dataset_id}_rtdata_canonical_success.txt')
-        df = pd.read_csv(f, sep='\t')
-        df.set_index('id', inplace=True, drop=False)
-        if (isomeric):
-            f_iso = os.path.join(repo_root_folder, 'processed_data', dataset_id,
-                             f'{dataset_id}_rtdata_isomeric_success.txt')
-            df_iso = pd.read_csv(f_iso, sep='\t')
-            df_iso.set_index('id', inplace=True, drop=False)
-            df.update(df_iso)
-        df.file = f
-        df['dataset_id'] = df.id.str.split('_', expand=True)[0]
-        if self.use_system_information:
-            # only numeric values from metadata
-            column_information = pd.read_csv(os.path.join(
-                repo_root_folder, 'processed_data', dataset_id,
-                f'{dataset_id}_metadata.txt'),
-                sep='\t')
-            column_information['dataset_id'] = [str(x).rjust(4, '0') for x in column_information['id']]
-            del column_information['id']
-            df = df.merge(column_information, on='dataset_id')
-            # if (self.datasets_df is None):
-            #     self.datasets_df = pd.read_csv(
-            #         os.path.join(repo_root_folder, 'raw_data', 'studies.txt'), sep='\t')
-            # df = df.join(pd.concat())
-        # rows without RT data are useless
-        df = df[~pd.isna(df.rt)]
-        # filter rows below void RT threshold
-        df = df.loc[~(df.rt < void_rt)]
-        if (self.df is None):
-            self.df = df
-        else:
-            self.df = self.df.append(df, ignore_index=True)
-        self.df['smiles'] = self.df['smiles.std']
-
-    @staticmethod
-    def from_raw_file(f, header=None, void_rt=0.0):
-        df = pd.read_csv(f, sep='\t', header=header)
-        df.file = f
-        if (header is None):
-            if (len(df.columns) == 3):
-                # minimal case
-                df.columns = ['inchikey', 'smiles', 'rt']
-            else:
-                raise NotImplementedError(
-                    f'raw file with {len(df.columns)} columns')
-        # rows without RT data are useless
-        df = df[~pd.isna(df.rt)]
-        # filter rows below void RT threshold
-        df = df.loc[~(df.rt < void_rt)]
-        return Data(df=df)
-
-    def balance(self):
-        if ('dataset_id' not in self.df.columns):
-            raise Exception('cannot balance without Dataset ID')
-        g = self.df.groupby('dataset_id')
-        df = g.apply(lambda x: x.sample(g.size().min()).reset_index(drop=True))
-        self.heldout = pd.DataFrame(self.df.loc[~self.df.id.isin(df.id)])
-        self.df = df
-
-    def features_from_cache(self, cache_file):
-        loaded = pickle.load(open(cache_file, 'rb'))
-        if (len(loaded) == 3 and isinstance(loaded[0][0], np.ndarray)
-                and len(loaded[0][0].shape) > 1):
-            ((self.train_x, self.train_y), (self.val_x, self.val_y),
-             (self.test_x, self.test_y)) = loaded
-        elif (len(loaded) == 2 and isinstance(loaded[0], np.ndarray)):
-            self.x_features, self.y = loaded
-        else:
-            raise Exception('could not load cache!')
 
     def compute_graphs(self):
         # TODO: compute only unique smiles + multithreaded
@@ -444,6 +336,125 @@ class Data:
         np.savetxt('/tmp/sys_array.txt', np.concatenate(fields, axis=1), fmt='%.2f')
         self.x_info = np.concatenate(fields, axis=1)
         self.custom_column_fields = names
+
+    def get_y(self):
+        return np.array(self.df.rt)
+
+    def get_x(self):
+        if (self.x_features is None):
+            self.compute_features()
+        self.features_indices = [0, self.x_features.shape[1] - 1]
+        if (not self.use_compound_classes and not self.use_system_information):
+            return self.x_features
+        if (self.use_compound_classes and self.x_classes is None):
+            self.compute_classes()
+        if (self.use_system_information and self.x_info is None):
+            self.compute_system_information(use_usp_codes=self.use_usp_codes,
+                                            use_hsm=self.use_hsm,
+                                            hsm_data=self.hsm_data,
+                                            column_scale_data=self.column_scale_data,
+                                            custom_column_fields=self.custom_column_fields,
+                                            remove_na=self.columns_remove_na,
+                                            hsm_fields=self.hsm_fields)
+        xs = np.concatenate(list(filter(lambda x: x is not None, (self.x_features, self.x_info, self.x_classes))),
+                            axis=1)
+        self.info_indices = ([self.features_indices[-1] + 1,
+                                self.features_indices[-1] + self.x_info.shape[1]]
+                                if self.use_system_information else None)
+        self.classes_indices = ([xs.shape[1] - self.x_classes.shape[1], xs.shape[1] - 1]
+                             if self.use_compound_classes else None)
+        print(f'{np.diff(self.features_indices) + 1} molecule features, '
+              f'{(np.diff(self.info_indices) + 1) if self.info_indices is not None else 0} column features, '
+              f'{(np.diff(self.classes_indices) + 1) if self.classes_indices is not None else 0} molecule class features')
+        return xs
+
+    def get_graphs(self):
+        if (self.graphs is None):
+            self.compute_graphs()
+        return self.graphs
+
+    def add_dataset_id(self, dataset_id,
+                       repo_root_folder='/home/fleming/Documents/Projects/RtPredTrainingData/',
+                       void_rt=0.0, isomeric=True):
+        paths = [os.path.join(repo_root_folder, 'processed_data', dataset_id,
+                              f'{dataset_id}_rtdata_canonical_success.txt'),
+                 os.path.join(repo_root_folder, 'processed_data', dataset_id,
+                              f'{dataset_id}_rtdata_isomeric_success.txt'),
+                 os.path.join(repo_root_folder, 'raw_data', dataset_id,
+                              f'{dataset_id}_rtdata.txt')]
+        if (not os.path.exists(paths[0])):
+            if (os.path.exists(paths[2])):
+                warning(f'processed rtdata does not exist for dataset {dataset_id}, '
+                        'using raw data')
+                df = pd.read_csv(paths[2], sep='\t')
+                df.set_index('id', inplace=True, drop=False)
+                df.file = paths[2]
+                df['smiles'] = df['pubchem.smiles.canonical']
+            else:
+                raise Exception(f'no data found for dataset {dataset_id}, searched {paths=}')
+        else:
+            df = pd.read_csv(paths[0], sep='\t')
+            df.set_index('id', inplace=True, drop=False)
+            if (isomeric):
+                df_iso = pd.read_csv(paths[1], sep='\t')
+                df_iso.set_index('id', inplace=True, drop=False)
+                df.update(df_iso)
+            df.file = paths[0]
+            df['smiles'] = df['smiles.std']
+        df['dataset_id'] = df.id.str.split('_', expand=True)[0]
+        if self.use_system_information:
+            # only numeric values from metadata
+            column_information = pd.read_csv(os.path.join(
+                os.path.dirname(df.file), f'{dataset_id}_metadata.txt'),
+                sep='\t')
+            column_information['dataset_id'] = [str(x).rjust(4, '0') for x in column_information['id']]
+            del column_information['id']
+            df = df.merge(column_information, on='dataset_id')
+        # rows without RT data are useless
+        df = df[~pd.isna(df.rt)]
+        # filter rows below void RT threshold
+        df = df.loc[~(df.rt < void_rt)]
+        if (self.df is None):
+            self.df = df
+        else:
+            self.df = self.df.append(df, ignore_index=True)
+
+
+    @staticmethod
+    def from_raw_file(f, header=None, void_rt=0.0):
+        df = pd.read_csv(f, sep='\t', header=header)
+        df.file = f
+        if (header is None):
+            if (len(df.columns) == 3):
+                # minimal case
+                df.columns = ['inchikey', 'smiles', 'rt']
+            else:
+                raise NotImplementedError(
+                    f'raw file with {len(df.columns)} columns')
+        # rows without RT data are useless
+        df = df[~pd.isna(df.rt)]
+        # filter rows below void RT threshold
+        df = df.loc[~(df.rt < void_rt)]
+        return Data(df=df)
+
+    def balance(self):
+        if ('dataset_id' not in self.df.columns):
+            raise Exception('cannot balance without Dataset ID')
+        g = self.df.groupby('dataset_id')
+        df = g.apply(lambda x: x.sample(g.size().min()).reset_index(drop=True))
+        self.heldout = pd.DataFrame(self.df.loc[~self.df.id.isin(df.id)])
+        self.df = df
+
+    def features_from_cache(self, cache_file):
+        loaded = pickle.load(open(cache_file, 'rb'))
+        if (len(loaded) == 3 and isinstance(loaded[0][0], np.ndarray)
+                and len(loaded[0][0].shape) > 1):
+            ((self.train_x, self.train_y), (self.val_x, self.val_y),
+             (self.test_x, self.test_y)) = loaded
+        elif (len(loaded) == 2 and isinstance(loaded[0], np.ndarray)):
+            self.x_features, self.y = loaded
+        else:
+            raise Exception('could not load cache!')
 
     def standardize(self, other_scaler=None):
         if (self.train_x is None):
