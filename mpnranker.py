@@ -56,17 +56,17 @@ class MPNranker(nn.Module):
         else:
             return res
 
-def predict(x, ranker, batch_size=8192):
+def predict(x, ranker: MPNranker, batch_size=8192):
     ranker.eval()
     preds = []
-    graphs, extra = x if len(x) == 2 else (x, None)
+    graphs, extra = x if ranker.extra_features_dim > 0 else (x, None)
     with torch.no_grad():
         for i in range(np.ceil(len(graphs) / batch_size).astype(int)):
             start = i * batch_size
             end = i * batch_size + batch_size
-            preds.append(ranker(((graphs[start:end],
-                                  extra[start:end] if extra is not None else None), )
-                                )[0].cpu().detach().numpy())
+            batch = ((graphs[start:end], extra[start:end]) if extra is not None
+                     else graphs[start:end])
+            preds.append(ranker((batch, ))[0].cpu().detach().numpy())
     return np.concatenate(preds)
 
 def loss_step(ranker, x, y, weights, loss_fun):
@@ -84,7 +84,10 @@ def train(ranker: MPNranker, bg: BatchGenerator, epochs=2,
           epsilon=0.5, val_writer:SummaryWriter=None,
           steps_train_loss=10, steps_val_loss=100,
           batch_size=8192, sigmoid_loss=False,
-          margin_loss=0.1, early_stopping_patience=None):
+          margin_loss=0.1, early_stopping_patience=None,
+          ep_save=False):
+    save_name = ('mpnranker' if writer is None else
+                 writer.logdir.split('/')[-1].replace('_train', ''))
     ranker.to(ranker.encoder.device)
     print('device:', ranker.encoder.device)
     optimizer = optim.Adam(ranker.parameters())
@@ -132,7 +135,11 @@ def train(ranker: MPNranker, bg: BatchGenerator, epochs=2,
         if writer is not None:
             train_acc = eval_(bg.y, predict(bg.x, ranker, batch_size=batch_size), epsilon=epsilon)
             writer.add_scalar('acc', train_acc, iter_count)
+            print(f'{train_acc=:.2%}')
             if (val_writer is not None):
                 val_acc = eval_(val_g.y, predict(val_g.x, ranker, batch_size=batch_size), epsilon=epsilon)
                 val_writer.add_scalar('acc', val_acc, iter_count)
+                print(f'{val_acc=:.2%}')
+        if (ep_save):
+            torch.save(ranker, f'{save_name}_ep{epoch + 1}.pt')
         ranker.train()
