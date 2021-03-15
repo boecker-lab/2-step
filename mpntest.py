@@ -1,6 +1,7 @@
 import pandas as pd
 from mpnranker import MPNranker, train, predict
 from utils import BatchGenerator
+from evaluate import eval_
 from chemprop.features import mol2graph
 from tensorboardX.writer import SummaryWriter
 import torch.nn as nn
@@ -31,8 +32,9 @@ if __name__ == '__main__':
     else:
         writer = SummaryWriter(comment='_train'); val_writer = SummaryWriter(comment='_val')
     train_df = train_set.iloc[:70_000].sample(70_000)
-    # train_df = train_set.iloc[:70_000].sample(2000)
+    # train_df = train_set.iloc[:70_000].sample(100)
     val_df = train_set.iloc[70_000:].loc[train_set.rt > 8].sample(2000)
+    # val_df = train_set.iloc[70_000:].loc[train_set.rt > 8].sample(100)
     if (len(sys.argv) > 7):
         hidden_units = list(map(int, sys.argv[7:]))
     else:
@@ -57,12 +59,20 @@ if __name__ == '__main__':
           steps_val_loss=np.ceil(len(bg) / 5).astype(int),
           # steps_val_loss=10,
           batch_size=batch_size,
-          sigmoid_loss=sigmoid, margin_loss=margin)
-    train_acc, val_acc, test_acc = (predict(train_df, ranker, batch_size=batch_size),
-                                    predict(val_df, ranker, batch_size=batch_size),
-                                    predict(test_set, ranker, batch_size=batch_size))
+          sigmoid_loss=sigmoid, margin_loss=margin,
+          early_stopping_patience=3, ep_save=True)
+    epsilon = 0.5
+    train_acc, val_acc, test_acc = (eval_(train_df.rt.values,
+                                          predict(train_df.graphs.values, ranker, batch_size=batch_size), epsilon),
+                                    eval_(val_df.rt.values,
+                                          predict(val_df.graphs.values, ranker, batch_size=batch_size), epsilon),
+                                    eval_(test_set.rt.values,
+                                          predict(test_set.graphs.values, ranker, batch_size=batch_size), epsilon))
     print(f'{train_acc=:.2%}, {val_acc=:.2%}, {test_acc=:.2%}')
-    # writer.export_scalars_to_json('./all_scalars.json')
+    save_name = writer.logdir.split('/')[-1].replace('_train', '')
+    writer.export_scalars_to_json(f'{save_name}_scalars_train.json')
+    val_writer.export_scalars_to_json(f'{save_name}_scalars_val.json')
+    torch.save(ranker, save_name + '.pt')
     writer.close(); val_writer.close()
 
     """
