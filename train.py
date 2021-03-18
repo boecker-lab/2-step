@@ -110,7 +110,8 @@ if __name__ == '__main__':
     # TRAINING
     if (len(args.input) == 1 and os.path.exists(args.input[0])):
         # csv file
-        data = Data.from_raw_file(args.input[0], void_rt=args.void_rt)
+        data = Data.from_raw_file(args.input[0], void_rt=args.void_rt,
+                                  graph_mode=graphs)
     elif (all(re.match(r'\d{4}', i) for i in args.input)):
         # dataset IDs (recommended)
         data = Data(use_compound_classes=args.comp_classes, use_system_information=args.sysinfo,

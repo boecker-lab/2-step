@@ -421,7 +421,7 @@ class Data:
 
 
     @staticmethod
-    def from_raw_file(f, header=None, void_rt=0.0):
+    def from_raw_file(f, header=None, void_rt=0.0, graph_mode=False):
         df = pd.read_csv(f, sep='\t', header=header)
         df.file = f
         if (header is None):
@@ -435,7 +435,7 @@ class Data:
         df = df[~pd.isna(df.rt)]
         # filter rows below void RT threshold
         df = df.loc[~(df.rt < void_rt)]
-        return Data(df=df)
+        return Data(df=df, graph_mode=graph_mode)
 
     def balance(self):
         if ('dataset_id' not in self.df.columns):

@@ -42,7 +42,7 @@ class MPNranker(nn.Module):
             else:
                 extra = None
             # encode molecules
-            if (isinstance(inp, str)):
+            if (isinstance(inp[0], str)):
                 inp = [mol2graph([_]) for _ in inp]
             enc = torch.cat([self.encoder(g) for g in inp], 0)  # [batch_size x 300]
             if (self.extra_features_dim > 0):
