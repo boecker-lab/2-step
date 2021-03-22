@@ -182,6 +182,7 @@ class Data:
     df: Optional[pd.DataFrame] = None
     use_compound_classes: bool = False
     use_system_information: bool = False
+    metadata_void_rt: bool = False
     cache_file: str = 'cached_descs.pkl'
     classes_l_thr: float = 0.005
     classes_u_thr: float = 0.025
@@ -402,8 +403,7 @@ class Data:
             df.file = paths[0]
             df['smiles'] = df['smiles.std']
         df['dataset_id'] = df.id.str.split('_', expand=True)[0]
-        if self.use_system_information:
-            # only numeric values from metadata
+        if self.use_system_information or self.metadata_void_rt:
             column_information = pd.read_csv(os.path.join(
                 os.path.dirname(df.file), f'{dataset_id}_metadata.txt'),
                 sep='\t')
@@ -413,6 +413,8 @@ class Data:
         # rows without RT data are useless
         df = df[~pd.isna(df.rt)]
         # filter rows below void RT threshold
+        if (self.metadata_void_rt and 'column.t0' in df.columns):
+            void_rt = df['column.t0'].iloc[0] * 3
         df = df.loc[~(df.rt < void_rt)]
         if (self.df is None):
             self.df = df

@@ -198,6 +198,7 @@ class EvalArgs(Tap):
     verbose: bool = False
     no_progbar: bool = False # no progress-bar
     void_rt: float = 0.0
+    metadata_void_rt: bool = False # use t0 value from repo metadata (times 3)
     cache_file: str = 'cached_descs.pkl'
     export_rois: bool = False
     device: Optional[str] = None # can be `mirrored`, a specific device name like `gpu:1` or `None` which automatically selects an option
@@ -256,6 +257,7 @@ if __name__ == '__main__':
         else:
             d = Data(use_compound_classes=data.use_compound_classes,
                      use_system_information=data.use_system_information,
+                     metadata_void_rt=args.metadata_void_rt,
                      classes_l_thr=data.classes_l_thr,
                      classes_u_thr=data.classes_u_thr,
                      use_usp_codes=data.use_usp_codes,
