@@ -26,13 +26,10 @@ def eval_(y, preds, epsilon=1):
     preds, y = zip(*sorted(zip(preds, y)))
     matches = 0
     total = 0
-    matches_v = [0 for i in range(len(y))]
     for i, j in combinations(range(len(y)), 2):
         diff = y[i] - y[j]
         if (diff < epsilon):
             matches += 1
-            matches_v[i] += 1
-            matches_v[j] += 1
         total += 1
     return matches / total if not total == 0 else np.nan
 
