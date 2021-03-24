@@ -251,7 +251,7 @@ if __name__ == '__main__':
     for ds in args.test_sets:
         if (not re.match(r'\d{4}', ds)):
             # raw file
-            d = Data.from_raw_file(ds, void_rt=args.void_rt)
+            d = Data.from_raw_file(ds, void_rt=args.void_rt, graph_mode=(args.model_type == 'mpn'))
             d.custom_features = data.descriptors
         else:
             d = Data(use_compound_classes=data.use_compound_classes,
