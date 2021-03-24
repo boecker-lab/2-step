@@ -37,6 +37,7 @@ class TrainArgs(Tap):
     isomeric: bool = False      # use isomeric data (if available)
     balance: bool = False       # balance data by dataset
     void_rt: float = 0.0        # void time threshold; used for ALL datasets
+    metadata_void_rt: bool = False # use t0 value from repo metadata (times 3)
     # features
     features: List[str] = []                                     # custom features
     standardize: bool = False                                    # standardize features
@@ -115,6 +116,7 @@ if __name__ == '__main__':
     elif (all(re.match(r'\d{4}', i) for i in args.input)):
         # dataset IDs (recommended)
         data = Data(use_compound_classes=args.comp_classes, use_system_information=args.sysinfo,
+                    metadata_void_rt=args.metadata_void_rt,
                     classes_l_thr=args.classes_l_thr, classes_u_thr=args.classes_u_thr,
                     use_usp_codes=args.usp_codes, custom_features=args.features,
                     use_hsm=args.columns_use_hsm, hsm_data=args.columns_hsm_data,
@@ -268,6 +270,7 @@ if __name__ == '__main__':
         print('evaluating on data left-out when balancing')
         for ds in args.input:
             d = Data(use_compound_classes=args.comp_classes, use_system_information=args.sysinfo,
+                     metadata_void_rt=args.metadata_void_rt,
                      classes_l_thr=args.classes_l_thr, classes_u_thr=args.classes_u_thr,
                      use_usp_codes=args.usp_codes, custom_features=data.descriptors,
                      use_hsm=args.columns_use_hsm, hsm_data=args.columns_hsm_data,
