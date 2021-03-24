@@ -59,7 +59,11 @@ class MPNranker(nn.Module):
 def predict(x, ranker: MPNranker, batch_size=8192):
     ranker.eval()
     preds = []
-    graphs, extra = x if ranker.extra_features_dim > 0 else (x, None)
+    if ranker.extra_features_dim > 0:
+        graphs, extra = x
+        extra = torch.as_tensor(extra).float().to(ranker.encoder.device)
+    else:
+        graphs, extra = (x, None)
     with torch.no_grad():
         for i in range(np.ceil(len(graphs) / batch_size).astype(int)):
             start = i * batch_size
@@ -103,6 +107,9 @@ def train(ranker: MPNranker, bg: BatchGenerator, epochs=2,
         print(f'epoch {epoch + 1}/{epochs}')
         for x, y, weights in tqdm(bg):
             ranker.zero_grad()
+            if (ranker.extra_features_dim > 0):
+                x[0][1] = torch.as_tensor(x[0][1]).float().to(ranker.encoder.device)
+                x[1][1] = torch.as_tensor(x[1][1]).float().to(ranker.encoder.device)
             loss = loss_step(ranker, x, y, weights, loss_fun)
             loss_sum += loss.item()
             iter_count += 1
@@ -119,6 +126,9 @@ def train(ranker: MPNranker, bg: BatchGenerator, epochs=2,
                 ranker.eval()
                 with torch.no_grad():
                     for x, y, weights in val_g:
+                        if (ranker.extra_features_dim > 0):
+                            x[0][1] = torch.as_tensor(x[0][1]).float().to(ranker.encoder.device)
+                            x[1][1] = torch.as_tensor(x[1][1]).float().to(ranker.encoder.device)
                         val_loss_sum += loss_step(ranker, x, y, weights, loss_fun).item()
                         val_iter_count += 1
                 val_step = val_loss_sum / val_iter_count
