@@ -89,14 +89,15 @@ def rt_roi_diffs(data, y, preds, k=3):
     df['diffs'] = (df['diffs'] > 0.2 * (np.sum(np.abs([min(df.roi), max(df.roi)])))).astype(int)
     return df
 
-def visualize_df(df):
+def visualize_df(df, x_axis='rt'):
     import matplotlib.pyplot as plt
     from matplotlib.offsetbox import OffsetImage, AnnotationBbox
     fig = plt.figure()
     ax = fig.add_subplot(111)
-    points = ax.scatter(df.rt, df.roi, c=df.diffs, cmap='coolwarm')
-    ax.set_xlabel('rt')
-    ax.set_ylabel('roi')
+    x, y = ('rt', 'roi') if x_axis == 'rt' else ('roi', 'rt')
+    points = ax.scatter(df[x], df[y], c=df.diffs, cmap='coolwarm')
+    ax.set_xlabel(x)
+    ax.set_ylabel(y)
     ax.set_title(df.id[0].split('_')[0])
 
     # blank image
