@@ -38,6 +38,7 @@ class TrainArgs(Tap):
     balance: bool = False       # balance data by dataset
     void_rt: float = 0.0        # void time threshold; used for ALL datasets
     metadata_void_rt: bool = False # use t0 value from repo metadata (times 3)
+    class_weights: bool = False    # use weights corresponding to #samples per dataset
     # features
     features: List[str] = []                                     # custom features
     standardize: bool = False                                    # standardize features
@@ -161,24 +162,29 @@ if __name__ == '__main__':
     if (args.reduce_features):
         data.reduce_f()
     if (graphs):
-        ((train_graphs, train_x, train_y), (val_graphs, val_x, val_y),
-         (test_graphs, test_x, test_y)) = data.get_split_data((args.test_split, args.val_split))
+        ((train_graphs, train_x, train_y, train_weights),
+         (val_graphs, val_x, val_y, val_weights),
+         (test_graphs, test_x, test_y, test_weights)) = data.get_split_data((args.test_split, args.val_split))
         # convert Xs to tensors
         import torch
         info('converting X arrays to torch tensors...')
         train_x = torch.as_tensor(train_x).float()
         val_x = torch.as_tensor(val_x).float()
         test_x = torch.as_tensor(test_x).float()
+        # NOTE: converting weights to tensor should not be necessary
     else:
-        ((train_x, train_y), (val_x, val_y), (test_x, test_y)) = data.get_split_data((args.test_split, args.val_split))
+        ((train_x, train_y, train_weights), (val_x, val_y, val_weights),
+         (test_x, test_y, test_weights)) = data.get_split_data((args.test_split, args.val_split))
         train_graphs = val_graphs = test_graphs = None
     info('done. Initializing BatchGenerator...')
     bg = BatchGenerator((train_graphs, train_x) if graphs else train_x, train_y,
+                        (train_weights if args.class_weights else None),
                         args.batch_size, pair_step=args.pair_step,
                         pair_stop=args.pair_stop, use_weights=args.use_weights,
                         weight_steep=args.weight_steep, weight_mid=args.weight_mid,
                         multix=graphs, y_neg=(args.mpn_loss == 'margin'))
     vg = BatchGenerator((val_graphs, val_x) if graphs else train_x, val_y,
+                        (val_weights if args.class_weights else None),
                         args.batch_size, pair_step=args.pair_step,
                         pair_stop=args.pair_stop, use_weights=args.use_weights,
                         weight_steep=args.weight_steep, weight_mid=args.weight_mid,
@@ -295,7 +301,8 @@ if __name__ == '__main__':
                 d.standardize(data.scaler)
             if (args.reduce_features):
                 d.reduce_f()
-            (train_x, train_y), (val_x, val_y), (test_x, test_y) = d.get_split_data()
+            ((train_x, train_y, train_weights), (val_x, val_y, val_weights),
+             (test_x, test_y, test_weights)) = d.get_split_data()
             X = np.concatenate((train_x, test_x, val_x))
             Y = np.concatenate((train_y, test_y, val_y))
             preds = predict(X, ranker.model, args.batch_size)

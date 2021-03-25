@@ -6,6 +6,7 @@ import numpy as np
 import tensorflow as tf
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
+from sklearn.utils import class_weight
 from scipy.sparse import  issparse
 import pickle
 import os
@@ -36,12 +37,13 @@ def csr2tf(csr):
 
 
 class BatchGenerator(tf.keras.utils.Sequence):
-    def __init__(self, x, y, batch_size=32, shuffle=True, delta=1,
+    def __init__(self, x, y, class_weights=None, batch_size=32, shuffle=True, delta=1,
                  pair_step=1, pair_stop=None, use_weights=True,
                  weight_steep=4, weight_mid=0.75, void=None,
                  y_neg=False, multix=False):
         self.x = x
         self.y = y
+        self.class_weights = class_weights
         self.delta = delta
         self.multix = multix
         self.use_weights = use_weights
@@ -52,7 +54,7 @@ class BatchGenerator(tf.keras.utils.Sequence):
         self.void = void
         self.y_neg = y_neg
         self.x1_indices, self.x2_indices, self.y_trans, self.weights = self._transform_pairwise(
-            x, y)
+            x, y, class_weights)
         if (shuffle):
             perm = np.random.permutation(self.y_trans.shape[0])
             self.x1_indices = self.x1_indices[perm]
@@ -66,7 +68,7 @@ class BatchGenerator(tf.keras.utils.Sequence):
         """sigmoid function with f(0) → 0, f(2) → 1, f(0.75) = 0.5"""
         return 1 / (1 + np.exp(-steep * (x - mid)))
 
-    def _transform_pairwise(self, x, y):
+    def _transform_pairwise(self, x, y, class_weights):
         x1_indices = []
         x2_indices = []
         y_trans = []
@@ -75,8 +77,6 @@ class BatchGenerator(tf.keras.utils.Sequence):
             for j in range(i + 1, (len(y) if self.pair_stop is None else
                                    min(i + self.pair_stop, len(y))),
                            self.pair_step):
-                # if (np.abs(self.y[i] - self.y[j]) <= self.delta):
-                #     continue
                 pos_idx, neg_idx = (i, j) if y[i] > y[j] else (j, i)
                 # void
                 if (self.void is not None and y[i] < self.void
@@ -92,8 +92,11 @@ class BatchGenerator(tf.keras.utils.Sequence):
                     x1_indices.append(neg_idx)
                     x2_indices.append(pos_idx)
                     y_trans.append(-1 if self.y_neg else 0)
-                weights.append(self.weight_fn(y[pos_idx] - y[neg_idx],
-                                              self.weight_steep, self.weight_mid)
+                # weights
+                c_weight = (min(class_weights[i], class_weights[j])
+                            if class_weights is not None else 1)
+                weights.append(c_weight * self.weight_fn(
+                    y[pos_idx] - y[neg_idx], self.weight_steep, self.weight_mid)
                                if self.use_weights else 1)
         return np.asarray(x1_indices), np.asarray(x2_indices), np.asarray(
             y_trans), np.asarray(weights)
@@ -199,6 +202,7 @@ class Data:
     def __post_init__(self):
         self.x_features = None
         self.graphs = None
+        self.cweights = None
         self.x_classes = None
         self.x_info = None
         self.train_x = None
@@ -374,6 +378,9 @@ class Data:
             self.compute_graphs()
         return self.graphs
 
+    def get_cweights(self):
+        return class_weight.compute_sample_weight('balanced', y=self.df.dataset_id)
+
     def add_dataset_id(self, dataset_id,
                        repo_root_folder='/home/fleming/Documents/Projects/RtPredTrainingData/',
                        void_rt=0.0, isomeric=True):
@@ -437,6 +444,8 @@ class Data:
         df = df[~pd.isna(df.rt)]
         # filter rows below void RT threshold
         df = df.loc[~(df.rt < void_rt)]
+        # add dummy dataset_id
+        df['dataset_id'] = os.path.basename(f)
         return Data(df=df, graph_mode=graph_mode)
 
     def balance(self):
@@ -494,16 +503,17 @@ class Data:
 
     def split_data(self, split=(0.2, 0.05)):
         if (self.graph_mode):
-            ((self.train_graphs, self.train_x, self.train_y),
-             (self.val_graphs, self.val_x, self.val_y),
-             (self.test_graphs, self.test_x, self.test_y),
+            ((self.train_graphs, self.train_x, self.train_y, self.train_cweights),
+             (self.val_graphs, self.val_x, self.val_y, self.val_cweights),
+             (self.test_graphs, self.test_x, self.test_y, self.test_cweights),
              (self.train_indices, self.val_indices, self.test_indices)) = split_arrays(
-                 (self.get_graphs(), self.get_x(), self.get_y()), split)
+                 (self.get_graphs(), self.get_x(), self.get_y(), self.get_cweights()), split)
         else:
-            ((self.train_x, self.train_y), (self.val_x, self.val_y),
-             (self.test_x, self.test_y),
+            ((self.train_x, self.train_y, self.train_cweights),
+             (self.val_x, self.val_y, self.val_cweights),
+             (self.test_x, self.test_y, self.test_cweights),
              (self.train_indices, self.val_indices, self.test_indices)) = split_arrays(
-                 (self.get_x(), self.get_y()), split)
+                 (self.get_x(), self.get_y(), self.get_cweights()), split)
 
     def get_raw_data(self):
         if (self.graph_mode):
@@ -513,17 +523,18 @@ class Data:
 
     def get_split_data(self, split=(0.2, 0.05)):
         if ((any(d is None for d in [
-                self.train_x, self.train_y, self.val_x, self.val_y,
-                self.test_x, self.test_y
+                self.train_x, self.train_y, self.train_cweights, self.val_x, self.val_y,
+                self.val_cweights, self.test_x, self.test_y, self.test_cweights
         ] + ([self.train_graphs, self.val_graphs, self.test_graphs] if self.graph_mode else [])))):
             self.split_data(split)
         if (self.graph_mode):
-            return ((self.train_graphs, self.train_x, self.train_y),
-                    (self.val_graphs, self.val_x, self.val_y),
-                    (self.test_graphs, self.test_x, self.test_y))
+            return ((self.train_graphs, self.train_x, self.train_y, self.train_cweights),
+                    (self.val_graphs, self.val_x, self.val_y, self.val_cweights),
+                    (self.test_graphs, self.test_x, self.test_y, self.test_cweights))
         else:
-            return ((self.train_x, self.train_y), (self.val_x, self.val_y),
-                    (self.test_x, self.test_y))
+            return ((self.train_x, self.train_y, self.train_cweights),
+                    (self.val_x, self.val_y, self.val_cweights),
+                    (self.test_x, self.test_y, self.test_cweights))
 
 
 def export_predictions(data, preds, out, mode='all'):

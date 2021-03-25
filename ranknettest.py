@@ -6,6 +6,7 @@ import matplotlib.pyplot as plt
 import rdkit.Chem as Chem
 from rdkit.Chem import AllChem
 from mpnranker import MPNranker, predict
+from pprint import pprint
 
 def test_features():
     smiles = ['C1CC(=O)N[C@@H]1C(=O)O',
@@ -91,27 +92,35 @@ def test_data():
         data_g.split_data((0.2, 0.05))
         data_g.standardize()
         if (graphs):
-            ((train_graphs, train_x, train_y), (val_graphs, val_x, val_y),
-             (test_graphs, test_x, test_y)) = data_g.get_split_data((0.2, 0.05))
-            print(', '.join(f'{a}: {eval(a).shape}' for a in [
-                'train_graphs', 'train_x', 'train_y', 'val_graphs', 'val_x', 'val_y',
-                'test_graphs', 'test_x', 'test_y']))
+            ((train_graphs, train_x, train_y, train_weights),
+             (val_graphs, val_x, val_y, val_weights),
+             (test_graphs, test_x, test_y, test_weights)) = data_g.get_split_data((0.2, 0.05))
+            print(', '.join(f'{a}: {eval(a).shape}' for a in
+                            ['train_graphs', 'train_x', 'train_y', 'train_weights',
+                             'val_graphs', 'val_x', 'val_y', 'val_weights',
+                             'test_graphs', 'test_x', 'test_y', 'test_weights']))
         else:
-            ((train_x, train_y), (val_x, val_y), (test_x, test_y)) = data_g.get_split_data((0.2, 0.05))
+            ((train_x, train_y, train_weights), (val_x, val_y, val_weights),
+             (test_x, test_y, test_weights)) = data_g.get_split_data((0.2, 0.05))
             print(', '.join(f'{a}: {eval(a).shape}' for a in [
-                'train_x', 'train_y', 'val_x', 'val_y', 'test_x', 'test_y']))
+                'train_x', 'train_y', 'train_weights', 'val_x', 'val_y', 'val_weights',
+                'test_x', 'test_y', 'test_weights']))
+        pprint(list(zip(data_g.df.dataset_id.iloc[data_g.train_indices],
+                  train_weights)))
 
 def test_bg():
     data_g = Data(use_compound_classes=False, use_system_information=True,
                   use_hsm=True, custom_column_fields=['column.length', 'column.id'],
                   graph_mode=True)
     data_g.add_dataset_id('0045', isomeric=True)
+    data_g.add_dataset_id('0072', isomeric=True)
     data_g.compute_features(**parse_feature_spec('none'))
     data_g.compute_graphs()
     data_g.split_data((0.2, 0.05))
-    ((train_graphs, train_x, train_y), (val_graphs, val_x, val_y),
-     (test_graphs, test_x, test_y)) = data_g.get_split_data((0.2, 0.05))
-    bg = BatchGenerator(train_graphs, train_y,
+    ((train_graphs, train_x, train_y, train_weights),
+     (val_graphs, val_x, val_y, val_weights),
+     (test_graphs, test_x, test_y, test_weights)) = data_g.get_split_data((0.2, 0.05))
+    bg = BatchGenerator(train_graphs, train_y, train_weights,
                         pair_step=3, pair_stop=128, batch_size=32,
                         y_neg=True)
     ranker = MPNranker()
