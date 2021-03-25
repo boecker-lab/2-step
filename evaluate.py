@@ -201,8 +201,6 @@ class EvalArgs(Tap):
     export_rois: bool = False
     device: Optional[str] = None # can be `mirrored`, a specific device name like `gpu:1` or `None` which automatically selects an option
     epsilon: float = 0.5 # difference in evaluation measure below which to ignore falsely predicted pairs
-    columns_hsm_data: str = '/home/fleming/Documents/Projects/RtPredTrainingData/resources/hsm_database/hsm_database.txt'
-    column_scale_data: str = '/home/fleming/Documents/Projects/rtdata_exploration/data/dataset_info_all.tsv'
     remove_train_compounds: bool = False
     remove_train_compounds_mode: Literal['all', 'column', 'print'] = 'all'
     plot_diffs: bool = False
@@ -261,8 +259,7 @@ if __name__ == '__main__':
                      use_usp_codes=data.use_usp_codes,
                      custom_features=data.descriptors,
                      use_hsm=data.use_hsm,
-                     hsm_data=args.columns_hsm_data,
-                     column_scale_data=args.column_scale_data,
+                     repo_root_folder=args.repo_root_folder,
                      custom_column_fields=data.custom_column_fields,
                      columns_remove_na=False,
                      hsm_fields=data.hsm_fields,

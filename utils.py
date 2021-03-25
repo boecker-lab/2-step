@@ -127,7 +127,7 @@ def get_column_scaling(cols, repo_root_folder='/home/fleming/Documents/Projects/
     if (not hasattr(get_column_scaling, '_data')):
         sys.path.append(repo_root_folder)
         from pandas_dfs import get_dataset_df
-        ds = get_dataset_df
+        ds = get_dataset_df()
         info_columns = [c for c in ds.columns
                         if re.match(r'^(column|gradient|eluent)\..*', c)
                         and 'name' not in c and 'usp.code' not in c]
@@ -194,8 +194,7 @@ class Data:
     use_usp_codes: bool = False
     custom_features: List[str] = field(default_factory=list)
     use_hsm: bool = False
-    hsm_data: str = '/home/fleming/Documents/Projects/RtPredTrainingData/resources/hsm_database/hsm_database.txt'
-    column_scale_data: str = '/home/fleming/Documents/Projects/rtdata_exploration/data/dataset_info_all.tsv'
+    repo_root_folder: str = '/home/fleming/Documents/Projects/RtPredTrainingData'
     custom_column_fields: Optional[list] = None
     columns_remove_na: bool = True
     hsm_fields: List[str] = field(default_factory=lambda: ['H', 'S*', 'A', 'B', 'C (pH 2.8)', 'C (pH 7.0)'])
@@ -285,8 +284,7 @@ class Data:
 
     def compute_system_information(self, onehot_ids=False, other_dataset_ids=None,
                                    use_usp_codes=False, use_hsm=False,
-                                   hsm_data='/home/fleming/Documents/Projects/RtPredTrainingData/resources/hsm_database/hsm_database.txt',
-                                   column_scale_data='/home/fleming/Documents/Projects/rtdata_exploration/data/dataset_info_all.tsv',
+                                   repo_root_folder='/home/fleming/Documents/Projects/RtPredTrainingData',
                                    custom_column_fields=None, remove_na=True, drop_hsm_dups=True,
                                    hsm_fields=['H', 'S*', 'A', 'B', 'C (pH 2.8)', 'C (pH 7.0)']):
         global REL_COLUMNS
@@ -301,7 +299,7 @@ class Data:
         fields = []
         names = []
         if (use_hsm):
-            hsm = pd.read_csv(hsm_data, sep='\t')
+            hsm = pd.read_csv(os.path.join(repo_root_folder, 'resources/hsm_database/hsm_database.txt'), sep='\t')
             if (drop_hsm_dups):
                 hsm.drop_duplicates(['normalized notation'], keep=False, inplace=True)
             hsm.set_index('normalized notation', drop=False, verify_integrity=drop_hsm_dups, inplace=True)
@@ -318,7 +316,7 @@ class Data:
             elif (len(na_columns) > 0):
                 print('WARNING: system data contains NA values, the option to remove these columns was disabled though! '
                       + ', '.join(na_columns))
-            means, scales = get_column_scaling(custom_column_fields, data_file=column_scale_data)
+            means, scales = get_column_scaling(custom_column_fields, repo_root_folder=repo_root_folder)
             fields.append((self.df[custom_column_fields].values - means) / scales)
             names.extend(custom_column_fields)
         else:
@@ -330,7 +328,7 @@ class Data:
                 else:
                     print('WARNING: system data contains NA values, the option to remove these columns was disabled though! '
                           + ', '.join(na_columns))
-            means, scales = get_column_scaling(REL_COLUMNS)
+            means, scales = get_column_scaling(REL_COLUMNS, repo_root_folder=repo_root_folder)
             fields.append((self.df[REL_COLUMNS].values - means) / scales)
             names.extend(REL_COLUMNS)
         if (use_usp_codes):
@@ -358,8 +356,7 @@ class Data:
         if (self.use_system_information and self.x_info is None):
             self.compute_system_information(use_usp_codes=self.use_usp_codes,
                                             use_hsm=self.use_hsm,
-                                            hsm_data=self.hsm_data,
-                                            column_scale_data=self.column_scale_data,
+                                            repo_root_folder=self.repo_root_folder,
                                             custom_column_fields=self.custom_column_fields,
                                             remove_na=self.columns_remove_na,
                                             hsm_fields=self.hsm_fields)

@@ -72,8 +72,6 @@ class TrainArgs(Tap):
     # data locations
     repo_root_folder: str = '/home/fleming/Documents/Projects/RtPredTrainingData/'
     add_desc_file: str = '/home/fleming/Documents/Projects/rtranknet/data/qm_merged.csv'
-    columns_hsm_data: str = '/home/fleming/Documents/Projects/RtPredTrainingData/resources/hsm_database/hsm_database.txt'
-    column_scale_data: str = '/home/fleming/Documents/Projects/rtdata_exploration/data/dataset_info_all.tsv'
     cache_file: str = 'cached_descs.pkl'
     # output control
     verbose: bool = False
@@ -120,8 +118,7 @@ if __name__ == '__main__':
                     metadata_void_rt=args.metadata_void_rt,
                     classes_l_thr=args.classes_l_thr, classes_u_thr=args.classes_u_thr,
                     use_usp_codes=args.usp_codes, custom_features=args.features,
-                    use_hsm=args.columns_use_hsm, hsm_data=args.columns_hsm_data,
-                    column_scale_data=args.column_scale_data,
+                    use_hsm=args.columns_use_hsm, repo_root_folder=args.repo_root_folder,
                     custom_column_fields=args.custom_column_fields or None,
                     hsm_fields=args.hsm_fields, graph_mode=graphs)
         for did in args.input:
@@ -152,7 +149,7 @@ if __name__ == '__main__':
         pickle.dump(features.cached, open(args.cache_file, 'wb'))
     if args.debug_onehot_sys:
         sorted_dataset_ids = sorted(set(args.input) | set(args.onehot_test_sets))
-        data.compute_system_information(True, sorted_dataset_ids)
+        data.compute_system_information(True, sorted_dataset_ids, repo_root_folder=args.repo_root_folder)
     info('done. preprocessing...')
     if (graphs):
         data.compute_graphs()
@@ -279,8 +276,7 @@ if __name__ == '__main__':
                      metadata_void_rt=args.metadata_void_rt,
                      classes_l_thr=args.classes_l_thr, classes_u_thr=args.classes_u_thr,
                      use_usp_codes=args.usp_codes, custom_features=data.descriptors,
-                     use_hsm=args.columns_use_hsm, hsm_data=args.columns_hsm_data,
-                     column_scale_data=args.column_scale_data,
+                     use_hsm=args.columns_use_hsm, repo_root_folder=args.repo_root_folder,
                      custom_column_fields=data.custom_column_fields, columns_remove_na=False,
                      hsm_fields=args.hsm_fields)
             d.add_dataset_id(ds,
@@ -295,7 +291,7 @@ if __name__ == '__main__':
             d.compute_features(mode=parse_feature_spec(args.feature_type), n_thr=args.num_features, verbose=args.verbose,
                                add_descs=args.add_descs, add_desc_file=args.add_desc_file)
             if args.debug_onehot_sys:
-                d.compute_system_information(True, sorted_dataset_ids, use_usp_codes=args.usp_codes)
+                d.compute_system_information(True, sorted_dataset_ids, use_usp_codes=args.usp_codes, repo_root_folder=args.repo_root_folder)
             d.split_data()
             if (args.standardize):
                 d.standardize(data.scaler)
