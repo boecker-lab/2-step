@@ -404,9 +404,13 @@ class Data:
             df = pd.read_csv(paths[0], sep='\t')
             df.set_index('id', inplace=True, drop=False)
             if (isomeric):
-                df_iso = pd.read_csv(paths[1], sep='\t')
-                df_iso.set_index('id', inplace=True, drop=False)
-                df.update(df_iso)
+                if (not os.path.exists(paths[1])):
+                    warning(f'--isomeric is set, but no isomeric data can be found for {dataset_id}; '
+                            'only canonical data will be used')
+                else:
+                    df_iso = pd.read_csv(paths[1], sep='\t')
+                    df_iso.set_index('id', inplace=True, drop=False)
+                    df.update(df_iso)
             df.file = paths[0]
             df['smiles'] = df['smiles.std']
         df['dataset_id'] = df.id.str.split('_', expand=True)[0]
@@ -421,7 +425,7 @@ class Data:
         df = df[~pd.isna(df.rt)]
         # filter rows below void RT threshold
         if (self.metadata_void_rt and 'column.t0' in df.columns):
-            void_rt = df['column.t0'].iloc[0] * 3
+            void_rt = df['column.t0'].iloc[0] * 2 # NOTE: 2 or 3?
         df = df.loc[~(df.rt < void_rt)]
         if (self.df is None):
             self.df = df
