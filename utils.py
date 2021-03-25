@@ -15,6 +15,7 @@ from classyfire import get_onehot, get_binary
 from dataclasses import dataclass, field
 from typing import Optional, List, Tuple, Union
 from logging import warning
+import sys
 
 from features import features
 
@@ -122,10 +123,11 @@ class BatchGenerator(tf.keras.utils.Sequence):
     def get_df(self, x_desc='features'):
         return pd.DataFrame({x_desc: self.x, 'rt': self.y})
 
-def get_column_scaling(cols, data_file='/home/fleming/Documents/Projects/rtdata_exploration/data/dataset_info_all.tsv'):
+def get_column_scaling(cols, repo_root_folder='/home/fleming/Documents/Projects/RtPredTrainingData/'):
     if (not hasattr(get_column_scaling, '_data')):
-        ds = pd.read_csv(data_file,
-                         sep='\t')
+        sys.path.append(repo_root_folder)
+        from pandas_dfs import get_dataset_df
+        ds = get_dataset_df
         info_columns = [c for c in ds.columns
                         if re.match(r'^(column|gradient|eluent)\..*', c)
                         and 'name' not in c and 'usp.code' not in c]
