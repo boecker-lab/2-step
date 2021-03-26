@@ -15,12 +15,14 @@ import numpy as np
 
 
 class MPNranker(nn.Module):
-    def __init__(self, sigmoid=False, extra_features_dim=0, hidden_units=[]):
+    def __init__(self, sigmoid=False, extra_features_dim=0, hidden_units=[],
+                 encoder_size=300):
         super(MPNranker, self).__init__()
         self.sigmoid = sigmoid
         args = TrainArgs()
         args.from_dict({'dataset_type': 'classification',
-                        'data_path': None})
+                        'data_path': None,
+                        'hidden_size': encoder_size})
         self.encoder = MPNEncoder(args, get_atom_fdim(), get_bond_fdim())
         self.extra_features_dim = extra_features_dim
         self.encextra_size = self.encoder.hidden_size + extra_features_dim

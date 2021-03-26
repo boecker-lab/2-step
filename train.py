@@ -58,6 +58,7 @@ class TrainArgs(Tap):
     classes_u_thr: float = 0.25
     # model general
     sizes: List[int] = [10, 10] # hidden layer sizes
+    encoder_size: int = 300     # MPNencoder size
     dropout_rate: float = 0.0
     # mpn model
     mpn_loss: Literal['margin', 'bce'] = 'margin'
@@ -238,7 +239,7 @@ if __name__ == '__main__':
     else:
         # MPNranker
         ranker = MPNranker(sigmoid=(args.mpn_loss == 'bce'), extra_features_dim=train_x.shape[1],
-                           hidden_units=args.sizes)
+                           hidden_units=args.sizes, encoder_size=args.encoder_size)
         writer = SummaryWriter(f'runs/{run_name}_train')
         val_writer = SummaryWriter(f'runs/{run_name}_val')
         mpn_train(ranker, bg, args.epochs, writer, vg, val_writer=val_writer,
