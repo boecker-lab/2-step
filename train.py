@@ -1,8 +1,7 @@
-from logging import INFO
+from logging import INFO, info, basicConfig
 import numpy as np
 import tensorflow as tf
 from LambdaRankNN import RankNetNN
-from tensorflow.python.platform.tf_logging import get_logger, info
 from mpnranker import MPNranker, train as mpn_train, predict as mpn_predict
 from tensorboardX import SummaryWriter
 from rdkit import rdBase
@@ -89,9 +88,14 @@ def generic_run_name():
 
 if __name__ == '__main__':
     args = TrainArgs().parse_args()
+    if (args.run_name is None):
+        run_name = generic_run_name()
+    else:
+        run_name = args.run_name
     if (args.verbose):
         print(args)
-        get_logger().setLevel(INFO)
+        basicConfig(format='%(asctime)s %(levelname)s: %(message)s',
+                    filename=run_name + '.log', level=INFO)
     else:
         rdBase.DisableLog('rdApp.warning')
     if (args.cache_file is not None):
@@ -103,10 +107,6 @@ if __name__ == '__main__':
             features.cached = {}
             info('cache file does not exist yet')
     info('reading in data and computing features...')
-    if (args.run_name is None):
-        run_name = generic_run_name()
-    else:
-        run_name = args.run_name
     graphs = (args.model_type == 'mpn')
     # TRAINING
     if (len(args.input) == 1 and os.path.exists(args.input[0])):
