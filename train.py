@@ -1,6 +1,8 @@
+from dataclasses import dataclass
 from logging import INFO, info, basicConfig
 import numpy as np
 import tensorflow as tf
+import torch
 from LambdaRankNN import RankNetNN
 from mpnranker import MPNranker, train as mpn_train, predict as mpn_predict
 from tensorboardX import SummaryWriter
@@ -8,16 +10,36 @@ from rdkit import rdBase
 import pickle
 import json
 import os
-import argparse
 import re
 import contextlib
-from itertools import product
 from tap import Tap
-from typing import List, Literal, Optional
+from typing import List, Literal, Optional, Union
 
 from utils import BatchGenerator, Data
 from features import features, parse_feature_spec
 from evaluate import eval_, predict, export_predictions
+
+ListOrArray_t = Union[List, np.ndarray, torch.Tensor]
+
+@dataclass
+class ProcessedData:
+    train_graphs: Optional[ListOrArray_t]
+    train_x: Optional[ListOrArray_t]
+    train_y: ListOrArray_t
+    train_weights: ListOrArray_t
+    val_graphs: Optional[ListOrArray_t]
+    val_x: Optional[ListOrArray_t]
+    val_y: ListOrArray_t
+    val_weights: ListOrArray_t
+    test_graphs: Optional[ListOrArray_t]
+    test_x: Optional[ListOrArray_t]
+    test_y: ListOrArray_t
+    test_weights: ListOrArray_t
+
+    def get(self):
+        return ((self.train_graphs, self.train_x, self.train_y, self.train_weights),
+                (self.val_graphs, self.val_x, self.val_y, self.val_weights),
+                (self.test_graphs, self.test_x, self.test_y, self.test_weights))
 
 
 class TrainArgs(Tap):
@@ -86,6 +108,69 @@ def generic_run_name():
     time_str = datetime.now().strftime('%Y%m%d_%H-%M-%S')
     return f'ranknet_{time_str}'
 
+
+def preprocess(data: Data, args: TrainArgs) -> ProcessedData:
+    data.compute_features(**parse_feature_spec(args.feature_type), n_thr=args.num_features, verbose=args.verbose,
+                          add_descs=args.add_descs, add_desc_file=args.add_desc_file)
+    if (data.train_y is not None):
+        # assume everything was computed, split etc. already
+        return ProcessedData(data.train_graphs, data.train_x, data.train_y, data.train_cweights,
+                             data.val_graphs, data.val_x, data.val_y, data.val_cweights,
+                             data.test_graphs, data.test_x, data.test_y, data.test_cweights)
+    if (args.cache_file is not None and features.write_cache):
+        info('writing cache, don\'t interrupt!!')
+        pickle.dump(features.cached, open(args.cache_file, 'wb'))
+    if args.debug_onehot_sys:
+        sorted_dataset_ids = sorted(set(args.input) | set(args.onehot_test_sets))
+        data.compute_system_information(True, sorted_dataset_ids, repo_root_folder=args.repo_root_folder)
+    info('done. preprocessing...')
+    if (graphs):
+        data.compute_graphs()
+    data.split_data((args.test_split, args.val_split))
+    if (args.standardize):
+        data.standardize()
+    if (args.reduce_features):
+        data.reduce_f()
+    if (graphs):
+        ((train_graphs, train_x, train_y, train_weights),
+         (val_graphs, val_x, val_y, val_weights),
+         (test_graphs, test_x, test_y, test_weights)) = data.get_split_data((args.test_split, args.val_split))
+        # convert Xs to tensors
+        info('converting X arrays to torch tensors...')
+        train_x = torch.as_tensor(train_x).float()
+        val_x = torch.as_tensor(val_x).float()
+        test_x = torch.as_tensor(test_x).float()
+        # NOTE: converting weights to tensor should not be necessary
+    else:
+        ((train_x, train_y, train_weights), (val_x, val_y, val_weights),
+         (test_x, test_y, test_weights)) = data.get_split_data((args.test_split, args.val_split))
+        train_graphs = val_graphs = test_graphs = None
+    return ProcessedData(train_graphs, train_x, train_y, train_weights,
+                          val_graphs, val_x, val_y, val_weights,
+                          test_graphs, test_x, test_y, test_weights)
+
+def prepare_tf_model(args: TrainArgs, input_size: int) -> RankNetNN:
+    if (args.device is not None and re.match(r'[cg]pu:\d', args.device.lower())):
+        print(f'attempting to use device {args.device}')
+        strategy = tf.distribute.OneDeviceStrategy(f'/{args.device.lower()}')
+        context = strategy.scope()
+    elif (len([dev for dev in tf.config.get_visible_devices() if dev.device_type == 'GPU']) > 1
+        or args.device == 'mirrored'):
+        # more than one gpu -> MirroredStrategy
+        print('Using MirroredStrategy')
+        strategy = tf.distribute.MirroredStrategy()
+        context = strategy.scope()
+    else:
+        context = contextlib.nullcontext()
+    with context:
+        v = tf.Variable(1.0)
+        info(f'using {v.device}')
+        return RankNetNN(input_size=input_size,
+                         hidden_layer_sizes=args.sizes,
+                         activation=(['relu'] * len(args.sizes)),
+                         solver='adam',
+                         dropout_rate=args.dropout_rate)
+
 if __name__ == '__main__':
     args = TrainArgs().parse_args()
     if (args.run_name is None):
@@ -108,12 +193,40 @@ if __name__ == '__main__':
             info('cache file does not exist yet')
     info('reading in data and computing features...')
     graphs = (args.model_type == 'mpn')
+    ranker: Union[RankNetNN, MPNranker] = None
     # TRAINING
-    if (len(args.input) == 1 and os.path.exists(args.input[0])):
-        # csv file
-        data = Data.from_raw_file(args.input[0], void_rt=args.void_rt,
-                                  graph_mode=graphs)
+    if (len(args.input) == 1 and os.path.exists(input_ := args.input[0])):
+        if (input_.endswith('.csv') or input_.endswith('.tsv')):
+            print('input from CSV/TSV file')
+            # csv file
+            data = Data.from_raw_file(input_, void_rt=args.void_rt,
+                                      graph_mode=graphs)
+        elif (input_.endswith('.tf')):
+            print('input is trained Tensorflow model')
+            # tensorflow model
+            ranker = tf.keras.models.load_model(input_)
+            data = pickle.load(open(os.path.join(input_, 'assets', 'data.pkl'), 'rb'))
+            config = json.load(open(os.path.join(input_, 'assets', 'config.json')))
+        elif (input_.endswith('.pt')):
+            print('input is trained PyTorch model')
+            # pytorch/mpn model
+            # ensure Data/config.json also exist
+            assert os.path.exists(data_path := input_.replace('.pt', '_data.pkl'))
+            assert os.path.exists(config_path := input_.replace('.pt', '_config.json'))
+            if (not torch.cuda.is_available()):
+                # might be a GPU trained model -> adapt
+                ranker = torch.load(input_, map_location=torch.device('cpu'))
+                ranker.encoder.device = torch.device('cpu')
+            else:
+                ranker = torch.load(input_)
+            info('loaded model')
+            data = pickle.load(open(data_path, 'rb'))
+            info('loaded data')
+            config = json.load(open(config_path))
+        else:
+            raise Exception(f'input {args.input} not supported')
     elif (all(re.match(r'\d{4}', i) for i in args.input)):
+        print('input from repository dataset IDs')
         # dataset IDs (recommended)
         data = Data(use_compound_classes=args.comp_classes, use_system_information=args.sysinfo,
                     metadata_void_rt=args.metadata_void_rt,
@@ -143,37 +256,9 @@ if __name__ == '__main__':
                             set(data.df[['dataset_id', 'column.name']].itertuples(index=False))]))
     else:
         raise Exception(f'input {args.input} not supported')
-    data.compute_features(**parse_feature_spec(args.feature_type), n_thr=args.num_features, verbose=args.verbose,
-                          add_descs=args.add_descs, add_desc_file=args.add_desc_file)
-    if (args.cache_file is not None and features.write_cache):
-        info('writing cache, don\'t interrupt!!')
-        pickle.dump(features.cached, open(args.cache_file, 'wb'))
-    if args.debug_onehot_sys:
-        sorted_dataset_ids = sorted(set(args.input) | set(args.onehot_test_sets))
-        data.compute_system_information(True, sorted_dataset_ids, repo_root_folder=args.repo_root_folder)
-    info('done. preprocessing...')
-    if (graphs):
-        data.compute_graphs()
-    data.split_data((args.test_split, args.val_split))
-    if (args.standardize):
-        data.standardize()
-    if (args.reduce_features):
-        data.reduce_f()
-    if (graphs):
-        ((train_graphs, train_x, train_y, train_weights),
-         (val_graphs, val_x, val_y, val_weights),
-         (test_graphs, test_x, test_y, test_weights)) = data.get_split_data((args.test_split, args.val_split))
-        # convert Xs to tensors
-        import torch
-        info('converting X arrays to torch tensors...')
-        train_x = torch.as_tensor(train_x).float()
-        val_x = torch.as_tensor(val_x).float()
-        test_x = torch.as_tensor(test_x).float()
-        # NOTE: converting weights to tensor should not be necessary
-    else:
-        ((train_x, train_y, train_weights), (val_x, val_y, val_weights),
-         (test_x, test_y, test_weights)) = data.get_split_data((args.test_split, args.val_split))
-        train_graphs = val_graphs = test_graphs = None
+    ((train_graphs, train_x, train_y, train_weights),
+     (val_graphs, val_x, val_y, val_weights),
+     (test_graphs, test_x, test_y, test_weights)) = preprocess(data, args).get()
     info('done. Initializing BatchGenerator...')
     bg = BatchGenerator((train_graphs, train_x) if graphs else train_x, train_y,
                         (train_weights if args.class_weights else None),
@@ -193,26 +278,8 @@ if __name__ == '__main__':
         plt.plot(plot_x, [bg.weight_fn(_, args.weight_steep, args.weight_mid) for _ in plot_x])
         plt.show()
     if (not graphs):
-        if (args.device is not None and re.match(r'[cg]pu:\d', args.device.lower())):
-            print(f'attempting to use device {args.device}')
-            strategy = tf.distribute.OneDeviceStrategy(f'/{args.device.lower()}')
-            context = strategy.scope()
-        elif (len([dev for dev in tf.config.get_visible_devices() if dev.device_type == 'GPU']) > 1
-            or args.device == 'mirrored'):
-            # more than one gpu -> MirroredStrategy
-            print('Using MirroredStrategy')
-            strategy = tf.distribute.MirroredStrategy()
-            context = strategy.scope()
-        else:
-            context = contextlib.nullcontext()
-        with context:
-            v = tf.Variable(1.0)
-            info(f'using {v.device}')
-            ranker = RankNetNN(input_size=train_x.shape[1],
-                               hidden_layer_sizes=args.sizes,
-                               activation=(['relu'] * len(args.sizes)),
-                               solver='adam',
-                               dropout_rate=args.dropout_rate)
+        if (ranker is None):    # otherwise loaded already
+            ranker = prepare_tf_model(args, train_x.shape[1])
         es = tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience=2,
                                               restore_best_weights=True)
         try:
@@ -238,8 +305,9 @@ if __name__ == '__main__':
         test_preds = predict(test_x, ranker.model, args.batch_size)
     else:
         # MPNranker
-        ranker = MPNranker(sigmoid=(args.mpn_loss == 'bce'), extra_features_dim=train_x.shape[1],
-                           hidden_units=args.sizes, encoder_size=args.encoder_size)
+        if (ranker is None):    # otherwise loaded already
+            ranker = MPNranker(sigmoid=(args.mpn_loss == 'bce'), extra_features_dim=train_x.shape[1],
+                               hidden_units=args.sizes, encoder_size=args.encoder_size)
         writer = SummaryWriter(f'runs/{run_name}_train')
         val_writer = SummaryWriter(f'runs/{run_name}_val')
         mpn_train(ranker, bg, args.epochs, writer, vg, val_writer=val_writer,
@@ -260,52 +328,10 @@ if __name__ == '__main__':
     print(f'train: {eval_(train_y, train_preds, args.epsilon):.3f}')
     print(f'test: {eval_(test_y, test_preds, args.epsilon):.3f}')
     print(f'val: {eval_(val_y, val_preds, args.epsilon):.3f}')
-    if (False):
-        fig = px.treemap(data.df.dropna(subset=['classyfire.kingdom', 'classyfire.superclass', 'classyfire.class']),
-                         path=['classyfire.kingdom', 'classyfire.superclass', 'classyfire.class'],
-                         title='training data')
-        fig.show(renderer='browser')
     if (args.export_rois):
         if not os.path.isdir('runs'):
             os.mkdir('runs')
         export_predictions(data, test_preds, f'runs/{run_name}_test.tsv', 'test')
-    if (args.balance and len(args.input) > 1):  # ===LEFT-OUT EVAL===
-        # TODO: graphs
-        print('evaluating on data left-out when balancing')
-        for ds in args.input:
-            d = Data(use_compound_classes=args.comp_classes, use_system_information=args.sysinfo,
-                     metadata_void_rt=args.metadata_void_rt,
-                     classes_l_thr=args.classes_l_thr, classes_u_thr=args.classes_u_thr,
-                     use_usp_codes=args.usp_codes, custom_features=data.descriptors,
-                     use_hsm=args.columns_use_hsm, repo_root_folder=args.repo_root_folder,
-                     custom_column_fields=data.custom_column_fields, columns_remove_na=False,
-                     hsm_fields=args.hsm_fields)
-            d.add_dataset_id(ds,
-                             repo_root_folder=args.repo_root_folder,
-                             void_rt=args.void_rt,
-                             isomeric=args.isomeric)
-            perc = len(d.df.loc[d.df.id.isin(data.heldout.id)]) / len(d.df)
-            d.df.drop(d.df.loc[~d.df.id.isin(data.heldout.id)].index, inplace=True)
-            if (len(d.df) == 0):
-                print(f'no data left for {ds}')
-                continue
-            d.compute_features(mode=parse_feature_spec(args.feature_type), n_thr=args.num_features, verbose=args.verbose,
-                               add_descs=args.add_descs, add_desc_file=args.add_desc_file)
-            if args.debug_onehot_sys:
-                d.compute_system_information(True, sorted_dataset_ids, use_usp_codes=args.usp_codes, repo_root_folder=args.repo_root_folder)
-            d.split_data()
-            if (args.standardize):
-                d.standardize(data.scaler)
-            if (args.reduce_features):
-                d.reduce_f()
-            ((train_x, train_y, train_weights), (val_x, val_y, val_weights),
-             (test_x, test_y, test_weights)) = d.get_split_data()
-            X = np.concatenate((train_x, test_x, val_x))
-            Y = np.concatenate((train_y, test_y, val_y))
-            preds = predict(X, ranker.model, args.batch_size)
-            print(f'{ds}: {eval_(Y, preds, args.epsilon):.3f} \t (#data: {len(Y)}, held-out percentage: {perc:.2f})')
-            if (args.export_rois):
-                export_predictions(d, preds, f'runs/{run_name}_heldout_{ds}.tsv')
     if (args.cache_file is not None and features.write_cache):
         print('writing cache, don\'t interrupt!!')
         pickle.dump(features.cached, open(args.cache_file, 'wb'))
