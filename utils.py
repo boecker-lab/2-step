@@ -14,7 +14,7 @@ import re
 from classyfire import get_onehot, get_binary
 from dataclasses import dataclass, field
 from typing import Optional, List, Tuple, Union
-from logging import warning
+from logging import warning, info
 import sys
 
 from features import features
@@ -145,12 +145,26 @@ def get_column_scaling(cols, repo_root_folder='/home/fleming/Documents/Projects/
     return (np.array([get_column_scaling._data[c]['mean'] for c in cols]),
             np.array([get_column_scaling._data[c]['std'] for c in cols]))
 
-def split_arrays(arrays, sizes: tuple):
+def split_arrays(arrays, sizes: tuple, split_info=None):
     for a in arrays:            # all same shape
         assert len(a) == len(arrays[0])
-    indices = np.arange(len(arrays[0]))
-    train_indices, test_indices = train_test_split(indices, test_size=sizes[0])
-    train_indices, val_indices = train_test_split(train_indices, test_size=sizes[1])
+    # if split info is provided (i.e., whether datapoint should be train/test/val)
+    # check whether arrays can be split that way
+    if (split_info is not None):
+        assert len(arrays[0]) == len(split_info)
+        for split, kind in [(sizes[0], 'test'), (sizes[1], 'val')]:
+            assert split == 0 or len([s for s in split_info if s == kind]) > 0
+        train_indices = np.argwhere(np.asarray(split_info) == 'train').ravel()
+        test_indices = np.argwhere(np.asarray(split_info) == 'test').ravel()
+        val_indices = np.argwhere(np.asarray(split_info) == 'val').ravel()
+    else:
+        indices = np.arange(len(arrays[0]))
+        train_indices, test_indices = (train_test_split(indices, test_size=sizes[0])
+                                       if sizes[0] > 0 else (indices, indices[:0]))
+        train_indices, val_indices = (train_test_split(train_indices, test_size=sizes[1])
+                                      if sizes[1] > 0 else (train_indices, train_indices[:0]))
+    print(f'split {len(arrays)} into {len(train_indices)} train data, '
+          f'{len(val_indices)} validation data and {len(test_indices)} test data')
     return ([a[train_indices] for a in arrays],
             [a[val_indices] for a in arrays],
             [a[test_indices] for a in arrays],
@@ -382,7 +396,7 @@ class Data:
 
     def add_dataset_id(self, dataset_id,
                        repo_root_folder='/home/fleming/Documents/Projects/RtPredTrainingData/',
-                       void_rt=0.0, isomeric=True):
+                       void_rt=0.0, isomeric=True, split_type='train'):
         paths = [os.path.join(repo_root_folder, 'processed_data', dataset_id,
                               f'{dataset_id}_rtdata_canonical_success.txt'),
                  os.path.join(repo_root_folder, 'processed_data', dataset_id,
@@ -426,6 +440,8 @@ class Data:
         if (self.metadata_void_rt and 'column.t0' in df.columns):
             void_rt = df['column.t0'].iloc[0] * 2 # NOTE: 2 or 3?
         df = df.loc[~(df.rt < void_rt)]
+        # flag dataset as train/val/test
+        df['split_type'] = split_type
         if (self.df is None):
             self.df = df
         else:
@@ -510,13 +526,16 @@ class Data:
              (self.val_graphs, self.val_x, self.val_y, self.val_cweights),
              (self.test_graphs, self.test_x, self.test_y, self.test_cweights),
              (self.train_indices, self.val_indices, self.test_indices)) = split_arrays(
-                 (self.get_graphs(), self.get_x(), self.get_y(), self.get_cweights()), split)
+                 (self.get_graphs(), self.get_x(), self.get_y(), self.get_cweights()), split,
+                 split_info=self.df.split_type)
         else:
             ((self.train_x, self.train_y, self.train_cweights),
              (self.val_x, self.val_y, self.val_cweights),
              (self.test_x, self.test_y, self.test_cweights),
              (self.train_indices, self.val_indices, self.test_indices)) = split_arrays(
-                 (self.get_x(), self.get_y(), self.get_cweights()), split)
+                 (self.get_x(), self.get_y(), self.get_cweights()), split,
+                 split_info=self.df.split_type)
+            self.train_graphs = self.val_graphs = self.test_graphs = None
 
     def get_raw_data(self):
         if (self.graph_mode):
@@ -530,15 +549,9 @@ class Data:
                 self.val_cweights, self.test_x, self.test_y, self.test_cweights
         ] + ([self.train_graphs, self.val_graphs, self.test_graphs] if self.graph_mode else [])))):
             self.split_data(split)
-        if (self.graph_mode):
-            return ((self.train_graphs, self.train_x, self.train_y, self.train_cweights),
-                    (self.val_graphs, self.val_x, self.val_y, self.val_cweights),
-                    (self.test_graphs, self.test_x, self.test_y, self.test_cweights))
-        else:
-            return ((self.train_x, self.train_y, self.train_cweights),
-                    (self.val_x, self.val_y, self.val_cweights),
-                    (self.test_x, self.test_y, self.test_cweights))
-
+        return ((self.train_graphs, self.train_x, self.train_y, self.train_cweights),
+                (self.val_graphs, self.val_x, self.val_y, self.val_cweights),
+                (self.test_graphs, self.test_x, self.test_y, self.test_cweights))
 
 def export_predictions(data, preds, out, mode='all'):
     if (mode == 'all'):

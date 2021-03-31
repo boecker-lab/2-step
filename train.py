@@ -14,33 +14,11 @@ import re
 import contextlib
 from tap import Tap
 from typing import List, Literal, Optional, Union
+import pandas as pd
 
 from utils import BatchGenerator, Data
 from features import features, parse_feature_spec
 from evaluate import eval_, predict, export_predictions
-
-ListOrArray_t = Union[List, np.ndarray, torch.Tensor]
-
-@dataclass
-class ProcessedData:
-    train_graphs: Optional[ListOrArray_t]
-    train_x: Optional[ListOrArray_t]
-    train_y: ListOrArray_t
-    train_weights: ListOrArray_t
-    val_graphs: Optional[ListOrArray_t]
-    val_x: Optional[ListOrArray_t]
-    val_y: ListOrArray_t
-    val_weights: ListOrArray_t
-    test_graphs: Optional[ListOrArray_t]
-    test_x: Optional[ListOrArray_t]
-    test_y: ListOrArray_t
-    test_weights: ListOrArray_t
-
-    def get(self):
-        return ((self.train_graphs, self.train_x, self.train_y, self.train_weights),
-                (self.val_graphs, self.val_x, self.val_y, self.val_weights),
-                (self.test_graphs, self.test_x, self.test_y, self.test_weights))
-
 
 class TrainArgs(Tap):
     input: List[str]            # Either CSV or dataset ids
@@ -54,12 +32,15 @@ class TrainArgs(Tap):
     val_split: float = 0.05
     device: Optional[str] = None  # either `mirrored` or specific device name like gpu:1 or None (auto)
     remove_test_compounds: List[str] = [] # remove compounds occuring in the specified (test) datasets
+    exclude_compounds_list: Optional[str] = None # list of compounds to exclude from training
     # data
     isomeric: bool = False      # use isomeric data (if available)
     balance: bool = False       # balance data by dataset
     void_rt: float = 0.0        # void time threshold; used for ALL datasets
     metadata_void_rt: bool = False # use t0 value from repo metadata (times 3)
     class_weights: bool = False    # use weights corresponding to #samples per dataset
+    validation_datasets: List[str] = [] # datasets to use for validation (instead of split of training data)
+    test_datasets: List[str] = [] # datasets to use for test (instead of split of training data)
     # features
     features: List[str] = []                                     # custom features
     standardize: bool = False                                    # standardize features
@@ -109,14 +90,14 @@ def generic_run_name():
     return f'ranknet_{time_str}'
 
 
-def preprocess(data: Data, args: TrainArgs) -> ProcessedData:
+def preprocess(data: Data, args: TrainArgs):
     data.compute_features(**parse_feature_spec(args.feature_type), n_thr=args.num_features, verbose=args.verbose,
                           add_descs=args.add_descs, add_desc_file=args.add_desc_file)
     if (data.train_y is not None):
         # assume everything was computed, split etc. already
-        return ProcessedData(data.train_graphs, data.train_x, data.train_y, data.train_cweights,
-                             data.val_graphs, data.val_x, data.val_y, data.val_cweights,
-                             data.test_graphs, data.test_x, data.test_y, data.test_cweights)
+        return ((data.train_graphs, data.train_x, data.train_y, data.train_cweights),
+                (data.val_graphs, data.val_x, data.val_y, data.val_cweights),
+                (data.test_graphs, data.test_x, data.test_y, data.test_cweights))
     if (args.cache_file is not None and features.write_cache):
         info('writing cache, don\'t interrupt!!')
         pickle.dump(features.cached, open(args.cache_file, 'wb'))
@@ -131,23 +112,7 @@ def preprocess(data: Data, args: TrainArgs) -> ProcessedData:
         data.standardize()
     if (args.reduce_features):
         data.reduce_f()
-    if (graphs):
-        ((train_graphs, train_x, train_y, train_weights),
-         (val_graphs, val_x, val_y, val_weights),
-         (test_graphs, test_x, test_y, test_weights)) = data.get_split_data((args.test_split, args.val_split))
-        # convert Xs to tensors
-        info('converting X arrays to torch tensors...')
-        train_x = torch.as_tensor(train_x).float()
-        val_x = torch.as_tensor(val_x).float()
-        test_x = torch.as_tensor(test_x).float()
-        # NOTE: converting weights to tensor should not be necessary
-    else:
-        ((train_x, train_y, train_weights), (val_x, val_y, val_weights),
-         (test_x, test_y, test_weights)) = data.get_split_data((args.test_split, args.val_split))
-        train_graphs = val_graphs = test_graphs = None
-    return ProcessedData(train_graphs, train_x, train_y, train_weights,
-                          val_graphs, val_x, val_y, val_weights,
-                          test_graphs, test_x, test_y, test_weights)
+    return data.get_split_data((args.test_split, args.val_split))
 
 def prepare_tf_model(args: TrainArgs, input_size: int) -> RankNetNN:
     if (args.device is not None and re.match(r'[cg]pu:\d', args.device.lower())):
@@ -240,6 +205,18 @@ if __name__ == '__main__':
                                 repo_root_folder=args.repo_root_folder,
                                 void_rt=args.void_rt,
                                 isomeric=args.isomeric)
+        for did in args.validation_datasets:
+            data.add_dataset_id(did,
+                                repo_root_folder=args.repo_root_folder,
+                                void_rt=args.void_rt,
+                                isomeric=args.isomeric,
+                                split_type='val')
+        for did in args.test_datasets:
+            data.add_dataset_id(did,
+                                repo_root_folder=args.repo_root_folder,
+                                void_rt=args.void_rt,
+                                isomeric=args.isomeric,
+                                split_type='test')
         if (args.remove_test_compounds is not None and len(args.remove_test_compounds) > 0):
             d_temp = Data()
             for t in args.remove_test_compounds:
@@ -249,6 +226,14 @@ if __name__ == '__main__':
             data.df = data.df.loc[~data.df['inchi.std'].isin(compounds_to_remove)]
             print(f'removed {len(compounds_to_remove)} compounds occuring '
                   'in test data from training data')
+        if (args.exclude_compounds_list is not None):
+            # List of compounds, first line has to be either id, smiles.std, inchi.std, inchikey.std
+            to_exclude = pd.read_csv(args.exclude_compounds_list)
+            col = to_exclude.columns[0]
+            prev_len = len(data.df)
+            data.df = data.df.loc[~data.df[col].isin(to_exclude[col].tolist())]
+            print(f'removed {prev_len - len(data.df)} compounds by column {col} '
+                  f'from exclusion list (length {len(to_exclude)})')
         if (args.balance and len(args.input) > 1):
             data.balance()
             info('added data for datasets:\n' +
@@ -258,7 +243,7 @@ if __name__ == '__main__':
         raise Exception(f'input {args.input} not supported')
     ((train_graphs, train_x, train_y, train_weights),
      (val_graphs, val_x, val_y, val_weights),
-     (test_graphs, test_x, test_y, test_weights)) = preprocess(data, args).get()
+     (test_graphs, test_x, test_y, test_weights)) = preprocess(data, args)
     info('done. Initializing BatchGenerator...')
     bg = BatchGenerator((train_graphs, train_x) if graphs else train_x, train_y,
                         (train_weights if args.class_weights else None),
