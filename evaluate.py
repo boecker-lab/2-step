@@ -298,20 +298,16 @@ if __name__ == '__main__':
         d.split_data()
         if (hasattr(data, 'scaler')):
             d.standardize(data.scaler)
+        ((train_graphs, train_x, train_y, train_weights),
+         (val_graphs, val_x, val_y, val_weights),
+         (test_graphs, test_x, test_y, test_weights)) = d.get_split_data()
+        X = np.concatenate((train_x, test_x, val_x))
+        Y = np.concatenate((train_y, test_y, val_y))
         if (args.model_type == 'mpn'):
             from mpnranker import predict as mpn_predict
-            ((train_graphs, train_x, train_y, train_weights),
-             (val_graphs, val_x, val_y, val_weights),
-             (test_graphs, test_x, test_y, test_weights)) = d.get_split_data()
             graphs = np.concatenate((train_graphs, test_graphs, val_graphs))
-            X = torch.as_tensor(np.concatenate((train_x, test_x, val_x))).float()
-            Y = torch.as_tensor(np.concatenate((train_y, test_y, val_y))).float()
             preds = mpn_predict((graphs, X), model, batch_size=args.batch_size)
         else:
-            ((train_x, train_y, train_weights), (val_x, val_y, val_weights),
-             (test_x, test_y, test_weights)) = d.get_split_data()
-            X = np.concatenate((train_x, test_x, val_x))
-            Y = np.concatenate((train_y, test_y, val_y))
             preds = predict(X, model, args.batch_size)
         acc = eval_(Y, preds, args.epsilon)
         d.df['roi'] = preds[np.arange(len(d.df.rt))[ # restore correct order

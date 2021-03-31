@@ -2,6 +2,7 @@ import numpy as np
 from rdkit import Chem
 from rdkit.Chem import AllChem, Descriptors, Descriptors3D
 import multiprocessing as mp
+from logging import info
 
 def compute_descriptors(smile, descriptors):
     try:
@@ -124,14 +125,14 @@ def features(smiles, filter_='rdk', overwrite_cache=False, verbose=False,
             features.write_cache = True # cache has to be written in the end
             nthreads = np.floor(mp.cpu_count() * load_factor).astype(int)
             if (verbose):
-                print(f'calculating {len(to_calc)} feature values using {nthreads} threads')
+                info(f'calculating {len(to_calc)} feature values using {nthreads} threads')
             pool = mp.Pool(nthreads)
             res = pool.starmap(compute_descriptors, to_calc)
             pool.close()
             res_new = []
             for descs, values, failed in res:
                 if (len(failed) > 0 and verbose):
-                    print('failed', failed)
+                    info('failed', failed)
                 res_new.append([(d, v) for d, v in zip(descs, values)])
             features.cached.update({(smile[0], desc): value for smile, smile_res in zip(to_calc, res_new)
                                     for desc, value in smile_res})
@@ -149,7 +150,7 @@ def features(smiles, filter_='rdk', overwrite_cache=False, verbose=False,
     else:
         out = np.array([]).reshape((len(smiles), 0))
     assert (out.shape[1] == len(out_names)), '#descriptor names ≠ #descriptors'
-    print('features:', out_names)
+    info('features:', out_names)
     return out, out_names
 
 
