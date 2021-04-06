@@ -1,3 +1,5 @@
+from itertools import combinations, product
+from random import sample
 import pandas as pd
 import numpy as np
 # import matplotlib.pyplot as plt
@@ -39,9 +41,10 @@ def csr2tf(csr):
 
 class BatchGenerator(tf.keras.utils.Sequence):
     def __init__(self, x, y, class_weights=None, batch_size=32, shuffle=True, delta=1,
-                 pair_step=1, pair_stop=None, use_weights=True,
-                 weight_steep=4, weight_mid=0.75, void=None,
-                 y_neg=False, multix=False):
+                 pair_step=1, pair_stop=None, dataset_info=None,
+                 void_info=None,
+                 use_weights=True, weight_steep=4, weight_mid=0.75,
+                 void=None, y_neg=False, multix=False):
         self.x = x
         self.y = y
         self.class_weights = class_weights
@@ -52,10 +55,12 @@ class BatchGenerator(tf.keras.utils.Sequence):
         self.weight_mid = weight_mid
         self.pair_step = pair_step
         self.pair_stop = pair_stop
+        self.dataset_info = dataset_info
+        self.void_info = void_info
         self.void = void
         self.y_neg = y_neg
         self.x1_indices, self.x2_indices, self.y_trans, self.weights = self._transform_pairwise(
-            x, y, class_weights)
+            y, class_weights, dataset_info, void_info)
         if (shuffle):
             perm = np.random.permutation(self.y_trans.shape[0])
             self.x1_indices = self.x1_indices[perm]
@@ -69,36 +74,86 @@ class BatchGenerator(tf.keras.utils.Sequence):
         """sigmoid function with f(0) → 0, f(2) → 1, f(0.75) = 0.5"""
         return 1 / (1 + np.exp(-steep * (x - mid)))
 
-    def _transform_pairwise(self, x, y, class_weights):
+    @staticmethod
+    def dataset_pair_it(indices, pair_step=1, pair_stop=None):
+        n = len(indices)
+        for i in range(n):
+            for j in range(i + 1,
+                           (n if pair_stop is None else min(i + pair_stop, n)),
+                           pair_step):
+                yield indices[i], indices[j]
+
+    @staticmethod
+    def inter_dataset_pair_it(indices1, indices2, pair_step=1, pair_stop=None):
+        max_ = max(len(indices1), len(indices2))
+        all_combs = list(product(indices1, indices2))
+        k = (max_ * np.ceil((pair_stop if pair_stop is not None else max_) / pair_step)).astype(int)
+        return iter(sample(all_combs, min(k, len(all_combs))))
+
+    @staticmethod
+    def get_pair(y, i, j, void_i=0, void_j=0, y_neg=False):
+        pos_idx, neg_idx = (i, j) if y[i] > y[j] else (j, i)
+        # void
+        if (y[i] < void_i and y[j] < void_j):
+            # don't take pairs where both compounds are in void volume
+            return None
+        # balanced class
+        if 1 != (-1)**(pos_idx + neg_idx):
+            return pos_idx, neg_idx, 1
+        else:
+            return neg_idx, pos_idx, (-1 if y_neg else 0)
+
+    def _transform_pairwise(self, y, class_weights, dataset_info=None,
+                             void_info=None):
         x1_indices = []
         x2_indices = []
         y_trans = []
         weights = []
-        for i in range(len(y)):
-            for j in range(i + 1, (len(y) if self.pair_stop is None else
-                                   min(i + self.pair_stop, len(y))),
-                           self.pair_step):
-                pos_idx, neg_idx = (i, j) if y[i] > y[j] else (j, i)
-                # void
-                if (self.void is not None and y[i] < self.void
-                    and y[j] < self.void):
-                    # don't take pairs where both compounds are in void volume
+        # group by dataset
+        groups = {}
+        if (dataset_info is None):
+            groups['unk'] = list(range(len(y)))
+        else:
+            for i in range(len(y)):
+                groups.setdefault(dataset_info[i], []).append(i)
+        # same-dataset pairs
+        for group in groups:
+            group_void_rt = void_info[group] if void_info is not None and group in void_info else self.void
+            pair_nr = 0
+            for i, j in BatchGenerator.dataset_pair_it(groups[group], self.pair_step, self.pair_stop):
+                res = BatchGenerator.get_pair(y, i, j, group_void_rt or 0, group_void_rt or 0, self.y_neg)
+                if (res is None):
                     continue
-                # balanced class
-                if 1 != (-1)**(pos_idx + neg_idx):
-                    x1_indices.append(pos_idx)
-                    x2_indices.append(neg_idx)
-                    y_trans.append(1)
-                else:
-                    x1_indices.append(neg_idx)
-                    x2_indices.append(pos_idx)
-                    y_trans.append(-1 if self.y_neg else 0)
+                pos_idx, neg_idx, yi = res
+                x1_indices.append(pos_idx)
+                x2_indices.append(neg_idx)
+                y_trans.append(yi)
                 # weights
-                c_weight = (min(class_weights[i], class_weights[j])
-                            if class_weights is not None else 1)
+                assert class_weights is None or class_weights[i] == class_weights[j]
+                c_weight = class_weights[i] if class_weights is not None else 1
                 weights.append(c_weight * self.weight_fn(
                     y[pos_idx] - y[neg_idx], self.weight_steep, self.weight_mid)
                                if self.use_weights else 1)
+                pair_nr += 1
+            print(f'group {group} has {pair_nr} pairs')
+        # between groups
+        for group1, group2 in combinations(groups, 2):
+            void_i = void_info[group1] if void_info is not None and group1 in void_info else self.void
+            void_j = void_info[group2] if void_info is not None and group2 in void_info else self.void
+            pair_nr = 0
+            for i, j in BatchGenerator.inter_dataset_pair_it(
+                    groups[group1], groups[group2], self.pair_step, self.pair_stop):
+                res = BatchGenerator.get_pair(y, i, j, void_i or 0, void_j or 0, self.y_neg)
+                if (res is None):
+                    continue
+                pos_idx, neg_idx, yi = res
+                x1_indices.append(pos_idx)
+                x2_indices.append(neg_idx)
+                y_trans.append(yi)
+                # weights TODO: compute *in* batchgenerator
+                weights.append(min(class_weights[i], class_weights[j]) if class_weights is not None else 1)
+                pair_nr += 1
+            print(f'groups {(group1, group2)} have {pair_nr} pairs')
         return np.asarray(x1_indices), np.asarray(x2_indices), np.asarray(
             y_trans), np.asarray(weights)
 
@@ -163,7 +218,7 @@ def split_arrays(arrays, sizes: tuple, split_info=None):
                                        if sizes[0] > 0 else (indices, indices[:0]))
         train_indices, val_indices = (train_test_split(train_indices, test_size=sizes[1])
                                       if sizes[1] > 0 else (train_indices, train_indices[:0]))
-    print(f'split {len(arrays)} into {len(train_indices)} train data, '
+    print(f'split {len(arrays[0])} into {len(train_indices)} train data, '
           f'{len(val_indices)} validation data and {len(test_indices)} test data')
     return ([a[train_indices] for a in arrays],
             [a[val_indices] for a in arrays],
@@ -437,7 +492,7 @@ class Data:
         # filter rows below void RT threshold
         if (self.metadata_void_rt and 'column.t0' in df.columns):
             void_rt = df['column.t0'].iloc[0] * 2 # NOTE: 2 or 3?
-        df = df.loc[~(df.rt < void_rt)]
+        df = df.loc[~(df.rt < void_rt)]           # TODO: don't do this!!
         # flag dataset as train/val/test
         df['split_type'] = split_type
         if (self.df is None):

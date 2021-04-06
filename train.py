@@ -248,12 +248,14 @@ if __name__ == '__main__':
                         (train_weights if args.class_weights else None),
                         args.batch_size, pair_step=args.pair_step,
                         pair_stop=args.pair_stop, use_weights=args.use_weights,
+                        dataset_info=data.df.dataset_id.iloc[data.train_indices].tolist(),
                         weight_steep=args.weight_steep, weight_mid=args.weight_mid,
                         multix=graphs, y_neg=(args.mpn_loss == 'margin'))
     vg = BatchGenerator((val_graphs, val_x) if graphs else train_x, val_y,
                         (val_weights if args.class_weights else None),
                         args.batch_size, pair_step=args.pair_step,
                         pair_stop=args.pair_stop, use_weights=args.use_weights,
+                        dataset_info=data.df.dataset_id.iloc[data.val_indices].tolist(),
                         weight_steep=args.weight_steep, weight_mid=args.weight_mid,
                         multix=graphs, y_neg=(args.mpn_loss == 'margin'))
     if (args.plot_weights):
