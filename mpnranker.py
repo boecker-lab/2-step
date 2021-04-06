@@ -58,7 +58,8 @@ class MPNranker(nn.Module):
         else:
             return res
 
-def predict(x, ranker: MPNranker, batch_size=8192):
+def predict(x, ranker: MPNranker, batch_size=8192,
+            prog_bar=False):
     ranker.eval()
     preds = []
     if ranker.extra_features_dim > 0:
@@ -66,8 +67,11 @@ def predict(x, ranker: MPNranker, batch_size=8192):
         extra = torch.as_tensor(extra).float().to(ranker.encoder.device)
     else:
         graphs, extra = (x, None)
+    it = range(np.ceil(len(graphs) / batch_size).astype(int))
+    if (prog_bar):
+        it = tqdm(it)
     with torch.no_grad():
-        for i in range(np.ceil(len(graphs) / batch_size).astype(int)):
+        for i in it:
             start = i * batch_size
             end = i * batch_size + batch_size
             batch = ((graphs[start:end], extra[start:end]) if extra is not None

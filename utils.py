@@ -259,8 +259,6 @@ class Data:
         features_unique, self.descriptors = features(smiles_unique, filter_=filter_features, verbose=verbose,
                                                      custom_features=self.custom_features, mode=mode,
                                                      add_descs=add_descs, add_desc_file=add_desc_file)
-        if (verbose):
-            print('features:', self.descriptors)
         self.x_features = features_unique[smiles_pos]
         if (n_thr is not None):
             self.x_features = self.x_features[:, :n_thr]
@@ -449,23 +447,34 @@ class Data:
 
 
     @staticmethod
-    def from_raw_file(f, header=None, void_rt=0.0, graph_mode=False):
-        df = pd.read_csv(f, sep='\t', header=header)
-        df.file = f
-        if (header is None):
+    def from_raw_file(f, void_rt=0.0, graph_mode=False,
+                      metadata_void_rt=False, **extra_data_args):
+        # get header
+        pot_header = open(f).readlines()[0].strip().split('\t')
+        if ('rt' not in pot_header):
+            # assume there is no header
+            df = pd.read_csv(f, sep='\t', header=None)
             if (len(df.columns) == 3):
                 # minimal case
                 df.columns = ['inchikey', 'smiles', 'rt']
             else:
                 raise NotImplementedError(
-                    f'raw file with {len(df.columns)} columns')
+                    f'raw file with {len(df.columns)} columns and no header (at least not with rt)')
+        else:
+            df = pd.read_csv(f, sep='\t')
+            if (metadata_void_rt and 'column.t0' in df.columns):
+                void_rt = df['column.t0'].iloc[0] * 2
+            if ('smiles.std' in df.columns):
+                df['smiles'] = df['smiles.std']
+        print(f'read raw file {f} with columns {df.columns.tolist()} ({void_rt=})')
+        df.file = f
         # rows without RT data are useless
         df = df[~pd.isna(df.rt)]
         # filter rows below void RT threshold
         df = df.loc[~(df.rt < void_rt)]
         # add dummy dataset_id
         df['dataset_id'] = os.path.basename(f)
-        return Data(df=df, graph_mode=graph_mode)
+        return Data(df=df, graph_mode=graph_mode, **extra_data_args)
 
     def balance(self):
         if ('dataset_id' not in self.df.columns):
@@ -500,12 +509,15 @@ class Data:
             self.scaler = scaler
         else:
             scaler = other_scaler
-        self.train_x[:, :self.features_indices[1]+1] = np.nan_to_num(scaler.transform(
-            self.train_x[:, :self.features_indices[1]+1]))
-        self.val_x[:, :self.features_indices[1]+1] = np.nan_to_num(scaler.transform(
-            self.val_x[:, :self.features_indices[1]+1]))
-        self.test_x[:, :self.features_indices[1]+1] = np.nan_to_num(scaler.transform(
-            self.test_x[:, :self.features_indices[1]+1]))
+        if (len(self.train_x) > 0):
+            self.train_x[:, :self.features_indices[1]+1] = np.nan_to_num(scaler.transform(
+                self.train_x[:, :self.features_indices[1]+1]))
+        if (len(self.val_x) > 0):
+            self.val_x[:, :self.features_indices[1]+1] = np.nan_to_num(scaler.transform(
+                self.val_x[:, :self.features_indices[1]+1]))
+        if (len(self.test_x) > 0):
+            self.test_x[:, :self.features_indices[1]+1] = np.nan_to_num(scaler.transform(
+                self.test_x[:, :self.features_indices[1]+1]))
 
     def reduce_f(self, r_squared_thr=0.96, std_thr=0.01, verbose=True):
         if (self.train_x is None):
@@ -521,20 +533,24 @@ class Data:
         self.test_x = np.delete(self.test_x, removed, axis=1)
 
     def split_data(self, split=(0.2, 0.05)):
+        if ('split_type' in self.df.columns and self.df.split_type.nunique() > 1):
+            split_info = self.df.split_type
+        else:
+            split_info = None
         if (self.graph_mode):
             ((self.train_graphs, self.train_x, self.train_y, self.train_cweights),
              (self.val_graphs, self.val_x, self.val_y, self.val_cweights),
              (self.test_graphs, self.test_x, self.test_y, self.test_cweights),
              (self.train_indices, self.val_indices, self.test_indices)) = split_arrays(
                  (self.get_graphs(), self.get_x(), self.get_y(), self.get_cweights()), split,
-                 split_info=self.df.split_type)
+                 split_info=split_info)
         else:
             ((self.train_x, self.train_y, self.train_cweights),
              (self.val_x, self.val_y, self.val_cweights),
              (self.test_x, self.test_y, self.test_cweights),
              (self.train_indices, self.val_indices, self.test_indices)) = split_arrays(
                  (self.get_x(), self.get_y(), self.get_cweights()), split,
-                 split_info=self.df.split_type)
+                 split_info=split_info)
             self.train_graphs = self.val_graphs = self.test_graphs = None
 
     def get_raw_data(self):

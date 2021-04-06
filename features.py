@@ -150,7 +150,6 @@ def features(smiles, filter_='rdk', overwrite_cache=False, verbose=False,
     else:
         out = np.array([]).reshape((len(smiles), 0))
     assert (out.shape[1] == len(out_names)), '#descriptor names ≠ #descriptors'
-    info('features:', out_names)
     return out, out_names
 
 

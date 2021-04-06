@@ -1,4 +1,5 @@
 from itertools import combinations
+from logging import basicConfig, INFO, info, warning
 import pandas as pd
 import numpy as np
 from PIL import Image
@@ -13,6 +14,7 @@ import json
 import re
 from tap import Tap
 from typing import List, Optional, Literal, Tuple, Union
+from tqdm import tqdm
 
 import torch
 
@@ -203,10 +205,11 @@ class EvalArgs(Tap):
     epsilon: float = 0.5 # difference in evaluation measure below which to ignore falsely predicted pairs
     remove_train_compounds: bool = False
     remove_train_compounds_mode: Literal['all', 'column', 'print'] = 'all'
-    plot_diffs: bool = False
-    test_stats: bool = False
-    diffs: bool = False
-    classyfire: bool = False
+    plot_diffs: bool = False    # plot for every dataset with outliers marked
+    test_stats: bool = False    # overview stats for all datasets
+    dataset_stats: bool = False # stats for each dataset
+    diffs: bool = False         # compute outliers
+    classyfire: bool = False    # compound class stats
 
 def load_model(path: str, type_='keras'):
     if (type_ == 'keras'):
@@ -214,11 +217,87 @@ def load_model(path: str, type_='keras'):
         data = pickle.load(open(os.path.join(path, 'assets', 'data.pkl'), 'rb'))
         config = json.load(open(os.path.join(path, 'assets', 'config.json')))
     else:
-        model = torch.load(path + '.pt')
+        if (torch.cuda.is_available()):
+            model = torch.load(path + '.pt')
+        else:
+            model = torch.load(path + '.pt', map_location=torch.device('cpu'))
+            model.encoder.device = torch.device('cpu')
         data = pickle.load(open(f'{path}_data.pkl', 'rb'))
         config = json.load(open(f'{path}_config.json'))
     return model, data, config
 
+
+def classyfire_stats(d: Data, args: EvalArgs, plot=False):
+    acc2, results, matches = eval2(d.df, args.epsilon, 'classyfire.class')
+    print(f'{ds}: {acc2:.2%} accuracy)')
+    groups = results.groupby('classyfire.class')
+    results['matches_perc'] = results.matches_perc * len(results)
+    # print(groups.matches_perc.agg(['mean', 'median', 'std', 'count']))
+    # print(results.groupby('classyfire.class').matches_perc.agg(['mean', 'median', 'std', 'count']))
+    matches_df = pd.DataFrame.from_dict(matches['matches_perc'], orient='index', columns=['acc_without'])
+    matches_df['acc_without_diff'] = matches_df.acc_without - acc2
+    matches_df['num_compounds'] = ([len(d.df.loc[d.df['classyfire.class'] == c])
+                                    for c in matches_df.index.tolist()[:-1]]
+                                   + [len(d.df)])
+    matches_df['class_perc'] = matches_df.num_compounds / len(d.df)
+    train_compounds = []
+    train_compounds_all = len(set(data.df['inchi.std'].tolist()))
+    for c in matches_df.index.tolist()[:-1]:
+        compounds_perc = len(set(data.df.loc[data.df['classyfire.class'] == c,
+                                        'inchi.std'].tolist())) / train_compounds_all
+        train_compounds.append(compounds_perc)
+    matches_df['class_perc_train'] = train_compounds + [1.0]
+    matches_df.index = [re.sub(r' \(CHEMONTID:\d+\)', '', i) for i in matches_df.index]
+    print(matches_df.sort_values(by='acc_without_diff', ascending=False)[
+        ['acc_without_diff', 'num_compounds', 'class_perc', 'class_perc_train']])
+    if (plot):       # plotting
+        matches_df.drop('total').sort_values(by='acc_without_diff', ascending=False)[
+            ['acc_without_diff', 'class_perc', 'class_perc_train']].plot(rot=20)
+        import matplotlib.pyplot as plt
+        plt.tight_layout()
+        plt.show()
+
+def compound_acc(y, preds, comp_index, epsilon=0.5):
+    matches = 0
+    total = 0
+    for j in range(len(y)):
+        diff = (y[comp_index] - y[j]) * - np.sign(preds[comp_index] - preds[j])
+        if (diff < epsilon):
+            matches += 1
+        total += 1
+    return matches / total
+
+def compound_stats(d: Data, args:EvalArgs):
+    # logp
+    from rdkit.Chem.Descriptors import MolLogP
+    d.df['MolLogP'] = [MolLogP(MolFromSmiles(s)) for s in d.df.smiles]
+    # mean compound acc
+    d.df['mean_acc'] = [compound_acc(d.df.rt.tolist(), d.df.roi.tolist(), i, epsilon=args.epsilon)
+                        for i in range(len(d.df))]
+
+def density_plot(df: pd.DataFrame, x, y):
+    from scipy.stats import gaussian_kde
+    import matplotlib.pyplot as plt
+    toplot = df.sort_values(by=x)[[x, y]].rolling(len(df) / 100).mean().dropna()
+    xy = np.vstack([toplot[x], toplot[y]])
+    z = gaussian_kde(xy)(xy)
+    toplot.plot.scatter(x, y, c=z)
+    plt.show()
+
+def pair_stats(d: Data, verbose=False):
+    fields = {}
+    it = combinations(range(len(d.df)), 2)
+    if (verbose):
+        it = tqdm(it)
+    for i, j in it:
+        row_i, row_j = d.df.iloc[i], d.df.iloc[j]
+        fields.setdefault('indices', []).append((i, j))
+        fields.setdefault('abs_rt_diff', []).append(np.abs(row_i.rt - row_j.rt))
+        fields.setdefault('abs_roi_diff', []).append(np.abs(row_i.roi - row_j.roi))
+        fields.setdefault('prediction_correct', []).append(np.sign(row_i.rt - row_j.rt) == np.sign(row_i.roi - row_j.roi))
+        if ('MolLogP' in d.df.columns):
+            fields.setdefault('MolLogP_diff', []).append(np.abs(row_i.MolLogP - row_j.MolLogP))
+    return pd.DataFrame(fields)
 
 if __name__ == '__main__':
     if '__file__' in globals():
@@ -226,49 +305,55 @@ if __name__ == '__main__':
     else:
         args = EvalArgs().parse_args('hsm_new.tf 0004 --test_stats'.split())
 
+    if (args.verbose):
+        basicConfig(level=INFO)
+
     # load model
+    info('load model...')
     model, data, config = load_model(args.model, args.model_type)
     features_type = parse_feature_spec(config['args']['feature_type'])['mode']
     features_add = config['args']['add_descs']
     n_thr = config['args']['num_features']
-
+    info('load cache')
     # load cached descriptors
     if (args.cache_file is not None):
         features.write_cache = False # flag for reporting changes to cache
-        if (args.verbose):
-            print('reading in cache...')
+        info('load cache')
         if (os.path.exists(args.cache_file)):
             features.cached = pickle.load(open(args.cache_file, 'rb'))
         else:
             features.cached = {}
-            if (args.verbose):
-                print('cache file does not exist yet')
+            warning('cache file does not exist yet')
 
     test_stats = []
+    data_args = {'use_compound_classes': data.use_compound_classes,
+                 'use_system_information': data.use_system_information,
+                 'metadata_void_rt': args.metadata_void_rt,
+                 'classes_l_thr': data.classes_l_thr,
+                 'classes_u_thr': data.classes_u_thr,
+                 'use_usp_codes': data.use_usp_codes,
+                 'custom_features': data.descriptors,
+                 'use_hsm': data.use_hsm,
+                 'repo_root_folder': args.repo_root_folder,
+                 'custom_column_fields': data.custom_column_fields,
+                 'columns_remove_na': False,
+                 'hsm_fields': data.hsm_fields,
+                 'graph_mode': args.model_type == 'mpn'}
+    info('model preprocessing done')
     for ds in args.test_sets:
+        info(f'loading data for {ds}')
         if (not re.match(r'\d{4}', ds)):
             # raw file
-            d = Data.from_raw_file(ds, void_rt=args.void_rt, graph_mode=(args.model_type == 'mpn'))
+            d = Data.from_raw_file(ds, void_rt=args.void_rt, **data_args)
             d.custom_features = data.descriptors
         else:
-            d = Data(use_compound_classes=data.use_compound_classes,
-                     use_system_information=data.use_system_information,
-                     metadata_void_rt=args.metadata_void_rt,
-                     classes_l_thr=data.classes_l_thr,
-                     classes_u_thr=data.classes_u_thr,
-                     use_usp_codes=data.use_usp_codes,
-                     custom_features=data.descriptors,
-                     use_hsm=data.use_hsm,
-                     repo_root_folder=args.repo_root_folder,
-                     custom_column_fields=data.custom_column_fields,
-                     columns_remove_na=False,
-                     hsm_fields=data.hsm_fields,
-                     graph_mode=args.model_type == 'mpn')
+            d = Data(**data_args)
             d.add_dataset_id(ds,
                              repo_root_folder=args.repo_root_folder,
                              void_rt=args.void_rt,
                              isomeric=args.isomeric)
         if (args.remove_train_compounds):
+            info('removing train compounds')
             train_compounds_all = set(data.df['inchi.std'])
             this_column = d.df['column.name'].values[0]
             train_compounds_col = set(data.df.loc[data.df['column.name'] == this_column, 'inchi.std'])
@@ -291,64 +376,51 @@ if __name__ == '__main__':
         if (len(d.df) < 2):
             print(f'too few compounds ({len(d.df)}), skipping ...')
             continue
+        info('computing features')
         d.compute_features(verbose=args.verbose, mode=features_type, add_descs=features_add,
                            add_desc_file=args.add_desc_file, n_thr=n_thr)
         if (args.model_type == 'mpn'):
+            info('computing graphs')
             d.compute_graphs()
-        d.split_data()
+        info('(fake) splitting data')
+        d.split_data((0, 0))
         if (hasattr(data, 'scaler')):
+            info('standardize data')
             d.standardize(data.scaler)
         ((train_graphs, train_x, train_y, train_weights),
          (val_graphs, val_x, val_y, val_weights),
          (test_graphs, test_x, test_y, test_weights)) = d.get_split_data()
         X = np.concatenate((train_x, test_x, val_x))
         Y = np.concatenate((train_y, test_y, val_y))
+        info('done preprocessing. predicting...')
         if (args.model_type == 'mpn'):
             from mpnranker import predict as mpn_predict
             graphs = np.concatenate((train_graphs, test_graphs, val_graphs))
-            preds = mpn_predict((graphs, X), model, batch_size=args.batch_size)
+            preds = mpn_predict((graphs, X), model, batch_size=args.batch_size,
+                                prog_bar=args.verbose)
         else:
             preds = predict(X, model, args.batch_size)
+        info('done predicting. evaluation...')
         acc = eval_(Y, preds, args.epsilon)
         d.df['roi'] = preds[np.arange(len(d.df.rt))[ # restore correct order
             np.argsort(np.concatenate([d.train_indices, d.test_indices, d.val_indices]))]]
         # acc2, results = eval2(d.df, args.epsilon)
         if (args.classyfire):
-            acc2, results, matches = eval2(d.df, args.epsilon, 'classyfire.class')
-            print(f'{ds}: ({acc:.2%} ({acc2:.2%}) accuracy)')
-            groups = results.groupby('classyfire.class')
-            results['matches_perc'] = results.matches_perc * len(results)
-            # print(groups.matches_perc.agg(['mean', 'median', 'std', 'count']))
-            # print(results.groupby('classyfire.class').matches_perc.agg(['mean', 'median', 'std', 'count']))
-            matches_df = pd.DataFrame.from_dict(matches['matches_perc'], orient='index', columns=['acc_without'])
-            matches_df['acc_without_diff'] = matches_df.acc_without - acc2
-            matches_df['num_compounds'] = ([len(d.df.loc[d.df['classyfire.class'] == c])
-                                            for c in matches_df.index.tolist()[:-1]]
-                                           + [len(d.df)])
-            matches_df['class_perc'] = matches_df.num_compounds / len(d.df)
-            train_compounds = []
-            train_compounds_all = len(set(data.df['inchi.std'].tolist()))
-            for c in matches_df.index.tolist()[:-1]:
-                compounds_perc = len(set(data.df.loc[data.df['classyfire.class'] == c,
-                                                'inchi.std'].tolist())) / train_compounds_all
-                train_compounds.append(compounds_perc)
-            matches_df['class_perc_train'] = train_compounds + [1.0]
-            matches_df.index = [re.sub(r' \(CHEMONTID:\d+\)', '', i) for i in matches_df.index]
-            print(matches_df.sort_values(by='acc_without_diff', ascending=False)[
-                ['acc_without_diff', 'num_compounds', 'class_perc', 'class_perc_train']])
-            if False:       # plotting
-                matches_df.drop('total').sort_values(by='acc_without_diff', ascending=False)[
-                    ['acc_without_diff', 'class_perc', 'class_perc_train']].plot(rot=20)
-                import matplotlib.pyplot as plt
-                plt.tight_layout()
-                plt.show()
+            info('computing classyfire stats')
+            classyfire_stats(d, args)
+        if (args.dataset_stats):
+            info('computing dataset stats')
+            dataset_stats(d)
+            pass
         if (args.test_stats):
+            info('computing test stats')
             stats = data_stats(d, data, data.custom_column_fields)
             stats.update({'acc': acc, 'id': ds})
             test_stats.append(stats)
         else:
             print(f'{ds}: {acc:.3f} \t (#data: {len(Y)})')
         if (args.diffs):
+            info('computing outlier stats')
             df = rt_roi_diffs(d, Y, preds)
             # with pd.option_context('display.max_rows', None):
             #     print(df.sort_values(by='rt')[['id', 'rt', 'roi', 'diffs']])
@@ -357,6 +429,7 @@ if __name__ == '__main__':
             if (args.plot_diffs):
                 visualize_df(df)
         if (args.export_rois):
+            info('exporting ROIs')
             # TODO: don't overwrite
             if (not re.match(r'\d{4}', ds)):
                 ds = os.path.basename(ds)
