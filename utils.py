@@ -84,10 +84,12 @@ class BatchGenerator(tf.keras.utils.Sequence):
                 yield indices[i], indices[j]
 
     @staticmethod
-    def inter_dataset_pair_it(indices1, indices2, pair_step=1, pair_stop=None):
+    def inter_dataset_pair_it(indices1, indices2, pair_step=1, pair_stop=None,
+                              nr_groups_norm=1):
         max_ = max(len(indices1), len(indices2))
         all_combs = list(product(indices1, indices2))
-        k = (max_ * np.ceil((pair_stop if pair_stop is not None else max_) / pair_step)).astype(int)
+        k = (max_ * np.ceil((pair_stop if pair_stop is not None else max_) / pair_step)
+             * nr_groups_norm).astype(int)
         return iter(sample(all_combs, min(k, len(all_combs))))
 
     @staticmethod
@@ -142,7 +144,8 @@ class BatchGenerator(tf.keras.utils.Sequence):
             void_j = void_info[group2] if void_info is not None and group2 in void_info else self.void
             pair_nr = 0
             for i, j in BatchGenerator.inter_dataset_pair_it(
-                    groups[group1], groups[group2], self.pair_step, self.pair_stop):
+                    groups[group1], groups[group2], self.pair_step, self.pair_stop,
+                    nr_groups_norm=1/len(groups)):
                 res = BatchGenerator.get_pair(y, i, j, void_i or 0, void_j or 0, self.y_neg)
                 if (res is None):
                     continue
