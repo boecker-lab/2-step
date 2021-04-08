@@ -37,7 +37,6 @@ class TrainArgs(Tap):
     balance: bool = False       # balance data by dataset
     void_rt: float = 0.0        # void time threshold; used for ALL datasets
     metadata_void_rt: bool = False # use t0 value from repo metadata (times 3)
-    class_weights: bool = False    # use weights corresponding to #samples per dataset
     validation_datasets: List[str] = [] # datasets to use for validation (instead of split of training data)
     test_datasets: List[str] = [] # datasets to use for test (instead of split of training data)
     # features
@@ -94,9 +93,9 @@ def preprocess(data: Data, args: TrainArgs):
                           add_descs=args.add_descs, add_desc_file=args.add_desc_file)
     if (data.train_y is not None):
         # assume everything was computed, split etc. already
-        return ((data.train_graphs, data.train_x, data.train_y, data.train_cweights),
-                (data.val_graphs, data.val_x, data.val_y, data.val_cweights),
-                (data.test_graphs, data.test_x, data.test_y, data.test_cweights))
+        return ((data.train_graphs, data.train_x, data.train_y),
+                (data.val_graphs, data.val_x, data.val_y),
+                (data.test_graphs, data.test_x, data.test_y))
     if (args.cache_file is not None and features.write_cache):
         info('writing cache, don\'t interrupt!!')
         pickle.dump(features.cached, open(args.cache_file, 'wb'))
@@ -240,23 +239,23 @@ if __name__ == '__main__':
                             set(data.df[['dataset_id', 'column.name']].itertuples(index=False))]))
     else:
         raise Exception(f'input {args.input} not supported')
-    ((train_graphs, train_x, train_y, train_weights),
-     (val_graphs, val_x, val_y, val_weights),
-     (test_graphs, test_x, test_y, test_weights)) = preprocess(data, args)
+    ((train_graphs, train_x, train_y),
+     (val_graphs, val_x, val_y),
+     (test_graphs, test_x, test_y)) = preprocess(data, args)
     info('done. Initializing BatchGenerator...')
     bg = BatchGenerator((train_graphs, train_x) if graphs else train_x, train_y,
-                        (train_weights if args.class_weights else None),
-                        args.batch_size, pair_step=args.pair_step,
+                        batch_size=args.batch_size, pair_step=args.pair_step,
                         pair_stop=args.pair_stop, use_weights=args.use_weights,
                         dataset_info=data.df.dataset_id.iloc[data.train_indices].tolist(),
-                        weight_steep=args.weight_steep, weight_mid=args.weight_mid,
+                        void_info=data.void_info, weight_steep=args.weight_steep,
+                        weight_mid=args.weight_mid,
                         multix=graphs, y_neg=(args.mpn_loss == 'margin'))
     vg = BatchGenerator((val_graphs, val_x) if graphs else train_x, val_y,
-                        (val_weights if args.class_weights else None),
-                        args.batch_size, pair_step=args.pair_step,
+                        batch_size=args.batch_size, pair_step=args.pair_step,
                         pair_stop=args.pair_stop, use_weights=args.use_weights,
                         dataset_info=data.df.dataset_id.iloc[data.val_indices].tolist(),
-                        weight_steep=args.weight_steep, weight_mid=args.weight_mid,
+                        void_info=data.void_info, weight_steep=args.weight_steep,
+                        weight_mid=args.weight_mid,
                         multix=graphs, y_neg=(args.mpn_loss == 'margin'))
     if (args.plot_weights):
         plot_x = np.linspace(0, 10 * args.weight_mid, 100)

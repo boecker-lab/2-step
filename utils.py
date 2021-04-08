@@ -60,7 +60,7 @@ class BatchGenerator(tf.keras.utils.Sequence):
         self.void = void
         self.y_neg = y_neg
         self.x1_indices, self.x2_indices, self.y_trans, self.weights = self._transform_pairwise(
-            y, class_weights, dataset_info, void_info)
+            y, dataset_info=dataset_info, void_info=void_info)
         if (shuffle):
             perm = np.random.permutation(self.y_trans.shape[0])
             self.x1_indices = self.x1_indices[perm]
@@ -105,7 +105,7 @@ class BatchGenerator(tf.keras.utils.Sequence):
         else:
             return neg_idx, pos_idx, (-1 if y_neg else 0)
 
-    def _transform_pairwise(self, y, class_weights, dataset_info=None,
+    def _transform_pairwise(self, y, dataset_info=None,
                              void_info=None):
         x1_indices = []
         x2_indices = []
@@ -113,13 +113,18 @@ class BatchGenerator(tf.keras.utils.Sequence):
         weights = []
         # group by dataset
         groups = {}
+        pair_nrs = {}
+        group_index_start = {}
+        group_index_end = {}
         if (dataset_info is None):
             groups['unk'] = list(range(len(y)))
         else:
+            assert len(dataset_info) == len(y), f'{len(dataset_info)=} != {len(y)=}'
             for i in range(len(y)):
                 groups.setdefault(dataset_info[i], []).append(i)
         # same-dataset pairs
         for group in groups:
+            group_index_start[group] = len(weights)
             group_void_rt = void_info[group] if void_info is not None and group in void_info else self.void
             pair_nr = 0
             for i, j in BatchGenerator.dataset_pair_it(groups[group], self.pair_step, self.pair_stop):
@@ -131,15 +136,15 @@ class BatchGenerator(tf.keras.utils.Sequence):
                 x2_indices.append(neg_idx)
                 y_trans.append(yi)
                 # weights
-                assert class_weights is None or class_weights[i] == class_weights[j]
-                c_weight = class_weights[i] if class_weights is not None else 1
-                weights.append(c_weight * self.weight_fn(
-                    y[pos_idx] - y[neg_idx], self.weight_steep, self.weight_mid)
+                weights.append(self.weight_fn(y[pos_idx] - y[neg_idx], self.weight_steep, self.weight_mid)
                                if self.use_weights else 1)
                 pair_nr += 1
             print(f'group {group} has {pair_nr} pairs')
+            pair_nrs[group] = pair_nr
+            group_index_end[group] = len(weights)
         # between groups
         for group1, group2 in combinations(groups, 2):
+            group_index_start[(group1, group2)] = len(weights)
             void_i = void_info[group1] if void_info is not None and group1 in void_info else self.void
             void_j = void_info[group2] if void_info is not None and group2 in void_info else self.void
             pair_nr = 0
@@ -153,10 +158,21 @@ class BatchGenerator(tf.keras.utils.Sequence):
                 x1_indices.append(pos_idx)
                 x2_indices.append(neg_idx)
                 y_trans.append(yi)
-                # weights TODO: compute *in* batchgenerator
-                weights.append(min(class_weights[i], class_weights[j]) if class_weights is not None else 1)
+                weights.append(1)
                 pair_nr += 1
             print(f'groups {(group1, group2)} have {pair_nr} pairs')
+            pair_nrs[max(group1, group2, key=lambda g: pair_nrs[g])] += pair_nr
+            group_index_end[(group1, group2)] = len(weights)
+        # multiply with group weights
+        group_weights = {group: (len(weights) / pair_nrs[group]) if pair_nrs[group] > 0 else 1.0
+                         for group in pair_nrs}
+        weights = np.asanyarray(weights)
+        for groups in group_index_start:
+            start, end = group_index_start[groups], group_index_end[groups]
+            g_weight = (group_weights[groups] if groups in group_weights # same dataset
+                        else min(group_weights[groups[0]], group_weights[groups[1]])) # different dataset
+            weights[start:end] *= g_weight
+            print(f'{groups} weights: {g_weight}')
         return np.asarray(x1_indices), np.asarray(x2_indices), np.asarray(
             y_trans), np.asarray(weights)
 
@@ -203,23 +219,25 @@ def get_column_scaling(cols, repo_root_folder='/home/fleming/Documents/Projects/
     return (np.array([get_column_scaling._data[c]['mean'] for c in cols]),
             np.array([get_column_scaling._data[c]['std'] for c in cols]))
 
-def split_arrays(arrays, sizes: tuple, split_info=None):
+def split_arrays(arrays, sizes: tuple, split_info=None, stratify=None):
     for a in arrays:            # all same shape
-        assert len(a) == len(arrays[0])
+        assert (len(a) == len(arrays[0])), f'not all arrays to split have the same size, {len(a)} != {len(arrays[0])}'
     # if split info is provided (i.e., whether datapoint should be train/test/val)
     # check whether arrays can be split that way
     if (split_info is not None):
-        assert len(arrays[0]) == len(split_info)
+        assert (len(arrays[0]) == len(split_info)), f'split_info (#={len(split_info)}) does not have the same size as the arrays (#={len(arrays[0])})'
         for split, kind in [(sizes[0], 'test'), (sizes[1], 'val')]:
-            assert split == 0 or len([s for s in split_info if s == kind]) > 0
+            assert (split == 0 or len([s for s in split_info if s == kind]) > 0), f'not enough {kind} data (required split {split})'
         train_indices = np.argwhere(np.asarray(split_info) == 'train').ravel()
         test_indices = np.argwhere(np.asarray(split_info) == 'test').ravel()
         val_indices = np.argwhere(np.asarray(split_info) == 'val').ravel()
     else:
         indices = np.arange(len(arrays[0]))
-        train_indices, test_indices = (train_test_split(indices, test_size=sizes[0])
+        train_indices, test_indices = (train_test_split(indices, test_size=sizes[0],
+                                                        stratify=stratify)
                                        if sizes[0] > 0 else (indices, indices[:0]))
-        train_indices, val_indices = (train_test_split(train_indices, test_size=sizes[1])
+        train_indices, val_indices = (train_test_split(train_indices, test_size=sizes[1],
+                                                       stratify=np.asarray(stratify)[train_indices])
                                       if sizes[1] > 0 else (train_indices, train_indices[:0]))
     print(f'split {len(arrays[0])} into {len(train_indices)} train data, '
           f'{len(val_indices)} validation data and {len(test_indices)} test data')
@@ -271,11 +289,11 @@ class Data:
     columns_remove_na: bool = True
     hsm_fields: List[str] = field(default_factory=lambda: ['H', 'S*', 'A', 'B', 'C (pH 2.8)', 'C (pH 7.0)'])
     graph_mode: bool = False
+    void_info: dict = field(default_factory=dict)
 
     def __post_init__(self):
         self.x_features = None
         self.graphs = None
-        self.cweights = None
         self.x_classes = None
         self.x_info = None
         self.train_x = None
@@ -447,9 +465,6 @@ class Data:
             self.compute_graphs()
         return self.graphs
 
-    def get_cweights(self):
-        return class_weight.compute_sample_weight('balanced', y=self.df.dataset_id)
-
     def add_dataset_id(self, dataset_id,
                        repo_root_folder='/home/fleming/Documents/Projects/RtPredTrainingData/',
                        void_rt=0.0, isomeric=True, split_type='train'):
@@ -492,10 +507,9 @@ class Data:
             df = df.merge(column_information, on='dataset_id')
         # rows without RT data are useless
         df = df[~pd.isna(df.rt)]
-        # filter rows below void RT threshold
         if (self.metadata_void_rt and 'column.t0' in df.columns):
             void_rt = df['column.t0'].iloc[0] * 2 # NOTE: 2 or 3?
-        df = df.loc[~(df.rt < void_rt)]           # TODO: don't do this!!
+        self.void_info[df.dataset_id.iloc[0]] = void_rt
         # flag dataset as train/val/test
         df['split_type'] = split_type
         if (self.df is None):
@@ -528,11 +542,11 @@ class Data:
         df.file = f
         # rows without RT data are useless
         df = df[~pd.isna(df.rt)]
-        # filter rows below void RT threshold
-        df = df.loc[~(df.rt < void_rt)]
         # add dummy dataset_id
         df['dataset_id'] = os.path.basename(f)
-        return Data(df=df, graph_mode=graph_mode, **extra_data_args)
+        return Data(df=df, graph_mode=graph_mode,
+                    void_info={df.dataset_id.iloc[0]: void_rt},
+                    **extra_data_args)
 
     def balance(self):
         if ('dataset_id' not in self.df.columns):
@@ -596,19 +610,19 @@ class Data:
         else:
             split_info = None
         if (self.graph_mode):
-            ((self.train_graphs, self.train_x, self.train_y, self.train_cweights),
-             (self.val_graphs, self.val_x, self.val_y, self.val_cweights),
-             (self.test_graphs, self.test_x, self.test_y, self.test_cweights),
+            ((self.train_graphs, self.train_x, self.train_y),
+             (self.val_graphs, self.val_x, self.val_y),
+             (self.test_graphs, self.test_x, self.test_y),
              (self.train_indices, self.val_indices, self.test_indices)) = split_arrays(
-                 (self.get_graphs(), self.get_x(), self.get_y(), self.get_cweights()), split,
-                 split_info=split_info)
+                 (self.get_graphs(), self.get_x(), self.get_y()), split,
+                 split_info=split_info, stratify=self.df.dataset_id.tolist())
         else:
-            ((self.train_x, self.train_y, self.train_cweights),
-             (self.val_x, self.val_y, self.val_cweights),
-             (self.test_x, self.test_y, self.test_cweights),
+            ((self.train_x, self.train_y),
+             (self.val_x, self.val_y),
+             (self.test_x, self.test_y),
              (self.train_indices, self.val_indices, self.test_indices)) = split_arrays(
-                 (self.get_x(), self.get_y(), self.get_cweights()), split,
-                 split_info=split_info)
+                 (self.get_x(), self.get_y()), split,
+                 split_info=split_info, stratify=self.df.dataset_id.tolist())
             self.train_graphs = self.val_graphs = self.test_graphs = None
 
     def get_raw_data(self):
@@ -619,13 +633,12 @@ class Data:
 
     def get_split_data(self, split=(0.2, 0.05)):
         if ((any(d is None for d in [
-                self.train_x, self.train_y, self.train_cweights, self.val_x, self.val_y,
-                self.val_cweights, self.test_x, self.test_y, self.test_cweights
+                self.train_x, self.train_y, self.val_x, self.val_y, self.test_x, self.test_y
         ] + ([self.train_graphs, self.val_graphs, self.test_graphs] if self.graph_mode else [])))):
             self.split_data(split)
-        return ((self.train_graphs, self.train_x, self.train_y, self.train_cweights),
-                (self.val_graphs, self.val_x, self.val_y, self.val_cweights),
-                (self.test_graphs, self.test_x, self.test_y, self.test_cweights))
+        return ((self.train_graphs, self.train_x, self.train_y),
+                (self.val_graphs, self.val_x, self.val_y),
+                (self.test_graphs, self.test_x, self.test_y))
 
 def export_predictions(data, preds, out, mode='all'):
     if (mode == 'all'):
