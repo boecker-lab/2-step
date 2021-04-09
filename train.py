@@ -70,6 +70,7 @@ class TrainArgs(Tap):
     use_weights: bool = False
     weight_steep: float = 4
     weight_mid: float = 0.75
+    no_inter_pair: bool = False # don't use pairs of compounds of different datasets
     # data locations
     repo_root_folder: str = '/home/fleming/Documents/Projects/RtPredTrainingData/'
     add_desc_file: str = '/home/fleming/Documents/Projects/rtranknet/data/qm_merged.csv'
@@ -248,6 +249,7 @@ if __name__ == '__main__':
                         pair_stop=args.pair_stop, use_weights=args.use_weights,
                         dataset_info=data.df.dataset_id.iloc[data.train_indices].tolist(),
                         void_info=data.void_info, weight_steep=args.weight_steep,
+                        no_inter_pair=args.no_inter_pair,
                         weight_mid=args.weight_mid,
                         multix=graphs, y_neg=(args.mpn_loss == 'margin'))
     vg = BatchGenerator((val_graphs, val_x) if graphs else train_x, val_y,
@@ -255,6 +257,7 @@ if __name__ == '__main__':
                         pair_stop=args.pair_stop, use_weights=args.use_weights,
                         dataset_info=data.df.dataset_id.iloc[data.val_indices].tolist(),
                         void_info=data.void_info, weight_steep=args.weight_steep,
+                        no_inter_pair=args.no_inter_pair,
                         weight_mid=args.weight_mid,
                         multix=graphs, y_neg=(args.mpn_loss == 'margin'))
     if (args.plot_weights):
