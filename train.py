@@ -289,8 +289,10 @@ if __name__ == '__main__':
                       open(os.path.join(path, 'assets', 'config.json'), 'w'), indent=2)
             print(f'model written to {path}')
         train_preds = predict(train_x, ranker.model, args.batch_size)
-        val_preds = predict(val_x, ranker.model, args.batch_size)
-        test_preds = predict(test_x, ranker.model, args.batch_size)
+        if (len(val_x) > 0):
+            val_preds = predict(val_x, ranker.model, args.batch_size)
+        if (len(test_x) > 0):
+            test_preds = predict(test_x, ranker.model, args.batch_size)
     else:
         # MPNranker
         if (ranker is None):    # otherwise loaded already
@@ -311,12 +313,16 @@ if __name__ == '__main__':
                        'args': args._log_all()},
                       open(f'{run_name}_config.json', 'w'), indent=2)
         train_preds = mpn_predict((train_graphs, train_x), ranker, batch_size=args.batch_size)
-        val_preds = mpn_predict((val_graphs, val_x), ranker, batch_size=args.batch_size)
-        test_preds = mpn_predict((test_graphs, test_x), ranker, batch_size=args.batch_size)
+        if (len(val_x) > 0):
+            val_preds = mpn_predict((val_graphs, val_x), ranker, batch_size=args.batch_size)
+        if (len(test_x) > 0):
+            test_preds = mpn_predict((test_graphs, test_x), ranker, batch_size=args.batch_size)
     print(f'train: {eval_(train_y, train_preds, args.epsilon):.3f}')
-    print(f'test: {eval_(test_y, test_preds, args.epsilon):.3f}')
-    print(f'val: {eval_(val_y, val_preds, args.epsilon):.3f}')
-    if (args.export_rois):
+    if (len(test_x) > 0):
+        print(f'test: {eval_(test_y, test_preds, args.epsilon):.3f}')
+    if (len(val_x) > 0):
+        print(f'val: {eval_(val_y, val_preds, args.epsilon):.3f}')
+    if (args.export_rois and len(test_x) > 0):
         if not os.path.isdir('runs'):
             os.mkdir('runs')
         export_predictions(data, test_preds, f'runs/{run_name}_test.tsv', 'test')
