@@ -153,7 +153,21 @@ def train(ranker: MPNranker, bg: BatchGenerator, epochs=2,
             writer.add_scalar('acc', train_acc, iter_count)
             print(f'{train_acc=:.2%}')
             if (val_writer is not None):
-                val_acc = eval_(val_g.y, predict(val_g.x, ranker, batch_size=batch_size), epsilon=epsilon)
+                if (val_g.dataset_info is not None):
+                    val_accs = []
+                    for ds in set(val_g.dataset_info):
+                        if (val_g.multix):
+                            x = [[val_g.x[j][i] for i in range(len(val_g.dataset_info)) if val_g.dataset_info[i] == ds]
+                                 for j in range(len(val_g.x))]
+                        else:
+                            x = [val_g.x[i] for i in range(len(val_g.dataset_info)) if val_g.dataset_info[i] == ds]
+                        y = [val_g.y[i] for i in range(len(val_g.dataset_info)) if val_g.dataset_info[i] == ds]
+                        val_acc = eval_(y, predict(x, ranker, batch_size=batch_size), epsilon=epsilon)
+                        val_accs.append(val_acc)
+                        print(f'{ds}: \t{val_acc=:.2%}')
+                    val_acc = np.mean(val_accs)
+                else:
+                    val_acc = eval_(val_g.y, predict(val_g.x, ranker, batch_size=batch_size), epsilon=epsilon)
                 val_writer.add_scalar('acc', val_acc, iter_count)
                 print(f'{val_acc=:.2%}')
         if (ep_save):
