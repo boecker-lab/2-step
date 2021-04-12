@@ -95,12 +95,12 @@ def train(ranker: MPNranker, bg: BatchGenerator, epochs=2,
           steps_train_loss=10, steps_val_loss=100,
           batch_size=8192, sigmoid_loss=False,
           margin_loss=0.1, early_stopping_patience=None,
-          ep_save=False):
+          ep_save=False, learning_rate=1e-3):
     save_name = ('mpnranker' if writer is None else
                  writer.logdir.split('/')[-1].replace('_train', ''))
     ranker.to(ranker.encoder.device)
     print('device:', ranker.encoder.device)
-    optimizer = optim.Adam(ranker.parameters())
+    optimizer = optim.Adam(ranker.parameters(), lr=learning_rate)
     loss_fun = (nn.BCELoss(reduction='none') if sigmoid_loss
                 else nn.MarginRankingLoss(margin_loss, reduction='none'))
     ranker.train()

@@ -32,6 +32,7 @@ class TrainArgs(Tap):
     device: Optional[str] = None  # either `mirrored` or specific device name like gpu:1 or None (auto)
     remove_test_compounds: List[str] = [] # remove compounds occuring in the specified (test) datasets
     exclude_compounds_list: Optional[str] = None # list of compounds to exclude from training
+    learning_rate: float = 1e-3
     # data
     isomeric: bool = False      # use isomeric data (if available)
     balance: bool = False       # balance data by dataset
@@ -305,7 +306,8 @@ if __name__ == '__main__':
                   steps_val_loss=np.ceil(len(bg) / 5).astype(int),
                   batch_size=args.batch_size, epsilon=args.epsilon,
                   sigmoid_loss=(args.mpn_loss == 'bce'), margin_loss=args.mpn_margin,
-                  early_stopping_patience=args.early_stopping_patience)
+                  early_stopping_patience=args.early_stopping_patience,
+                  learning_rate=args.learning_rate)
         if (args.save_data):
             torch.save(ranker, run_name + '.pt')
             pickle.dump(data, open(os.path.join(f'{run_name}_data.pkl'), 'wb'))

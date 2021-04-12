@@ -387,9 +387,9 @@ if __name__ == '__main__':
         if (hasattr(data, 'scaler')):
             info('standardize data')
             d.standardize(data.scaler)
-        ((train_graphs, train_x, train_y, train_weights),
-         (val_graphs, val_x, val_y, val_weights),
-         (test_graphs, test_x, test_y, test_weights)) = d.get_split_data()
+        ((train_graphs, train_x, train_y),
+         (val_graphs, val_x, val_y),
+         (test_graphs, test_x, test_y)) = d.get_split_data()
         X = np.concatenate((train_x, test_x, val_x))
         Y = np.concatenate((train_y, test_y, val_y))
         info('done preprocessing. predicting...')
