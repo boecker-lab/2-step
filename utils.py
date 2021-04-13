@@ -42,7 +42,7 @@ def csr2tf(csr):
 class BatchGenerator(tf.keras.utils.Sequence):
     def __init__(self, x, y, class_weights=None, batch_size=32, shuffle=True, delta=1,
                  pair_step=1, pair_stop=None, dataset_info=None,
-                 void_info=None, no_inter_pair=False,
+                 void_info=None, no_inter_pair=False, max_indices_size=None,
                  use_weights=True, weight_steep=4, weight_mid=0.75,
                  void=None, y_neg=False, multix=False):
         self.x = x
@@ -58,10 +58,12 @@ class BatchGenerator(tf.keras.utils.Sequence):
         self.dataset_info = dataset_info
         self.void_info = void_info
         self.no_inter_pair = no_inter_pair
+        self.max_indices_size = max_indices_size
         self.void = void
         self.y_neg = y_neg
         self.x1_indices, self.x2_indices, self.y_trans, self.weights = self._transform_pairwise(
-            y, dataset_info=dataset_info, void_info=void_info, no_inter_pair=no_inter_pair)
+            y, dataset_info=dataset_info, void_info=void_info, no_inter_pair=no_inter_pair,
+            max_indices_size=max_indices_size)
         if (shuffle):
             perm = np.random.permutation(self.y_trans.shape[0])
             self.x1_indices = self.x1_indices[perm]
@@ -76,9 +78,14 @@ class BatchGenerator(tf.keras.utils.Sequence):
         return 1 / (1 + np.exp(-steep * (x - mid)))
 
     @staticmethod
-    def dataset_pair_it(indices, pair_step=1, pair_stop=None):
+    def dataset_pair_it(indices, pair_step=1, pair_stop=None,
+                        max_indices_size=None):
         n = len(indices)
-        for i in range(n):
+        if (max_indices_size is None):
+            it = range(n)
+        else:
+            it = sorted(sample(list(range(n)), min(max_indices_size, n)))
+        for i in it:
             for j in range(i + 1,
                            (n if pair_stop is None else min(i + pair_stop, n)),
                            pair_step):
@@ -86,8 +93,10 @@ class BatchGenerator(tf.keras.utils.Sequence):
 
     @staticmethod
     def inter_dataset_pair_it(indices1, indices2, pair_step=1, pair_stop=None,
-                              nr_groups_norm=1):
+                              nr_groups_norm=1, max_indices_size=None):
         max_ = max(len(indices1), len(indices2))
+        if (max_indices_size is not None):
+            max_ = min(max_, max_indices_size)
         all_combs = list(product(indices1, indices2))
         k = (max_ * np.ceil((pair_stop if pair_stop is not None else max_) / pair_step)
              * nr_groups_norm).astype(int)
@@ -107,7 +116,8 @@ class BatchGenerator(tf.keras.utils.Sequence):
             return neg_idx, pos_idx, (-1 if y_neg else 0)
 
     def _transform_pairwise(self, y, dataset_info=None,
-                             void_info=None, no_inter_pair=False):
+                            void_info=None, no_inter_pair=False,
+                            max_indices_size=None):
         x1_indices = []
         x2_indices = []
         y_trans = []
@@ -128,7 +138,8 @@ class BatchGenerator(tf.keras.utils.Sequence):
             group_index_start[group] = len(weights)
             group_void_rt = void_info[group] if void_info is not None and group in void_info else self.void
             pair_nr = 0
-            for i, j in BatchGenerator.dataset_pair_it(groups[group], self.pair_step, self.pair_stop):
+            for i, j in BatchGenerator.dataset_pair_it(groups[group], self.pair_step, self.pair_stop,
+                                                       max_indices_size=max_indices_size):
                 res = BatchGenerator.get_pair(y, i, j, group_void_rt or 0, group_void_rt or 0, self.y_neg)
                 if (res is None):
                     continue
@@ -152,7 +163,7 @@ class BatchGenerator(tf.keras.utils.Sequence):
                 pair_nr = 0
                 for i, j in BatchGenerator.inter_dataset_pair_it(
                         groups[group1], groups[group2], self.pair_step, self.pair_stop,
-                        nr_groups_norm=1/len(groups)):
+                        nr_groups_norm=1/len(groups), max_indices_size=max_indices_size):
                     res = BatchGenerator.get_pair(y, i, j, void_i or 0, void_j or 0, self.y_neg)
                     if (res is None):
                         continue
