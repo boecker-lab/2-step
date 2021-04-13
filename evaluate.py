@@ -180,6 +180,8 @@ def data_stats(d, data, custom_column_fields=None):
             'config_occurences': same_config}
 
 
+
+
 def predict(X, model, batch_size):
     preds = []
     ranker_output = K.function([model.layers[0].input], [model.layers[-3].get_output_at(0)])
@@ -303,7 +305,7 @@ if __name__ == '__main__':
     if '__file__' in globals():
         args = EvalArgs().parse_args()
     else:
-        args = EvalArgs().parse_args('hsm_new.tf 0004 --test_stats'.split())
+        args = EvalArgs().parse_args('--model runs/cweights_big_longer --test_sets data/smrt_test.csv --metadata_void_rt --model_type mpn'.split())
 
     if (args.verbose):
         basicConfig(level=INFO)
@@ -411,6 +413,8 @@ if __name__ == '__main__':
         if (args.dataset_stats):
             info('computing dataset stats')
             dataset_stats(d)
+            compound_stats(d, args)
+            pair_stats(d, True)
             pass
         if (args.test_stats):
             info('computing test stats')
