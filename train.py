@@ -189,6 +189,8 @@ if __name__ == '__main__':
                 ranker = torch.load(input_)
             info('loaded model')
             data = pickle.load(open(data_path, 'rb'))
+            if (not hasattr(data, 'void_info')):
+                data.void_info = None
             info('loaded data')
             config = json.load(open(config_path))
         else:

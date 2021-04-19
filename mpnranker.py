@@ -168,7 +168,8 @@ def train(ranker: MPNranker, bg: BatchGenerator, epochs=2,
                             x = [val_g.x[i] for i in range(len(val_g.dataset_info)) if val_g.dataset_info[i] == ds]
                         y = [val_g.y[i] for i in range(len(val_g.dataset_info)) if val_g.dataset_info[i] == ds]
                         val_acc = eval_(y, predict(x, ranker, batch_size=batch_size), epsilon=epsilon)
-                        val_accs.append(val_acc)
+                        if (not np.isnan(val_acc)):
+                            val_accs.append(val_acc)
                         print(f'{ds}: \t{val_acc=:.2%}')
                     val_acc = np.mean(val_accs)
                 else:
