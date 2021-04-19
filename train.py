@@ -33,6 +33,7 @@ class TrainArgs(Tap):
     remove_test_compounds: List[str] = [] # remove compounds occuring in the specified (test) datasets
     exclude_compounds_list: Optional[str] = None # list of compounds to exclude from training
     learning_rate: float = 1e-3
+    no_encoder_train: bool = False # don't train the encoder(embedding) layers
     # data
     isomeric: bool = False      # use isomeric data (if available)
     balance: bool = False       # balance data by dataset
@@ -84,6 +85,7 @@ class TrainArgs(Tap):
     export_rois: bool = False
     plot_weights: bool = False
     save_data: bool = False
+    ep_save: bool = False       # save after each epoch (only for mpn models)
 
 def generic_run_name():
     from datetime import datetime
@@ -310,7 +312,8 @@ if __name__ == '__main__':
                   batch_size=args.batch_size, epsilon=args.epsilon,
                   sigmoid_loss=(args.mpn_loss == 'bce'), margin_loss=args.mpn_margin,
                   early_stopping_patience=args.early_stopping_patience,
-                  learning_rate=args.learning_rate)
+                  learning_rate=args.learning_rate, no_encoder_train=args.no_encoder_train,
+                  ep_save=args.ep_save)
         if (args.save_data):
             torch.save(ranker, run_name + '.pt')
             pickle.dump(data, open(os.path.join(f'{run_name}_data.pkl'), 'wb'))
