@@ -138,6 +138,7 @@ class BatchGenerator(tf.keras.utils.Sequence):
             for i in range(len(y)):
                 groups.setdefault(dataset_info[i], []).append(i)
         # same-dataset pairs
+        inter_pair_nr = intra_pair_nr = 0
         if (not no_intra_pairs):
             for group in groups:
                 group_index_start[group] = len(weights)
@@ -156,11 +157,12 @@ class BatchGenerator(tf.keras.utils.Sequence):
                     weights.append(self.weight_fn(y[pos_idx] - y[neg_idx], self.weight_steep, self.weight_mid)
                                    if self.use_weights else 1.0)
                     pair_nr += 1
-                print(f'group {group} has {pair_nr} pairs')
                 pair_nrs[group] = pair_nr
+                intra_pair_nr += pair_nr
                 group_index_end[group] = len(weights)
         # between groups
         if (not no_inter_pairs):
+            inter_group_nr = len(list(combinations(groups, 2)))
             for group1, group2 in combinations(groups, 2):
                 group_index_start[(group1, group2)] = len(weights)
                 void_i = void_info[group1] if void_info is not None and group1 in void_info else self.void
@@ -168,7 +170,7 @@ class BatchGenerator(tf.keras.utils.Sequence):
                 pair_nr = 0
                 for i, j in BatchGenerator.inter_dataset_pair_it(
                         groups[group1], groups[group2], self.pair_step, self.pair_stop,
-                        nr_groups_norm=1/len(groups), max_indices_size=max_indices_size):
+                        nr_groups_norm=1/(inter_group_nr / len(groups)), max_indices_size=max_indices_size):
                     res = BatchGenerator.get_pair(y, i, j, void_i or 0, void_j or 0, self.y_neg)
                     if (res is None):
                         continue
@@ -178,29 +180,33 @@ class BatchGenerator(tf.keras.utils.Sequence):
                     y_trans.append(yi)
                     weights.append(1.0)
                     pair_nr += 1
-                print(f'groups {(group1, group2)} have {pair_nr} pairs')
-                if (not no_intra_pairs):
-                    pair_nrs[max(group1, group2, key=lambda g: pair_nrs[g])] += pair_nr
-                else:
-                    if (group1 in pair_nrs):
-                        pair_nrs[group1] += pair_nr
-                    else:
-                        pair_nrs[group1] = pair_nr
-                    if (group2 in pair_nrs):
-                        pair_nrs[group2] += pair_nr
-                    else:
-                        pair_nrs[group2] = pair_nr
+                pair_nrs[(group1, group2)] = pair_nr
+                inter_pair_nr += pair_nr
                 group_index_end[(group1, group2)] = len(weights)
-        # multiply with group weights
-        group_weights = {group: (len(weights) / pair_nrs[group]) if pair_nrs[group] > 0 else 1.0
-                         for group in pair_nrs}
-        weights = np.asanyarray(weights)
+        # group weights: intra_pair balanced and inter_pair balanced individually
+        group_weights = {}
+        print(f'{inter_pair_nr=}, {intra_pair_nr=}')
+        first_inter = first_intra = True
+        for group in pair_nrs:
+            if pair_nrs[group] == 0:
+                group_weights[group] = 1.0
+                continue
+            if isinstance(group, tuple): # same overall weight on inter vs intra weights
+                group_weights[group] = inter_pair_nr / pair_nrs[group] / len(groups)
+                if (first_inter):
+                    print(f'inter group weights * nr_pairs = {group_weights[group] * pair_nrs[group]}')
+                    first_inter = False
+            else:
+                group_weights[group] = intra_pair_nr / pair_nrs[group]
+                if (first_intra):
+                    print(f'intra group weights * nr_pairs = {group_weights[group] * pair_nrs[group]}')
+                    first_intra = False
+        weights = np.asarray(weights)
+        # multiply rt_diff weights with group weights
         for groups in group_index_start:
             start, end = group_index_start[groups], group_index_end[groups]
-            g_weight = (group_weights[groups] if groups in group_weights # same dataset
-                        else min(group_weights[groups[0]], group_weights[groups[1]])) # different dataset
+            g_weight = group_weights[groups]
             weights[start:end] *= g_weight
-            print(f'{groups} weights: {g_weight}')
         return np.asarray(x1_indices), np.asarray(x2_indices), np.asarray(
             y_trans), np.asarray(weights)
 
