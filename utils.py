@@ -42,7 +42,8 @@ def csr2tf(csr):
 class BatchGenerator(tf.keras.utils.Sequence):
     def __init__(self, x, y, class_weights=None, batch_size=32, shuffle=True, delta=1,
                  pair_step=1, pair_stop=None, dataset_info=None,
-                 void_info=None, no_inter_pair=False, max_indices_size=None,
+                 void_info=None, no_inter_pairs=False, no_intra_pairs=False,
+                 max_indices_size=None,
                  use_weights=True, weight_steep=4, weight_mid=0.75,
                  void=None, y_neg=False, multix=False):
         self.x = x
@@ -57,13 +58,14 @@ class BatchGenerator(tf.keras.utils.Sequence):
         self.pair_stop = pair_stop
         self.dataset_info = dataset_info
         self.void_info = void_info
-        self.no_inter_pair = no_inter_pair
+        self.no_inter_pairs = no_inter_pairs
+        self.no_intra_pairs = no_intra_pairs
         self.max_indices_size = max_indices_size
         self.void = void
         self.y_neg = y_neg
         self.x1_indices, self.x2_indices, self.y_trans, self.weights = self._transform_pairwise(
-            y, dataset_info=dataset_info, void_info=void_info, no_inter_pair=no_inter_pair,
-            max_indices_size=max_indices_size)
+            y, dataset_info=dataset_info, void_info=void_info, no_inter_pairs=no_inter_pairs,
+            no_intra_pairs=no_intra_pairs, max_indices_size=max_indices_size)
         if (shuffle):
             perm = np.random.permutation(self.y_trans.shape[0])
             self.x1_indices = self.x1_indices[perm]
@@ -116,8 +118,10 @@ class BatchGenerator(tf.keras.utils.Sequence):
             return neg_idx, pos_idx, (-1 if y_neg else 0)
 
     def _transform_pairwise(self, y, dataset_info=None,
-                            void_info=None, no_inter_pair=False,
+                            void_info=None, no_inter_pairs=False,
+                            no_intra_pairs=False,
                             max_indices_size=None):
+        assert not (no_inter_pairs and no_intra_pairs), 'no_inter_pairs and no_intra_pairs can\'t be both active'
         x1_indices = []
         x2_indices = []
         y_trans = []
@@ -134,28 +138,29 @@ class BatchGenerator(tf.keras.utils.Sequence):
             for i in range(len(y)):
                 groups.setdefault(dataset_info[i], []).append(i)
         # same-dataset pairs
-        for group in groups:
-            group_index_start[group] = len(weights)
-            group_void_rt = void_info[group] if void_info is not None and group in void_info else self.void
-            pair_nr = 0
-            for i, j in BatchGenerator.dataset_pair_it(groups[group], self.pair_step, self.pair_stop,
-                                                       max_indices_size=max_indices_size):
-                res = BatchGenerator.get_pair(y, i, j, group_void_rt or 0, group_void_rt or 0, self.y_neg)
-                if (res is None):
-                    continue
-                pos_idx, neg_idx, yi = res
-                x1_indices.append(pos_idx)
-                x2_indices.append(neg_idx)
-                y_trans.append(yi)
-                # weights
-                weights.append(self.weight_fn(y[pos_idx] - y[neg_idx], self.weight_steep, self.weight_mid)
-                               if self.use_weights else 1)
-                pair_nr += 1
-            print(f'group {group} has {pair_nr} pairs')
-            pair_nrs[group] = pair_nr
-            group_index_end[group] = len(weights)
+        if (not no_intra_pairs):
+            for group in groups:
+                group_index_start[group] = len(weights)
+                group_void_rt = void_info[group] if void_info is not None and group in void_info else self.void
+                pair_nr = 0
+                for i, j in BatchGenerator.dataset_pair_it(groups[group], self.pair_step, self.pair_stop,
+                                                           max_indices_size=max_indices_size):
+                    res = BatchGenerator.get_pair(y, i, j, group_void_rt or 0, group_void_rt or 0, self.y_neg)
+                    if (res is None):
+                        continue
+                    pos_idx, neg_idx, yi = res
+                    x1_indices.append(pos_idx)
+                    x2_indices.append(neg_idx)
+                    y_trans.append(yi)
+                    # weights
+                    weights.append(self.weight_fn(y[pos_idx] - y[neg_idx], self.weight_steep, self.weight_mid)
+                                   if self.use_weights else 1.0)
+                    pair_nr += 1
+                print(f'group {group} has {pair_nr} pairs')
+                pair_nrs[group] = pair_nr
+                group_index_end[group] = len(weights)
         # between groups
-        if (not no_inter_pair):
+        if (not no_inter_pairs):
             for group1, group2 in combinations(groups, 2):
                 group_index_start[(group1, group2)] = len(weights)
                 void_i = void_info[group1] if void_info is not None and group1 in void_info else self.void
@@ -171,10 +176,20 @@ class BatchGenerator(tf.keras.utils.Sequence):
                     x1_indices.append(pos_idx)
                     x2_indices.append(neg_idx)
                     y_trans.append(yi)
-                    weights.append(1)
+                    weights.append(1.0)
                     pair_nr += 1
                 print(f'groups {(group1, group2)} have {pair_nr} pairs')
-                pair_nrs[max(group1, group2, key=lambda g: pair_nrs[g])] += pair_nr
+                if (not no_intra_pairs):
+                    pair_nrs[max(group1, group2, key=lambda g: pair_nrs[g])] += pair_nr
+                else:
+                    if (group1 in pair_nrs):
+                        pair_nrs[group1] += pair_nr
+                    else:
+                        pair_nrs[group1] = pair_nr
+                    if (group2 in pair_nrs):
+                        pair_nrs[group2] += pair_nr
+                    else:
+                        pair_nrs[group2] = pair_nr
                 group_index_end[(group1, group2)] = len(weights)
         # multiply with group weights
         group_weights = {group: (len(weights) / pair_nrs[group]) if pair_nrs[group] > 0 else 1.0

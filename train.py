@@ -72,7 +72,8 @@ class TrainArgs(Tap):
     use_weights: bool = False
     weight_steep: float = 4
     weight_mid: float = 0.75
-    no_inter_pair: bool = False # don't use pairs of compounds of different datasets
+    no_inter_pairs: bool = False # don't use pairs of compounds of different datasets
+    no_intra_pairs: bool = False # don't use pairs of compounds of the same dataset
     max_pair_compounds: Optional[int] = None
     # data locations
     repo_root_folder: str = '/home/fleming/Documents/Projects/RtPredTrainingData/'
@@ -255,7 +256,8 @@ if __name__ == '__main__':
                         pair_stop=args.pair_stop, use_weights=args.use_weights,
                         dataset_info=data.df.dataset_id.iloc[data.train_indices].tolist(),
                         void_info=data.void_info, weight_steep=args.weight_steep,
-                        no_inter_pair=args.no_inter_pair,
+                        no_inter_pairs=args.no_inter_pairs,
+                        no_intra_pairs=args.no_intra_pairs,
                         max_indices_size=args.max_pair_compounds,
                         weight_mid=args.weight_mid,
                         multix=graphs, y_neg=(args.mpn_loss == 'margin'))
@@ -264,7 +266,8 @@ if __name__ == '__main__':
                         pair_stop=args.pair_stop, use_weights=args.use_weights,
                         dataset_info=data.df.dataset_id.iloc[data.val_indices].tolist(),
                         void_info=data.void_info, weight_steep=args.weight_steep,
-                        no_inter_pair=args.no_inter_pair,
+                        no_inter_pairs=args.no_inter_pairs,
+                        no_intra_pairs=args.no_intra_pairs,
                         max_indices_size=args.max_pair_compounds,
                         weight_mid=args.weight_mid,
                         multix=graphs, y_neg=(args.mpn_loss == 'margin'))
