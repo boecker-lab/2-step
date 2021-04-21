@@ -314,14 +314,17 @@ if __name__ == '__main__':
                                hidden_units=args.sizes, encoder_size=args.encoder_size)
         writer = SummaryWriter(f'runs/{run_name}_train')
         val_writer = SummaryWriter(f'runs/{run_name}_val')
-        mpn_train(ranker, bg, args.epochs, writer, vg, val_writer=val_writer,
-                  steps_train_loss=np.ceil(len(bg) / 100).astype(int),
-                  steps_val_loss=np.ceil(len(bg) / 5).astype(int),
-                  batch_size=args.batch_size, epsilon=args.epsilon,
-                  sigmoid_loss=(args.mpn_loss == 'bce'), margin_loss=args.mpn_margin,
-                  early_stopping_patience=args.early_stopping_patience,
-                  learning_rate=args.learning_rate, no_encoder_train=args.no_encoder_train,
-                  ep_save=args.ep_save)
+        try:
+            mpn_train(ranker, bg, args.epochs, writer, vg, val_writer=val_writer,
+                      steps_train_loss=np.ceil(len(bg) / 100).astype(int),
+                      steps_val_loss=np.ceil(len(bg) / 5).astype(int),
+                      batch_size=args.batch_size, epsilon=args.epsilon,
+                      sigmoid_loss=(args.mpn_loss == 'bce'), margin_loss=args.mpn_margin,
+                      early_stopping_patience=args.early_stopping_patience,
+                      learning_rate=args.learning_rate, no_encoder_train=args.no_encoder_train,
+                      ep_save=args.ep_save)
+        except KeyboardInterrupt:
+            print('caught interrupt; stopping training')
         if (args.save_data):
             torch.save(ranker, run_name + '.pt')
             pickle.dump(data, open(os.path.join(f'{run_name}_data.pkl'), 'wb'))
