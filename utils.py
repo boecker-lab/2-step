@@ -44,7 +44,8 @@ class BatchGenerator(tf.keras.utils.Sequence):
                  pair_step=1, pair_stop=None, dataset_info=None,
                  void_info=None, no_inter_pairs=False, no_intra_pairs=False,
                  max_indices_size=None,
-                 use_weights=True, weight_steep=4, weight_mid=0.75,
+                 use_weights=True, use_group_weights=True,
+                 weight_steep=4, weight_mid=0.75,
                  void=None, y_neg=False, multix=False):
         self.x = x
         self.y = y
@@ -52,6 +53,7 @@ class BatchGenerator(tf.keras.utils.Sequence):
         self.delta = delta
         self.multix = multix
         self.use_weights = use_weights
+        self.use_group_weights = use_group_weights
         self.weight_steep = weight_steep
         self.weight_mid = weight_mid
         self.pair_step = pair_step
@@ -65,7 +67,7 @@ class BatchGenerator(tf.keras.utils.Sequence):
         self.y_neg = y_neg
         self.x1_indices, self.x2_indices, self.y_trans, self.weights = self._transform_pairwise(
             y, dataset_info=dataset_info, void_info=void_info, no_inter_pairs=no_inter_pairs,
-            no_intra_pairs=no_intra_pairs, max_indices_size=max_indices_size)
+            no_intra_pairs=no_intra_pairs, max_indices_size=max_indices_size, use_group_weights=use_group_weights)
         if (shuffle):
             perm = np.random.permutation(self.y_trans.shape[0])
             self.x1_indices = self.x1_indices[perm]
@@ -120,7 +122,8 @@ class BatchGenerator(tf.keras.utils.Sequence):
     def _transform_pairwise(self, y, dataset_info=None,
                             void_info=None, no_inter_pairs=False,
                             no_intra_pairs=False,
-                            max_indices_size=None):
+                            max_indices_size=None,
+                            use_group_weights=True):
         assert not (no_inter_pairs and no_intra_pairs), 'no_inter_pairs and no_intra_pairs can\'t be both active'
         x1_indices = []
         x2_indices = []
@@ -183,30 +186,31 @@ class BatchGenerator(tf.keras.utils.Sequence):
                 pair_nrs[(group1, group2)] = pair_nr
                 inter_pair_nr += pair_nr
                 group_index_end[(group1, group2)] = len(weights)
-        # group weights: intra_pair balanced and inter_pair balanced individually
-        group_weights = {}
-        print(f'{inter_pair_nr=}, {intra_pair_nr=}')
-        first_inter = first_intra = True
-        for group in pair_nrs:
-            if pair_nrs[group] == 0:
-                group_weights[group] = 1.0
-                continue
-            if isinstance(group, tuple): # same overall weight on inter vs intra weights
-                group_weights[group] = inter_pair_nr / pair_nrs[group] / len(groups)
-                if (first_inter):
-                    print(f'inter group weights * nr_pairs = {group_weights[group] * pair_nrs[group]}')
-                    first_inter = False
-            else:
-                group_weights[group] = intra_pair_nr / pair_nrs[group]
-                if (first_intra):
-                    print(f'intra group weights * nr_pairs = {group_weights[group] * pair_nrs[group]}')
-                    first_intra = False
-        weights = np.asarray(weights)
-        # multiply rt_diff weights with group weights
-        for groups in group_index_start:
-            start, end = group_index_start[groups], group_index_end[groups]
-            g_weight = group_weights[groups]
-            weights[start:end] *= g_weight
+        if (use_group_weights):
+            # group weights: intra_pair balanced and inter_pair balanced individually
+            group_weights = {}
+            print(f'{inter_pair_nr=}, {intra_pair_nr=}')
+            first_inter = first_intra = True
+            for group in pair_nrs:
+                if pair_nrs[group] == 0:
+                    group_weights[group] = 1.0
+                    continue
+                if isinstance(group, tuple): # same overall weight on inter vs intra weights
+                    group_weights[group] = inter_pair_nr / pair_nrs[group] / len(groups)
+                    if (first_inter):
+                        print(f'inter group weights * nr_pairs = {group_weights[group] * pair_nrs[group]}')
+                        first_inter = False
+                else:
+                    group_weights[group] = intra_pair_nr / pair_nrs[group]
+                    if (first_intra):
+                        print(f'intra group weights * nr_pairs = {group_weights[group] * pair_nrs[group]}')
+                        first_intra = False
+            weights = np.asarray(weights)
+            # multiply rt_diff weights with group weights
+            for groups in group_index_start:
+                start, end = group_index_start[groups], group_index_end[groups]
+                g_weight = group_weights[groups]
+                weights[start:end] *= g_weight
         return np.asarray(x1_indices), np.asarray(x2_indices), np.asarray(
             y_trans), np.asarray(weights)
 

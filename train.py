@@ -37,6 +37,7 @@ class TrainArgs(Tap):
     # data
     isomeric: bool = False      # use isomeric data (if available)
     balance: bool = False       # balance data by dataset
+    no_group_weights: bool = False # don't scale weights by number of dataset pairs
     void_rt: float = 0.0        # void time threshold; used for ALL datasets
     metadata_void_rt: bool = False # use t0 value from repo metadata (times 3)
     validation_datasets: List[str] = [] # datasets to use for validation (instead of split of training data)
@@ -254,6 +255,7 @@ if __name__ == '__main__':
     bg = BatchGenerator((train_graphs, train_x) if graphs else train_x, train_y,
                         batch_size=args.batch_size, pair_step=args.pair_step,
                         pair_stop=args.pair_stop, use_weights=args.use_weights,
+                        use_group_weights=(not args.no_group_weights),
                         dataset_info=data.df.dataset_id.iloc[data.train_indices].tolist(),
                         void_info=data.void_info, weight_steep=args.weight_steep,
                         no_inter_pairs=args.no_inter_pairs,
@@ -264,6 +266,7 @@ if __name__ == '__main__':
     vg = BatchGenerator((val_graphs, val_x) if graphs else train_x, val_y,
                         batch_size=args.batch_size, pair_step=args.pair_step,
                         pair_stop=args.pair_stop, use_weights=args.use_weights,
+                        use_group_weights=(not args.no_group_weights),
                         dataset_info=data.df.dataset_id.iloc[data.val_indices].tolist(),
                         void_info=data.void_info, weight_steep=args.weight_steep,
                         no_inter_pairs=args.no_inter_pairs,

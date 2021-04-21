@@ -103,8 +103,6 @@ def train(ranker: MPNranker, bg: BatchGenerator, epochs=2,
     if (no_encoder_train):
         for p in ranker.encoder.parameters():
             p.requires_grad = False
-        for p in ranker.parameters():
-            print(p, p.requires_grad)
     optimizer = optim.Adam(ranker.parameters(), lr=learning_rate)
     loss_fun = (nn.BCELoss(reduction='none') if sigmoid_loss
                 else nn.MarginRankingLoss(margin_loss, reduction='none'))
