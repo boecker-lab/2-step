@@ -161,10 +161,11 @@ def visualize_df(df, x_axis='rt'):
 
 
 def data_stats(d, data, custom_column_fields=None):
-    train_compounds_all = set(data.df['inchi.std'])
+    compound_identifier = 'inchi.std' if 'inchi.std' in d.df and 'inchi.std' in data.df else 'smiles'
+    train_compounds_all = set(data.df[compound_identifier])
     this_column = d.df['column.name'].values[0]
-    train_compounds_col = set(data.df.loc[data.df['column.name'] == this_column, 'inchi.std'])
-    test_compounds = set(d.df['inchi.std'])
+    train_compounds_col = set(data.df.loc[data.df['column.name'] == this_column, compound_identifier])
+    test_compounds = set(d.df[compound_identifier])
     system_fields = custom_column_fields if custom_column_fields is not None else REL_COLUMNS
     train_configs = [t[1:] for t in set(data.df[['dataset_id', 'column.name'] + system_fields]
                                         .itertuples(index=False, name=None))]
@@ -244,10 +245,11 @@ def classyfire_stats(d: Data, args: EvalArgs, plot=False):
                                    + [len(d.df)])
     matches_df['class_perc'] = matches_df.num_compounds / len(d.df)
     train_compounds = []
-    train_compounds_all = len(set(data.df['inchi.std'].tolist()))
+    compound_identifier = 'inchi.std' if 'inchi.std' in d.df else 'smiles'
+    train_compounds_all = len(set(data.df[compound_identifier].tolist()))
     for c in matches_df.index.tolist()[:-1]:
         compounds_perc = len(set(data.df.loc[data.df['classyfire.class'] == c,
-                                        'inchi.std'].tolist())) / train_compounds_all
+                                             compound_identifier].tolist())) / train_compounds_all
         train_compounds.append(compounds_perc)
     matches_df['class_perc_train'] = train_compounds + [1.0]
     matches_df.index = [re.sub(r' \(CHEMONTID:\d+\)', '', i) for i in matches_df.index]
@@ -357,13 +359,14 @@ if __name__ == '__main__':
                              isomeric=args.isomeric)
         if (args.remove_train_compounds):
             info('removing train compounds')
-            train_compounds_all = set(data.df['inchi.std'])
+            compound_identifier = 'inchi.std' if 'inchi.std' in d.df and 'inchi.std' in data.df else 'smiles'
+            train_compounds_all = set(data.df[compound_identifier])
             this_column = d.df['column.name'].values[0]
-            train_compounds_col = set(data.df.loc[data.df['column.name'] == this_column, 'inchi.std'])
+            train_compounds_col = set(data.df.loc[data.df['column.name'] == this_column, compound_identifier])
             if (args.remove_train_compounds_mode == 'print'):
                 print('compounds overlap to training data: '
-                      + f'{len(set(d.df["inchi.std"]) & train_compounds_all) / len(set(d.df["inchi.std"])) * 100:.0f}% (all), '
-                      + f'{len(set(d.df["inchi.std"]) & train_compounds_col) / len(set(d.df["inchi.std"])) * 100:.0f}% (same column)')
+                      + f'{len(set(d.df[compound_identifier]) & train_compounds_all) / len(set(d.df[compound_identifier])) * 100:.0f}% (all), '
+                      + f'{len(set(d.df[compound_identifier]) & train_compounds_col) / len(set(d.df[compound_identifier])) * 100:.0f}% (same column)')
             else:
                 if (args.remove_train_compounds_mode == 'all'):
                     train_compounds = train_compounds_all
@@ -372,7 +375,7 @@ if __name__ == '__main__':
                 else:
                     raise NotImplementedError(args.remove_train_compounds_mode)
                 prev_len = len(d.df)
-                d.df = d.df.loc[~d.df['inchi.std'].isin(train_compounds)]
+                d.df = d.df.loc[~d.df[compound_identifier].isin(train_compounds)]
                 if args.verbose:
                     print(f'{ds} evaluation: removed {prev_len - len(d.df)} compounds also appearing '
                           f'in the training data (now {len(d.df)} compounds)')
