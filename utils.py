@@ -414,7 +414,9 @@ class Data:
     def compute_system_information(self, onehot_ids=False, other_dataset_ids=None,
                                    use_usp_codes=False, use_hsm=False,
                                    repo_root_folder='/home/fleming/Documents/Projects/RtPredTrainingData',
-                                   custom_column_fields=None, remove_na=True, drop_hsm_dups=True,
+                                   custom_column_fields=None, remove_na=True, drop_hsm_dups=False,
+                                   fallback_column='Waters, ACQUITY UPLC BEH C18', hsm_fallback=True,
+                                   col_fields_fallback=True, fallback_metadata_id='0045',
                                    hsm_fields=['H', 'S*', 'A', 'B', 'C (pH 2.8)', 'C (pH 7.0)']):
         global REL_COLUMNS
         if (onehot_ids):
@@ -429,37 +431,48 @@ class Data:
         names = []
         if (use_hsm):
             hsm = pd.read_csv(os.path.join(repo_root_folder, 'resources/hsm_database/hsm_database.txt'), sep='\t')
-            if (drop_hsm_dups):
-                hsm.drop_duplicates(['normalized notation'], keep=False, inplace=True)
-            hsm.set_index('normalized notation', drop=False, verify_integrity=drop_hsm_dups, inplace=True)
-            if (any(c not in hsm['normalized notation'].tolist() for c in self.df['column.name'])):
-                raise Exception(
-                    f'no HSM data for {", ".join([str(c) for c in set(self.df["column.name"]) if c not in hsm["normalized notation"].tolist()])}')
+            hsm_counts = hsm.value_counts('normalized notation')
+            hsm_dups = hsm_counts.loc[hsm_counts > 1].index.tolist()
+            hsm.drop_duplicates(['normalized notation'], keep=False if drop_hsm_dups else 'last', inplace=True)
+            hsm.set_index('normalized notation', drop=False, verify_integrity=True, inplace=True)
+            self.df.loc[pd.isna(self.df['column.name']), 'column.name'] = 'unknown' # instead of NA
+            for c in self.df['column.name'].unique():
+                if (c not in hsm['normalized notation'].tolist()):
+                    if (not hsm_fallback):
+                        raise Exception(
+                            f'no HSM data for {", ".join([str(c) for c in set(self.df["column.name"]) if c not in hsm["normalized notation"].tolist()])}')
+                    else:
+                        fallback = pd.DataFrame(hsm.loc[fallback_column]).transpose()
+                        fallback.index = [c]
+                        hsm = hsm.append(fallback)
+                        warning(f'using fallback HSM values for column {c}: {fallback.iloc[0].tolist()}')
+                elif (c in hsm_dups):
+                    warning(f'multiple HSM entries exist for column {c}, the last entry is used')
             # NOTE: not scaled!
-            fields.append(hsm.loc[self.df['column.name'], hsm_fields].values)
-        if (custom_column_fields is not None):
-            na_columns = [col for col in custom_column_fields if self.df[col].isna().any()]
-            if (remove_na):
+            fields.append(hsm.loc[self.df['column.name'], hsm_fields].astype(float).values)
+        field_names = custom_column_fields if custom_column_fields is not None else REL_COLUMNS
+        na_columns = [col for col in field_names if self.df[col].isna().any()]
+        if (len(na_columns) > 0):
+            if (col_fields_fallback):
+                column_information = pd.read_csv(os.path.join(
+                    repo_root_folder, 'processed_data', fallback_metadata_id, f'{fallback_metadata_id}_metadata.txt'),
+                                                 sep='\t')
+                overwritten_columns = [c for c, all_nans in self.df.loc[
+                    self.df[field_names].isna() .any(axis=1), field_names].isna().all().items()
+                                       if not all_nans]
+                warning(f'some values if the columns {", ".join(overwritten_columns)} will be overwritten with fallback values!')
+                warning('the following datasets don\'t have all the specified column metadata '
+                        f'and will get fallback values: {self.df.loc[self.df[field_names].isna().any(axis=1)].dataset_id.unique().tolist()}')
+                self.df.loc[self.df[field_names].isna().any(axis=1), field_names] = column_information[field_names].iloc[0].tolist()
+            elif (remove_na):
                 print('removed columns containing NA values: ' + ', '.join(na_columns))
-                custom_column_fields = [col for col in custom_column_fields if col not in na_columns]
-            elif (len(na_columns) > 0):
+                field_names = [col for col in field_names if col not in na_columns]
+            else:
                 print('WARNING: system data contains NA values, the option to remove these columns was disabled though! '
                       + ', '.join(na_columns))
-            means, scales = get_column_scaling(custom_column_fields, repo_root_folder=repo_root_folder)
-            fields.append((self.df[custom_column_fields].values - means) / scales)
-            names.extend(custom_column_fields)
-        else:
-            na_columns = [col for col in REL_COLUMNS if self.df[col].isna().any()]
-            if (len(na_columns) > 0):
-                if (remove_na):
-                    print('removed columns containing NA values: ' + ', '.join(na_columns))
-                    REL_COLUMNS = [col for col in REL_COLUMNS if col not in na_columns]
-                else:
-                    print('WARNING: system data contains NA values, the option to remove these columns was disabled though! '
-                          + ', '.join(na_columns))
-            means, scales = get_column_scaling(REL_COLUMNS, repo_root_folder=repo_root_folder)
-            fields.append((self.df[REL_COLUMNS].values - means) / scales)
-            names.extend(REL_COLUMNS)
+        means, scales = get_column_scaling(field_names, repo_root_folder=repo_root_folder)
+        fields.append((self.df[field_names].astype(float).values - means) / scales)
+        names.extend(field_names)
         if (use_usp_codes):
             codes = ['L1', 'L10', 'L11', 'L43', 'L109']
             codes_vector = (lambda code: np.eye(len(codes))[codes.index(code)]
@@ -467,7 +480,7 @@ class Data:
             code_fields = np.array([codes_vector(c) for c in self.df['column.usp.code']])
             # NOTE: not scaled!
             fields.append(code_fields)
-        np.savetxt('/tmp/sys_array.txt', np.concatenate(fields, axis=1), fmt='%.2f')
+        # np.savetxt('/tmp/sys_array.txt', np.concatenate(fields, axis=1), fmt='%.2f')
         self.x_info = np.concatenate(fields, axis=1)
         self.custom_column_fields = names
 
