@@ -197,6 +197,7 @@ class EvalArgs(Tap):
     isomeric: bool = False
     repo_root_folder: str = '/home/fleming/Documents/Projects/RtPredTrainingData/' # location of the dataset github repository
     add_desc_file: str = '/home/fleming/Documents/Projects/rtranknet/data/qm_merged.csv' # csv with additional features with smiles as identifier
+    output: Optional[str] = None # write output to json file
     verbose: bool = False
     no_progbar: bool = False # no progress-bar
     void_rt: float = 0.0
@@ -445,3 +446,6 @@ if __name__ == '__main__':
             fig.show(renderer='browser')
     if (args.test_stats and len(test_stats) > 0):
         print(pd.DataFrame.from_records(test_stats, index='id'))
+        if (args.output is not None):
+            json.dump({t['id']: t for t in test_stats},
+                      open(args.output, 'w'), indent=2)
