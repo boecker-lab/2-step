@@ -2,7 +2,11 @@ import numpy as np
 from rdkit import Chem
 from rdkit.Chem import AllChem, Descriptors, Descriptors3D
 import multiprocessing as mp
-from logging import info
+import logging
+
+logger = logging.getLogger('rtranknet.features')
+info = logger.info
+warning = logger.warning
 
 def compute_descriptors(smile, descriptors):
     try:

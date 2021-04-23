@@ -16,11 +16,14 @@ import re
 from classyfire import get_onehot, get_binary
 from dataclasses import dataclass, field
 from typing import Optional, List, Tuple, Union
-from logging import warning, info
+import logging
 import sys
 
 from features import features
 
+logger = logging.getLogger('rtranknet.utils')
+info = logger.info
+warning = logger.warning
 
 REL_COLUMNS = ['column.length', 'column.id', 'column.particle.size', 'column.temperature',
                'column.flowrate', 'eluent.A.h2o', 'eluent.A.meoh', 'eluent.A.acn',
@@ -189,7 +192,7 @@ class BatchGenerator(tf.keras.utils.Sequence):
         if (use_group_weights):
             # group weights: intra_pair balanced and inter_pair balanced individually
             group_weights = {}
-            print(f'{inter_pair_nr=}, {intra_pair_nr=}')
+            info(f'{inter_pair_nr=}, {intra_pair_nr=}')
             first_inter = first_intra = True
             for group in pair_nrs:
                 if pair_nrs[group] == 0:
@@ -198,12 +201,12 @@ class BatchGenerator(tf.keras.utils.Sequence):
                 if isinstance(group, tuple): # same overall weight on inter vs intra weights
                     group_weights[group] = inter_pair_nr / pair_nrs[group] / len(groups)
                     if (first_inter):
-                        print(f'inter group weights * nr_pairs = {group_weights[group] * pair_nrs[group]}')
+                        info(f'inter group weights * nr_pairs = {group_weights[group] * pair_nrs[group]}')
                         first_inter = False
                 else:
                     group_weights[group] = intra_pair_nr / pair_nrs[group]
                     if (first_intra):
-                        print(f'intra group weights * nr_pairs = {group_weights[group] * pair_nrs[group]}')
+                        info(f'intra group weights * nr_pairs = {group_weights[group] * pair_nrs[group]}')
                         first_intra = False
             weights = np.asarray(weights)
             # multiply rt_diff weights with group weights

@@ -1,4 +1,4 @@
-from logging import INFO, info, basicConfig
+import logging
 import numpy as np
 import tensorflow as tf
 import torch
@@ -18,6 +18,9 @@ import pandas as pd
 from utils import BatchGenerator, Data
 from features import features, parse_feature_spec
 from evaluate import eval_, predict, export_predictions
+
+logger = logging.getLogger('rtranknet')
+info = logger.info
 
 class TrainArgs(Tap):
     input: List[str]            # Either CSV or dataset ids
@@ -147,10 +150,17 @@ if __name__ == '__main__':
         run_name = generic_run_name()
     else:
         run_name = args.run_name
+    # logging
+    ch = logging.StreamHandler()
+    ch.setFormatter(logging.Formatter('%(asctime)s %(name)s %(levelname)s: %(message)s', datefmt='%H:%M:%S'))
+    logger.addHandler(ch)
     if (args.verbose):
-        print(args)
-        basicConfig(format='%(asctime)s %(levelname)s: %(message)s',
-                    filename=run_name + '.log', level=INFO)
+        logger.setLevel(logging.INFO)
+        fh = logging.FileHandler(run_name + '.log')
+        fh.setLevel(logging.INFO)
+        fh.setFormatter(logging.Formatter('%(asctime)s %(name)s %(levelname)s: %(message)s'))
+        logger.addHandler(fh)
+        ch.setLevel(logging.INFO)
     else:
         rdBase.DisableLog('rdApp.warning')
     if (args.cache_file is not None):
