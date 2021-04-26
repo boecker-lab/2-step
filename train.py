@@ -324,6 +324,11 @@ if __name__ == '__main__':
                                hidden_units=args.sizes, encoder_size=args.encoder_size)
         writer = SummaryWriter(f'runs/{run_name}_train')
         val_writer = SummaryWriter(f'runs/{run_name}_val')
+        if (args.save_data):
+            pickle.dump(data, open(os.path.join(f'{run_name}_data.pkl'), 'wb'))
+            json.dump({'train_sets': args.input, 'name': run_name,
+                       'args': args._log_all()},
+                      open(f'{run_name}_config.json', 'w'), indent=2)
         try:
             mpn_train(ranker, bg, args.epochs, writer, vg, val_writer=val_writer,
                       steps_train_loss=np.ceil(len(bg) / 100).astype(int),
@@ -337,10 +342,6 @@ if __name__ == '__main__':
             print('caught interrupt; stopping training')
         if (args.save_data):
             torch.save(ranker, run_name + '.pt')
-            pickle.dump(data, open(os.path.join(f'{run_name}_data.pkl'), 'wb'))
-            json.dump({'train_sets': args.input, 'name': run_name,
-                       'args': args._log_all()},
-                      open(f'{run_name}_config.json', 'w'), indent=2)
         train_preds = mpn_predict((train_graphs, train_x), ranker, batch_size=args.batch_size)
         if (len(val_x) > 0):
             val_preds = mpn_predict((val_graphs, val_x), ranker, batch_size=args.batch_size)
