@@ -226,6 +226,7 @@ def load_model(path: str, type_='keras'):
         else:
             model = torch.load(path + '.pt', map_location=torch.device('cpu'))
             model.encoder.device = torch.device('cpu')
+        path = re.sub(r'_ep\d+$', '', path) # for ep_save
         data = pickle.load(open(f'{path}_data.pkl', 'rb'))
         config = json.load(open(f'{path}_config.json'))
     return model, data, config
