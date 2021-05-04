@@ -111,17 +111,19 @@ def test_data():
 def test_bg():
     data_g = Data(use_compound_classes=False, use_system_information=True,
                   use_hsm=True, custom_column_fields=['column.length', 'column.id'],
-                  graph_mode=True, metadata_void_rt=True)
+                  graph_mode=True, metadata_void_rt=True, fallback_metadata='average',
+                  fallback_column='average')
     data_g.add_dataset_id('0045', isomeric=True)
     data_g.add_dataset_id('0072', isomeric=True)
-    data_g.add_dataset_id('0186', isomeric=True)
+    data_g.add_dataset_id('0011', isomeric=True)
+    # data_g.add_dataset_id('0186', isomeric=True)
     print(data_g.void_info)
     data_g.compute_features(**parse_feature_spec('none'))
     data_g.compute_graphs()
     data_g.split_data((0.2, 0))
-    ((train_graphs, train_x, train_y, train_weights),
-     (val_graphs, val_x, val_y, val_weights),
-     (test_graphs, test_x, test_y, test_weights)) = data_g.get_split_data((0.2, 0))
+    ((train_graphs, train_x, train_y),
+     (val_graphs, val_x, val_y),
+     (test_graphs, test_x, test_y)) = data_g.get_split_data((0.2, 0))
     bg = BatchGenerator(train_graphs, train_y,
                         pair_step=3, pair_stop=128, batch_size=32,
                         y_neg=True,

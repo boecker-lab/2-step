@@ -331,6 +331,8 @@ class Data:
     hsm_fields: List[str] = field(default_factory=lambda: ['H', 'S*', 'A', 'B', 'C (pH 2.8)', 'C (pH 7.0)'])
     graph_mode: bool = False
     void_info: dict = field(default_factory=dict)
+    fallback_column: str = 'Waters, ACQUITY UPLC BEH C18' # can be 'average'
+    fallback_metadata: str = '0045'                       # can be 'average'
 
     def __post_init__(self):
         self.x_features = None
@@ -416,7 +418,7 @@ class Data:
                                    repo_root_folder='/home/fleming/Documents/Projects/RtPredTrainingData',
                                    custom_column_fields=None, remove_na=True, drop_hsm_dups=False,
                                    fallback_column='Waters, ACQUITY UPLC BEH C18', hsm_fallback=True,
-                                   col_fields_fallback=True, fallback_metadata_id='0045',
+                                   col_fields_fallback=True, fallback_metadata='0045',
                                    hsm_fields=['H', 'S*', 'A', 'B', 'C (pH 2.8)', 'C (pH 7.0)']):
         global REL_COLUMNS
         if (onehot_ids):
@@ -442,10 +444,13 @@ class Data:
                         raise Exception(
                             f'no HSM data for {", ".join([str(c) for c in set(self.df["column.name"]) if c not in hsm["normalized notation"].tolist()])}')
                     else:
-                        fallback = pd.DataFrame(hsm.loc[fallback_column]).transpose()
-                        fallback.index = [c]
+                        if (fallback_column == 'average'):
+                            fallback = pd.Series(name=c, dtype='float64')
+                            warning(f'using average HSM values for column {c}')
+                        else:
+                            fallback = pd.DataFrame(hsm.loc[fallback_column]).transpose()
+                            fallback.index = [c]
                         hsm = hsm.append(fallback)
-                        warning(f'using fallback HSM values for column {c}: {fallback.iloc[0].tolist()}')
                 elif (c in hsm_dups):
                     warning(f'multiple HSM entries exist for column {c}, the last entry is used')
             # NOTE: not scaled!
@@ -454,16 +459,19 @@ class Data:
         na_columns = [col for col in field_names if self.df[col].isna().any()]
         if (len(na_columns) > 0):
             if (col_fields_fallback):
-                column_information = pd.read_csv(os.path.join(
-                    repo_root_folder, 'processed_data', fallback_metadata_id, f'{fallback_metadata_id}_metadata.txt'),
+                if (fallback_metadata == 'average'):
+                    pass
+                else:
+                    column_information = pd.read_csv(os.path.join(
+                    repo_root_folder, 'processed_data', fallback_metadata, f'{fallback_metadata}_metadata.txt'),
                                                  sep='\t')
-                overwritten_columns = [c for c, all_nans in self.df.loc[
-                    self.df[field_names].isna() .any(axis=1), field_names].isna().all().items()
-                                       if not all_nans]
-                warning(f'some values if the columns {", ".join(overwritten_columns)} will be overwritten with fallback values!')
-                warning('the following datasets don\'t have all the specified column metadata '
-                        f'and will get fallback values: {self.df.loc[self.df[field_names].isna().any(axis=1)].dataset_id.unique().tolist()}')
-                self.df.loc[self.df[field_names].isna().any(axis=1), field_names] = column_information[field_names].iloc[0].tolist()
+                    overwritten_columns = [c for c, all_nans in self.df.loc[
+                        self.df[field_names].isna() .any(axis=1), field_names].isna().all().items()
+                                           if not all_nans]
+                    warning(f'some values if the columns {", ".join(overwritten_columns)} will be overwritten with fallback values!')
+                    warning('the following datasets don\'t have all the specified column metadata '
+                            f'and will get fallback values: {self.df.loc[self.df[field_names].isna().any(axis=1)].dataset_id.unique().tolist()}')
+                    self.df.loc[self.df[field_names].isna().any(axis=1), field_names] = column_information[field_names].iloc[0].tolist()
             elif (remove_na):
                 print('removed columns containing NA values: ' + ', '.join(na_columns))
                 field_names = [col for col in field_names if col not in na_columns]
@@ -501,7 +509,9 @@ class Data:
                                             repo_root_folder=self.repo_root_folder,
                                             custom_column_fields=self.custom_column_fields,
                                             remove_na=self.columns_remove_na,
-                                            hsm_fields=self.hsm_fields)
+                                            hsm_fields=self.hsm_fields,
+                                            fallback_column=self.fallback_column,
+                                            fallback_metadata=self.fallback_metadata)
         xs = np.concatenate(list(filter(lambda x: x is not None, (self.x_features, self.x_info, self.x_classes))),
                             axis=1)
         self.info_indices = ([self.features_indices[-1] + 1,
@@ -644,6 +654,18 @@ class Data:
         if (len(self.test_x) > 0):
             self.test_x[:, :self.features_indices[1]+1] = np.nan_to_num(scaler.transform(
                 self.test_x[:, :self.features_indices[1]+1]))
+
+    def nan_columns_to_average(self):
+        nan_indices = np.where(np.isnan(self.train_x).any(axis=0))[0]
+        means = np.nanmean(self.train_x[:, nan_indices], axis=0)
+        train_nan_rows = np.isnan(self.train_x).any(axis=1)
+        val_nan_rows = np.isnan(self.val_x).any(axis=1)
+        test_nan_rows = np.isnan(self.test_x).any(axis=1)
+        for mean_, nan_index in zip(means, nan_indices):
+            self.train_x[train_nan_rows, nan_index] = mean_
+            self.val_x[val_nan_rows, nan_index] = mean_
+            self.test_x[test_nan_rows, nan_index] = mean_
+
 
     def reduce_f(self, r_squared_thr=0.96, std_thr=0.01, verbose=True):
         if (self.train_x is None):

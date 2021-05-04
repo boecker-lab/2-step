@@ -56,6 +56,8 @@ class TrainArgs(Tap):
     columns_use_hsm: bool = False
     hsm_fields: List[str] = ['H', 'S*', 'A', 'B', 'C (pH 2.8)', 'C (pH 7.0)']
     custom_column_fields: List[str] = []
+    fallback_column: str = 'Waters, ACQUITY UPLC BEH C18' # column data to use when needed and no data available; can also be 'average'
+    fallback_metadata: str = '0045' # repository metadata to use when needed and no data available; can also be 'average'
     usp_codes: bool = False     # use column usp codes as onehot system features (only for `--sysinfo`)
     debug_onehot_sys: bool = False # onehot dataset encoding
     onehot_test_sets: List[str] = [] # test set IDs to include in onehot encoding
@@ -120,6 +122,8 @@ def preprocess(data: Data, args: TrainArgs):
         data.standardize()
     if (args.reduce_features):
         data.reduce_f()
+    if (args.fallback_metadata == 'average' or args.fallback_column == 'average'):
+        data.nan_columns_to_average()
     return data.get_split_data((args.test_split, args.val_split))
 
 def prepare_tf_model(args: TrainArgs, input_size: int) -> RankNetNN:
@@ -216,7 +220,9 @@ if __name__ == '__main__':
                     use_usp_codes=args.usp_codes, custom_features=args.features,
                     use_hsm=args.columns_use_hsm, repo_root_folder=args.repo_root_folder,
                     custom_column_fields=args.custom_column_fields or None,
-                    hsm_fields=args.hsm_fields, graph_mode=graphs)
+                    hsm_fields=args.hsm_fields, graph_mode=graphs,
+                    fallback_column=args.fallback_column,
+                    fallback_metadata=args.fallback_metadata)
         for did in args.input:
             data.add_dataset_id(did,
                                 repo_root_folder=args.repo_root_folder,
