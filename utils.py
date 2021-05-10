@@ -447,6 +447,9 @@ class Data:
                         if (fallback_column == 'average'):
                             fallback = pd.Series(name=c, dtype='float64')
                             warning(f'using average HSM values for column {c}')
+                        elif (fallback_column == 'zeros'):
+                            fallback = pd.Series(name=c, dtype='float64')
+                            warning(f'using zeros HSM values for column {c}')
                         else:
                             fallback = pd.DataFrame(hsm.loc[fallback_column]).transpose()
                             fallback.index = [c]
@@ -459,7 +462,7 @@ class Data:
         na_columns = [col for col in field_names if self.df[col].isna().any()]
         if (len(na_columns) > 0):
             if (col_fields_fallback):
-                if (fallback_metadata == 'average'):
+                if (fallback_metadata == 'average' or fallback_metadata == 'zeros'):
                     pass
                 else:
                     column_information = pd.read_csv(os.path.join(
@@ -665,6 +668,16 @@ class Data:
             self.train_x[train_nan_rows, nan_index] = mean_
             self.val_x[val_nan_rows, nan_index] = mean_
             self.test_x[test_nan_rows, nan_index] = mean_
+
+    def nan_columns_to_zeros(self):
+        nan_indices = np.where(np.isnan(self.train_x).any(axis=0))[0]
+        train_nan_rows = np.isnan(self.train_x).any(axis=1)
+        val_nan_rows = np.isnan(self.val_x).any(axis=1)
+        test_nan_rows = np.isnan(self.test_x).any(axis=1)
+        for nan_index in nan_indices:
+            self.train_x[train_nan_rows, nan_index] = 0.0
+            self.val_x[val_nan_rows, nan_index] = 0.0
+            self.test_x[test_nan_rows, nan_index] = 0.0
 
 
     def reduce_f(self, r_squared_thr=0.96, std_thr=0.01, verbose=True):

@@ -124,6 +124,8 @@ def preprocess(data: Data, args: TrainArgs):
         data.reduce_f()
     if (args.fallback_metadata == 'average' or args.fallback_column == 'average'):
         data.nan_columns_to_average()
+    if (args.fallback_metadata == 'zeros' or args.fallback_column == 'zeros'):
+        data.nan_columns_to_zeros()
     return data.get_split_data((args.test_split, args.val_split))
 
 def prepare_tf_model(args: TrainArgs, input_size: int) -> RankNetNN:
