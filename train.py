@@ -329,7 +329,8 @@ if __name__ == '__main__':
         # MPNranker
         if (ranker is None):    # otherwise loaded already
             ranker = MPNranker(sigmoid=(args.mpn_loss == 'bce'), extra_features_dim=train_x.shape[1],
-                               hidden_units=args.sizes, encoder_size=args.encoder_size)
+                               hidden_units=args.sizes, encoder_size=args.encoder_size,
+                               dropout_rate=args.dropout_rate)
         writer = SummaryWriter(f'runs/{run_name}_train')
         val_writer = SummaryWriter(f'runs/{run_name}_val')
         if (args.save_data):
