@@ -193,7 +193,7 @@ def predict(X, model, batch_size):
 class EvalArgs(Tap):
     model: str # model to load
     test_sets: List[str] # either CSV or dataset IDs to evaluate on
-    model_type: Literal['ranknet', 'mpn'] = 'ranknet'
+    model_type: Literal['ranknet', 'mpn'] = 'mpn'
     batch_size: int = 256
     isomeric: bool = False
     repo_root_folder: str = '/home/fleming/Documents/Projects/RtPredTrainingData/' # location of the dataset github repository
@@ -202,7 +202,7 @@ class EvalArgs(Tap):
     verbose: bool = False
     no_progbar: bool = False # no progress-bar
     void_rt: float = 0.0
-    metadata_void_rt: bool = False # use t0 value from repo metadata (times 3)
+    metadata_void_rt: bool = False # use t0 value from repo metadata (times 2)
     cache_file: str = 'cached_descs.pkl'
     export_rois: bool = False
     device: Optional[str] = None # can be `mirrored`, a specific device name like `gpu:1` or `None` which automatically selects an option
