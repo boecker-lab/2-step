@@ -43,33 +43,32 @@ def csr2tf(csr):
 
 
 class BatchGenerator(tf.keras.utils.Sequence):
-    def __init__(self, x, y, class_weights=None, batch_size=32, shuffle=True, delta=1,
+    def __init__(self, x, y, ids=None, batch_size=32, shuffle=True,
                  pair_step=1, pair_stop=None, dataset_info=None,
                  void_info=None, no_inter_pairs=False, no_intra_pairs=False,
                  max_indices_size=None,
                  use_weights=True, use_group_weights=True,
                  weight_steep=4, weight_mid=0.75,
                  void=None, y_neg=False, multix=False):
-        self.x = x
-        self.y = y
-        self.class_weights = class_weights
-        self.delta = delta
-        self.multix = multix
-        self.use_weights = use_weights
-        self.use_group_weights = use_group_weights
+        self.x = x              # (a) descriptors (b) graphs (c) descriptors + graphs
+        self.y = y              # retention times
+        self.ids = ids          # IDs (e.g., smiles) for every x/y pair
+        self.multix = multix    # x: descriptors + graphs
+        self.use_weights = use_weights # pair weights
+        self.use_group_weights = use_group_weights # dataset weights
         self.weight_steep = weight_steep
         self.weight_mid = weight_mid
         self.pair_step = pair_step
         self.pair_stop = pair_stop
-        self.dataset_info = dataset_info
-        self.void_info = void_info
-        self.no_inter_pairs = no_inter_pairs
-        self.no_intra_pairs = no_intra_pairs
+        self.dataset_info = dataset_info # list of dataset IDs for each x/y pair
+        self.void_info = void_info       # void time for each dataset ID
+        self.no_inter_pairs = no_inter_pairs # don't generate inter-dataset pairs
+        self.no_intra_pairs = no_intra_pairs # don't generate within-dataset pairs
         self.max_indices_size = max_indices_size
-        self.void = void
-        self.y_neg = y_neg
+        self.void = void        # global void time (for every dataset)
+        self.y_neg = y_neg      # -1 for negative pairs (instead of 0)
         self.x1_indices, self.x2_indices, self.y_trans, self.weights = self._transform_pairwise(
-            y, dataset_info=dataset_info, void_info=void_info, no_inter_pairs=no_inter_pairs,
+            y, ids, dataset_info=dataset_info, void_info=void_info, no_inter_pairs=no_inter_pairs,
             no_intra_pairs=no_intra_pairs, max_indices_size=max_indices_size, use_group_weights=use_group_weights)
         if (shuffle):
             perm = np.random.permutation(self.y_trans.shape[0])
@@ -122,12 +121,14 @@ class BatchGenerator(tf.keras.utils.Sequence):
         else:
             return neg_idx, pos_idx, (-1 if y_neg else 0)
 
-    def _transform_pairwise(self, y, dataset_info=None,
+    def _transform_pairwise(self, y, ids=None, dataset_info=None,
                             void_info=None, no_inter_pairs=False,
                             no_intra_pairs=False,
                             max_indices_size=None,
                             use_group_weights=True):
         assert not (no_inter_pairs and no_intra_pairs), 'no_inter_pairs and no_intra_pairs can\'t be both active'
+        if (ids is not None):
+            assert len(y) == len(ids), 'list of IDs (e.g., smiles) must have same length as list of RTs'
         x1_indices = []
         x2_indices = []
         y_trans = []
