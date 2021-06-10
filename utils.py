@@ -121,6 +121,27 @@ class BatchGenerator(tf.keras.utils.Sequence):
         else:
             return neg_idx, pos_idx, (-1 if y_neg else 0)
 
+    def get_comparable_pairs(self, indices_i, indices_j, rts, ids,
+                             void_i=0, void_j=0, y_neg=False, epsilon=0.5):
+        pairs = set()
+        def make_pairs(indices_pre, indices_post):
+            for i, (i_pre, i_post) in enumerate(product(indices_pre, indices_post)):
+                yield (i_pre, i_post, 1) if 1 == (-1)**i else (i_post, i_pre, -1 if y_neg else 0)
+        inters = set([ids[i] for i in indices_i]) & set([ids[j] for j in indices_j])
+        # TODO: problem if IDs not unique, assert this somewhere!
+        for id_k in inters:
+            k_i = [i for i in indices_i if ids[i] == id_k][0]
+            k_j = [j for j in indices_j if ids[j] == id_k][0]
+            if (rts[k_i] < void_i or rts[k_j] < void_j):
+                continue
+            pre_is = [i for i in indices_i if rts[i] + epsilon < rts[k_i] and rts[i] >= void_i]
+            post_is = [i for i in indices_i if rts[i] > rts[k_i] + epsilon and rts[i] >= void_i]
+            pre_js = [j for j in indices_j if rts[j] + epsilon < rts[k_j] and rts[j] >= void_j]
+            post_js = [j for j in indices_j if rts[j] > rts[k_j] + epsilon and rts[j] >= void_j]
+            pairs |= set(make_pairs(pre_is, post_js))
+            pairs |= set(make_pairs(pre_js, post_is))
+        return list(pairs)
+
     def _transform_pairwise(self, y, ids=None, dataset_info=None,
                             void_info=None, no_inter_pairs=False,
                             no_intra_pairs=False,
@@ -175,21 +196,23 @@ class BatchGenerator(tf.keras.utils.Sequence):
                 void_i = void_info[group1] if void_info is not None and group1 in void_info else self.void
                 void_j = void_info[group2] if void_info is not None and group2 in void_info else self.void
                 pair_nr = 0
-                for i, j in BatchGenerator.inter_dataset_pair_it(
-                        groups[group1], groups[group2], self.pair_step, self.pair_stop,
-                        nr_groups_norm=1/(inter_group_nr / len(groups)), max_indices_size=max_indices_size):
-                    res = BatchGenerator.get_pair(y, i, j, void_i or 0, void_j or 0, self.y_neg)
-                    if (res is None):
-                        continue
-                    pos_idx, neg_idx, yi = res
+                n = min(max(len(groups[group1]), len(groups[group2])), max_indices_size or 1e9)
+                max_pair_nr = (n * np.ceil((self.pair_stop if self.pair_stop is not None else n) / self.pair_step)
+                               * (1/(inter_group_nr / len(groups)))).astype(int)
+                potential_pairs = self.get_comparable_pairs(groups[group1], groups[group2], y, ids,
+                                                            void_i=void_i or 0, void_j=void_j or 0,
+                                                            y_neg=self.y_neg, epsilon=0.5)
+                print(f'{group1}, {group2} {max_pair_nr=}, {(len(potential_pairs))=}')
+                for pos_idx, neg_idx, yi in iter(sample(potential_pairs, min(max_pair_nr, len(potential_pairs)))):
                     x1_indices.append(pos_idx)
                     x2_indices.append(neg_idx)
                     y_trans.append(yi)
-                    weights.append(1.0)
+                    weights.append(1.0) # absolute rt difference of pairs of two different datasets can't be compared
                     pair_nr += 1
                 pair_nrs[(group1, group2)] = pair_nr
                 inter_pair_nr += pair_nr
                 group_index_end[(group1, group2)] = len(weights)
+        print(f'{inter_pair_nr=}, {intra_pair_nr=}')
         if (use_group_weights):
             # group weights: intra_pair balanced and inter_pair balanced individually
             group_weights = {}

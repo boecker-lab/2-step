@@ -271,6 +271,7 @@ if __name__ == '__main__':
      (test_graphs, test_x, test_y)) = preprocess(data, args)
     info('done. Initializing BatchGenerator...')
     bg = BatchGenerator((train_graphs, train_x) if graphs else train_x, train_y,
+                        ids=data.df.iloc[data.train_indices].smiles.tolist(),
                         batch_size=args.batch_size, pair_step=args.pair_step,
                         pair_stop=args.pair_stop, use_weights=args.use_weights,
                         use_group_weights=(not args.no_group_weights),
@@ -282,6 +283,7 @@ if __name__ == '__main__':
                         weight_mid=args.weight_mid,
                         multix=graphs, y_neg=(args.mpn_loss == 'margin'))
     vg = BatchGenerator((val_graphs, val_x) if graphs else train_x, val_y,
+                        ids=data.df.iloc[data.val_indices].smiles.tolist(),
                         batch_size=args.batch_size, pair_step=args.pair_step,
                         pair_stop=args.pair_stop, use_weights=args.use_weights,
                         use_group_weights=(not args.no_group_weights),

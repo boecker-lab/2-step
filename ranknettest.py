@@ -1,3 +1,4 @@
+import logging
 from features import features, parse_feature_spec
 from utils import Data, BatchGenerator
 import pandas as pd
@@ -131,3 +132,27 @@ def test_bg():
                         void_info=data_g.void_info)
     ranker = MPNranker()
     predict(bg.x, ranker, 32)
+
+def test_inter_pairs():
+    logger = logging.getLogger()
+    logger.setLevel(logging.INFO)
+    ds_a = '0008'
+    ds_b = '0013'
+    data_g = Data(use_compound_classes=False, use_system_information=True,
+                  use_hsm=True, custom_column_fields=['column.length', 'column.id'],
+                  graph_mode=True, metadata_void_rt=True, fallback_metadata='average',
+                  fallback_column='average')
+    data_g.add_dataset_id('0008')
+    data_g.add_dataset_id('0013')
+    print(data_g.void_info)
+    data_g.compute_features(**parse_feature_spec('none'))
+    data_g.compute_graphs()
+    data_g.split_data((0, 0))
+    ((train_graphs, train_x, train_y),
+     (val_graphs, val_x, val_y),
+     (test_graphs, test_x, test_y)) = data_g.get_split_data((0, 0))
+    bg = BatchGenerator(train_graphs, train_y, ids=data_g.df.iloc[data_g.train_indices]['inchikey.std'].tolist(),
+                        pair_step=3, pair_stop=128, batch_size=32,
+                        y_neg=True, use_group_weights=True,
+                        dataset_info=data_g.df.dataset_id.iloc[data_g.train_indices].tolist(),
+                        void_info=data_g.void_info)
