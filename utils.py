@@ -126,8 +126,9 @@ class BatchGenerator(tf.keras.utils.Sequence):
         pairs = set()
         def make_pairs(indices_pre, indices_post):
             for i, (i_pre, i_post) in enumerate(product(indices_pre, indices_post)):
-                yield (i_pre, i_post, 1) if 1 == (-1)**i else (i_post, i_pre, -1 if y_neg else 0)
+                yield (i_post, i_pre, 1) if 1 == (-1)**i else (i_pre, i_post, -1 if y_neg else 0)
         inters = set([ids[i] for i in indices_i]) & set([ids[j] for j in indices_j])
+        # print(f'{inters=}')
         # TODO: problem if IDs not unique, assert this somewhere!
         for id_k in inters:
             k_i = [i for i in indices_i if ids[i] == id_k][0]
@@ -178,6 +179,11 @@ class BatchGenerator(tf.keras.utils.Sequence):
                     if (res is None):
                         continue
                     pos_idx, neg_idx, yi = res
+                    # debug
+                    # if yi > 0:
+                    #     print(f'intra {ids[pos_idx]} < {ids[neg_idx]}')
+                    # else:
+                    #     print(f'intra {ids[neg_idx]} < {ids[pos_idx]}')
                     x1_indices.append(pos_idx)
                     x2_indices.append(neg_idx)
                     y_trans.append(yi)
@@ -202,6 +208,12 @@ class BatchGenerator(tf.keras.utils.Sequence):
                 potential_pairs = self.get_comparable_pairs(groups[group1], groups[group2], y, ids,
                                                             void_i=void_i or 0, void_j=void_j or 0,
                                                             y_neg=self.y_neg, epsilon=0.5)
+                # debug
+                # for i, j, yi in potential_pairs:
+                #     if yi > 0:
+                #         print(f'{ids[i]} < {ids[j]}')
+                #     else:
+                #         print(f'{ids[j]} < {ids[i]}')
                 print(f'{group1}, {group2} {max_pair_nr=}, {(len(potential_pairs))=}')
                 for pos_idx, neg_idx, yi in iter(sample(potential_pairs, min(max_pair_nr, len(potential_pairs)))):
                     x1_indices.append(pos_idx)
