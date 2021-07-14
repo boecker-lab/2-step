@@ -3,7 +3,7 @@ import matplotlib.pyplot as plt
 import os.path
 import pandas as pd
 import argparse
-from re import sub
+from re import sub, match
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -19,12 +19,16 @@ if __name__ == '__main__':
         base = sub(r'_eval$', '', base)
         jsons[base] = json.load(open(j))
     test_ids = list(set.intersection(*(set(jsons[j]) for j in jsons)))
-    model_names = list(jsons)
+    model_names = list(sorted(jsons, key=lambda x: int(sub(f'.*ep(\d+).*', r'\1', x)) if match(r'ep\d+', x) else 999))
     accs = pd.DataFrame({'name': model_names} | {test_id: [jsons[m][test_id]['acc'] for m in model_names]
                                                  for test_id in test_ids}).set_index('name')
     # print(accs)
     # print(accs.transpose())
-    print(accs.transpose().agg(['mean', 'median']).transpose())
+    accs_simple = accs.transpose().agg(['mean', 'median']).transpose()
+    print(accs_simple)
+    # import pdb; pdb.set_trace()
+    accs_simple.plot()
+    plt.show()
     accs.transpose().boxplot(figsize=(15, 5))
     if args.save is None:
         plt.show()
