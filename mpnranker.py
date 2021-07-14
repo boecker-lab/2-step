@@ -36,7 +36,7 @@ class MPNranker(nn.Module):
     def set_from_encoder(self, state_dict):
         state_dict = {k.replace('.0.', ''): v for k, v in state_dict.items()}
         self.encoder.load_state_dict(state_dict)
-    def forward(self, batch):
+    def forward(self, batch, features=False):
         """n x [batch_size x (smiles|graphs) + batch_size x extra_features]"""
         res = []
         for inp in batch:       # normally 1 or 2
@@ -54,15 +54,18 @@ class MPNranker(nn.Module):
             for h in self.hidden:
                 enc = h(enc)
             res.append(self.ident(enc).transpose(0, 1)[0])      # [batch_size]
+        if (features):
+            return res
         if (self.sigmoid and len(res) == 2):
             return self.rank(res[0] - res[1]) # batch_size
         else:
             return res
 
 def predict(x, ranker: MPNranker, batch_size=8192,
-            prog_bar=False):
+            prog_bar=False, ret_features=False):
     ranker.eval()
     preds = []
+    features = []
     if ranker.extra_features_dim > 0:
         graphs, extra = x
         extra = torch.as_tensor(extra).float().to(ranker.encoder.device)
@@ -78,6 +81,10 @@ def predict(x, ranker: MPNranker, batch_size=8192,
             batch = ((graphs[start:end], extra[start:end]) if extra is not None
                      else graphs[start:end])
             preds.append(ranker((batch, ))[0].cpu().detach().numpy())
+            if (ret_features):
+                features.extend([ranker.encoder(g) for g in graphs[start:end]])
+    if (ret_features):
+        return np.concatenate(preds), np.concatenate(features)
     return np.concatenate(preds)
 
 def loss_step(ranker, x, y, weights, loss_fun):

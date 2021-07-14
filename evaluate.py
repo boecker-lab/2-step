@@ -205,6 +205,7 @@ class EvalArgs(Tap):
     metadata_void_rt: bool = False # use t0 value from repo metadata (times 2)
     cache_file: str = 'cached_descs.pkl'
     export_rois: bool = False
+    export_embeddings: bool = False
     device: Optional[str] = None # can be `mirrored`, a specific device name like `gpu:1` or `None` which automatically selects an option
     epsilon: float = 0.5 # difference in evaluation measure below which to ignore falsely predicted pairs
     remove_train_compounds: bool = False
@@ -403,8 +404,18 @@ if __name__ == '__main__':
         if (args.model_type == 'mpn'):
             from mpnranker import predict as mpn_predict
             graphs = np.concatenate((train_graphs, test_graphs, val_graphs))
-            preds = mpn_predict((graphs, X), model, batch_size=args.batch_size,
-                                prog_bar=args.verbose)
+            if (args.export_embeddings):
+                preds, embeddings = mpn_predict((graphs, X), model, batch_size=args.batch_size,
+                                                prog_bar=args.verbose, ret_features=True)
+                embeddings_df = pd.DataFrame({'smiles': d.df.smiles} |
+                                             {f'e{i}': embeddings[:, i]
+                                              for i in range(embeddings.shape[1])})
+                ds_id = os.path.basename(ds) if not re.match(r'\d{4}', ds) else ds
+                embeddings_df.to_csv(f'runs/{config["name"]}_{ds_id}_embeddings.tsv',
+                                     sep='\t')
+            else:
+                preds = mpn_predict((graphs, X), model, batch_size=args.batch_size,
+                                    prog_bar=args.verbose, ret_features=False)
         else:
             preds = predict(X, model, args.batch_size)
         info('done predicting. evaluation...')
