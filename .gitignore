@@ -1,3 +1,8 @@
 /__pycache__/
 /.dir-locals.el
 /runs/
+/*.sh*
+/*.pt
+/*.pkl
+/*.log
+/*.json
