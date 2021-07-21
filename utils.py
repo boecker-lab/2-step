@@ -266,7 +266,8 @@ class BatchGenerator(tf.keras.utils.Sequence):
                                    if frozenset([ids[x1_indices[i]], ids[x2_indices[i]]]) in conflicting_smiles_pairs]
                     if (len(confl_pairs) > 0):
                         # w(non_confl_pairs) == w(confl_pairs)
-                        confl_weights = all_pair_weights / len(confl_pairs)
+                        # confl_weights = all_pair_weights / len(confl_pairs)
+                        confl_weights = 100
                         for i in confl_pairs:
                             weights[i] *= confl_weights
                         confl_pair_report[groups] = len(confl_pairs)
