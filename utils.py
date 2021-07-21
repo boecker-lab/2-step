@@ -18,6 +18,7 @@ from dataclasses import dataclass, field
 from typing import Optional, List, Tuple, Union
 import logging
 import sys
+from pprint import pformat
 
 from features import features
 
@@ -49,7 +50,8 @@ class BatchGenerator(tf.keras.utils.Sequence):
                  max_indices_size=None,
                  use_weights=True, use_group_weights=True,
                  weight_steep=4, weight_mid=0.75,
-                 void=None, y_neg=False, multix=False):
+                 void=None, y_neg=False, multix=False,
+                 use_conflict_weights=True, conflicting_smiles_pairs=[]):
         self.x = x              # (a) descriptors (b) graphs (c) descriptors + graphs
         self.y = y              # retention times
         self.ids = ids          # IDs (e.g., smiles) for every x/y pair
@@ -69,7 +71,8 @@ class BatchGenerator(tf.keras.utils.Sequence):
         self.y_neg = y_neg      # -1 for negative pairs (instead of 0)
         self.x1_indices, self.x2_indices, self.y_trans, self.weights = self._transform_pairwise(
             y, ids, dataset_info=dataset_info, void_info=void_info, no_inter_pairs=no_inter_pairs,
-            no_intra_pairs=no_intra_pairs, max_indices_size=max_indices_size, use_group_weights=use_group_weights)
+            no_intra_pairs=no_intra_pairs, max_indices_size=max_indices_size, use_group_weights=use_group_weights,
+            use_conflict_weights=use_conflict_weights, conflicting_smiles_pairs=conflicting_smiles_pairs)
         if (shuffle):
             perm = np.random.permutation(self.y_trans.shape[0])
             self.x1_indices = self.x1_indices[perm]
@@ -147,7 +150,9 @@ class BatchGenerator(tf.keras.utils.Sequence):
                             void_info=None, no_inter_pairs=False,
                             no_intra_pairs=False,
                             max_indices_size=None,
-                            use_group_weights=True):
+                            use_group_weights=True,
+                            use_conflict_weights=True,
+                            conflicting_smiles_pairs=[]):
         assert not (no_inter_pairs and no_intra_pairs), 'no_inter_pairs and no_intra_pairs can\'t be both active'
         if (ids is not None):
             assert len(y) == len(ids), 'list of IDs (e.g., smiles) must have same length as list of RTs'
@@ -160,6 +165,7 @@ class BatchGenerator(tf.keras.utils.Sequence):
         pair_nrs = {}
         group_index_start = {}
         group_index_end = {}
+        confl_pair_report = {}
         if (dataset_info is None):
             groups['unk'] = list(range(len(y)))
         else:
@@ -250,6 +256,26 @@ class BatchGenerator(tf.keras.utils.Sequence):
                 start, end = group_index_start[groups], group_index_end[groups]
                 g_weight = group_weights[groups]
                 weights[start:end] *= g_weight
+            if (use_conflict_weights):
+                # drastically up-weigh pairs which have different orders depending on the column
+                for groups in group_index_start: # inter and intra?
+                    start, end = group_index_start[groups], group_index_end[groups]
+                    all_pair_weights = np.sum(weights[start:end])
+                    # how many conflicting pairs are there in this group?
+                    confl_pairs = [i for i in range(start, end)
+                                   if frozenset([ids[x1_indices[i]], ids[x2_indices[i]]]) in conflicting_smiles_pairs]
+                    if (len(confl_pairs) > 0):
+                        # w(non_confl_pairs) == w(confl_pairs)
+                        confl_weights = all_pair_weights / len(confl_pairs)
+                        for i in confl_pairs:
+                            weights[i] *= confl_weights
+                        confl_pair_report[groups] = len(confl_pairs)
+                print('# conflicting pairs detected per dataset(-pair):', pformat(confl_pair_report))
+                # # debug dump
+                # from time import time
+                # pickle.dump([(frozenset([ids[x1_indices[i]], ids[x2_indices[i]]]), y_trans[i], weights[i])
+                #               for i in range(len(y_trans))],
+                #             open(f'/tmp/rtranknet_weights_dump_{int(time() * 1000)}.pkl', 'wb'))
         return np.asarray(x1_indices), np.asarray(x2_indices), np.asarray(
             y_trans), np.asarray(weights)
 
