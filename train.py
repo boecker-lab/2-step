@@ -81,7 +81,6 @@ class TrainArgs(Tap):
     no_inter_pairs: bool = False # don't use pairs of compounds of different datasets
     no_intra_pairs: bool = False # don't use pairs of compounds of the same dataset
     max_pair_compounds: Optional[int] = None
-    use_conflicting_weights: bool=False # upweigh pairs with different order depending on column setting drastically
     conflicting_smiles_pairs: Optional[str] = None # pickle file with conflicting pairs (smiles)
     # data locations
     repo_root_folder: str = '/home/fleming/Documents/Projects/RtPredTrainingData/'
@@ -285,7 +284,6 @@ if __name__ == '__main__':
                         max_indices_size=args.max_pair_compounds,
                         weight_mid=args.weight_mid,
                         multix=graphs, y_neg=(args.mpn_loss == 'margin'),
-                        use_conflict_weights=args.use_conflicting_weights,
                         conflicting_smiles_pairs=(pickle.load(open(args.conflicting_smiles_pairs, 'rb'))
                                                   if args.conflicting_smiles_pairs is not None else []))
     vg = BatchGenerator((val_graphs, val_x) if graphs else train_x, val_y,
@@ -300,7 +298,6 @@ if __name__ == '__main__':
                         max_indices_size=args.max_pair_compounds,
                         weight_mid=args.weight_mid,
                         multix=graphs, y_neg=(args.mpn_loss == 'margin'),
-                        use_conflict_weights=args.use_conflicting_weights,
                         conflicting_smiles_pairs=(pickle.load(open(args.conflicting_smiles_pairs, 'rb'))
                                                   if args.conflicting_smiles_pairs is not None else []))
     if (args.plot_weights):
