@@ -59,12 +59,14 @@ def rt_diff_weight_fun(rt_diff, weight):
 def pair_weights(smiles1: str, smiles2: str, rt_diff: float,
                  nr_group_pairs: int, nr_group_pairs_max: int,
                  confl_weights_modifier: float, confl_pair_list: Iterable[frozenset]=[],
-                 cutoff:float=1e-4) -> Optional[float]:
+                 cutoff:float=1e-4, only_confl=False) -> Optional[float]:
     # group (~dataset) size balancing modifier
     base_weight = nr_group_pairs_max / nr_group_pairs # roughly between 1 and 500
     # conflicting (-> important) pair modifier
     if (frozenset([smiles1, smiles2]) in confl_pair_list):
         base_weight *= confl_weights_modifier
+    elif only_confl:
+        base_weight = 0
     # rt diff weight modifier
     base_weight = rt_diff_weight_fun(rt_diff, base_weight)
     return None if base_weight < cutoff else base_weight
@@ -280,7 +282,8 @@ class BatchGenerator(tf.keras.utils.Sequence):
                            else np.abs(y[x1_indices[i]] - y[x2_indices[i]]))
                 weights[i] = pair_weights(ids[x1_indices[i]], ids[x2_indices[i]], rt_diff,
                                           pair_nrs[g] if use_group_weights else nr_group_pairs_max,
-                                          nr_group_pairs_max, weight_modifier, conflicting_smiles_pairs)
+                                          nr_group_pairs_max, weight_modifier, conflicting_smiles_pairs,
+                                          only_confl=True)
                 # NOTE: pair weights can be "None"
         # remove Nones
         x1_indices_new = []
