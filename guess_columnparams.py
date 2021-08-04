@@ -56,9 +56,10 @@ def guesses_different_datasets(dss, ranker, guesses, scaler, custom_features=['M
                      'use_hsm': False,
                      'custom_column_fields': None,
                      'columns_remove_na': False,
-                     'graph_mode': True}
+                     'graph_mode': True,
+                     'repo_root_folder': '/home/lo63tor/rtpred/RtPredTrainingData'}
         test_data = Data(**data_args)
-        test_data.add_dataset_id(ds, isomeric=True)
+        test_data.add_dataset_id(ds, isomeric=True, repo_root_folder='/home/lo63tor/rtpred/RtPredTrainingData')
         test_data.compute_features(mode=parse_feature_spec('rdkall')['mode'])
         test_data.compute_graphs()
         test_data.split_data((0, 0))
@@ -80,7 +81,7 @@ def guesses_different_datasets(dss, ranker, guesses, scaler, custom_features=['M
     return pd.DataFrame.from_records(losses).set_index(['dataset', 'guess'])
 
 if __name__ == '__main__':
-    m, data, config = load_model('runs/newinter_ep19', 'mpn')
-    test = "0129 0040 0030 0125 0070 0096 0004 0019 0038 0042 0049 0052".split()
+    m, data, config = load_model('runs/newweightsconfl_only_bal_ep16', 'mpn')
+    test = "0048 0072 0078 0084 0098 0083 0076 0101 0019 0079 0099 0070 0102 0087 0086 0066 0062 0017 0095 0067 0097 0082 0124 0069 0181 0024 0085 0093 0094 0100 0092 0179 0068".split()
     losses = guesses_different_datasets(['0226'] + test, m, list(guess_from_data(data)), data.scaler)
-    losses.to_csv('gues_columnparams_losses.tsv', sep='\t')
+    losses.to_csv('gues_columnparams_losses_newweightsconfl_only_bal_ep16.tsv', sep='\t')
