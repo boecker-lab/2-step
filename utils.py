@@ -15,9 +15,10 @@ import os
 import re
 from classyfire import get_onehot, get_binary
 from dataclasses import dataclass, field
-from typing import Optional, List, Tuple, Union
+from typing import Optional, List, Tuple, Union, Iterable, Callable
 import logging
 import sys
+from pprint import pformat
 
 from features import features
 
@@ -41,6 +42,48 @@ def csr2tf(csr):
         values.append(v)
     return tf.sparse.SparseTensor(indices, values, csr.shape)
 
+def weight_stats(pkl, confl=[]):
+    x = pickle.load(open(pkl, 'rb'))
+    confl_weights = [_[2] for _ in x if _[0] in confl]
+    nonconfl_weights = [_[2] for _ in x if _[0] not in confl]
+    print(pd.DataFrame({'nonconfl': nonconfl_weights}).describe())
+    print(pd.DataFrame({'confl': confl_weights}).describe())
+
+def rt_diff_weight_fun(rt_diff, weight):
+    return (weight              # upper asymptote
+            / (1 +
+               np.exp(-(
+                   20)          # slope
+                      * (rt_diff - 0.75))) ** (1))
+
+def pair_weights(smiles1: str, smiles2: str, rt_diff: float,
+                 nr_group_pairs: int, nr_group_pairs_max: int,
+                 confl_weights_modifier: float, confl_pair_list: Iterable[frozenset]=[],
+                 cutoff:float=1e-4, only_confl=False) -> Optional[float]:
+    # group (~dataset) size balancing modifier
+    base_weight = nr_group_pairs_max / nr_group_pairs # roughly between 1 and 500
+    # conflicting (-> important) pair modifier
+    if (frozenset([smiles1, smiles2]) in confl_pair_list):
+        base_weight *= confl_weights_modifier
+    elif only_confl:
+        base_weight = 0
+    # rt diff weight modifier
+    base_weight = rt_diff_weight_fun(rt_diff, base_weight)
+    return None if base_weight < cutoff else base_weight
+
+
+
+# def plot_fun(weights, fun):
+#     x = np.arange(0, 2, 0.001)
+#     for w in weights:
+#         plt.plot(x, [fun(xi, w) for xi in x], label=f'w={w}')
+#         plt.axvline(0.5)
+#         plt.axvline(1)
+#         print(f'{w=}: \t{fun(0.2, w)=:.5f}\t{fun(0.5, w)=:.5f}\t{fun(0.8, w)=:.5f}')
+#     # plt.yscale('log')
+#     plt.legend()
+#     plt.show()
+
 
 class BatchGenerator(tf.keras.utils.Sequence):
     def __init__(self, x, y, ids=None, batch_size=32, shuffle=True,
@@ -49,7 +92,8 @@ class BatchGenerator(tf.keras.utils.Sequence):
                  max_indices_size=None,
                  use_weights=True, use_group_weights=True,
                  weight_steep=4, weight_mid=0.75,
-                 void=None, y_neg=False, multix=False):
+                 void=None, y_neg=False, multix=False,
+                 conflicting_smiles_pairs=[]):
         self.x = x              # (a) descriptors (b) graphs (c) descriptors + graphs
         self.y = y              # retention times
         self.ids = ids          # IDs (e.g., smiles) for every x/y pair
@@ -69,7 +113,8 @@ class BatchGenerator(tf.keras.utils.Sequence):
         self.y_neg = y_neg      # -1 for negative pairs (instead of 0)
         self.x1_indices, self.x2_indices, self.y_trans, self.weights = self._transform_pairwise(
             y, ids, dataset_info=dataset_info, void_info=void_info, no_inter_pairs=no_inter_pairs,
-            no_intra_pairs=no_intra_pairs, max_indices_size=max_indices_size, use_group_weights=use_group_weights)
+            no_intra_pairs=no_intra_pairs, max_indices_size=max_indices_size, use_group_weights=use_group_weights,
+            conflicting_smiles_pairs=conflicting_smiles_pairs)
         if (shuffle):
             perm = np.random.permutation(self.y_trans.shape[0])
             self.x1_indices = self.x1_indices[perm]
@@ -147,7 +192,8 @@ class BatchGenerator(tf.keras.utils.Sequence):
                             void_info=None, no_inter_pairs=False,
                             no_intra_pairs=False,
                             max_indices_size=None,
-                            use_group_weights=True):
+                            use_group_weights=True,
+                            conflicting_smiles_pairs=[]):
         assert not (no_inter_pairs and no_intra_pairs), 'no_inter_pairs and no_intra_pairs can\'t be both active'
         if (ids is not None):
             assert len(y) == len(ids), 'list of IDs (e.g., smiles) must have same length as list of RTs'
@@ -160,6 +206,7 @@ class BatchGenerator(tf.keras.utils.Sequence):
         pair_nrs = {}
         group_index_start = {}
         group_index_end = {}
+        # confl_pair_report = {}
         if (dataset_info is None):
             groups['unk'] = list(range(len(y)))
         else:
@@ -188,8 +235,7 @@ class BatchGenerator(tf.keras.utils.Sequence):
                     x2_indices.append(neg_idx)
                     y_trans.append(yi)
                     # weights
-                    weights.append(self.weight_fn(y[pos_idx] - y[neg_idx], self.weight_steep, self.weight_mid)
-                                   if self.use_weights else 1.0)
+                    weights.append(1.0) # will be computed later when group weights are known
                     pair_nr += 1
                 pair_nrs[group] = pair_nr
                 intra_pair_nr += pair_nr
@@ -225,33 +271,84 @@ class BatchGenerator(tf.keras.utils.Sequence):
                 inter_pair_nr += pair_nr
                 group_index_end[(group1, group2)] = len(weights)
         print(f'{inter_pair_nr=}, {intra_pair_nr=}')
-        if (use_group_weights):
-            # group weights: intra_pair balanced and inter_pair balanced individually
-            group_weights = {}
-            info(f'{inter_pair_nr=}, {intra_pair_nr=}')
-            first_inter = first_intra = True
-            for group in pair_nrs:
-                if pair_nrs[group] == 0:
-                    group_weights[group] = 1.0
-                    continue
-                if isinstance(group, tuple): # same overall weight on inter vs intra weights
-                    group_weights[group] = inter_pair_nr / pair_nrs[group] / len(groups)
-                    if (first_inter):
-                        info(f'inter group weights * nr_pairs = {group_weights[group] * pair_nrs[group]}')
-                        first_inter = False
-                else:
-                    group_weights[group] = intra_pair_nr / pair_nrs[group]
-                    if (first_intra):
-                        info(f'intra group weights * nr_pairs = {group_weights[group] * pair_nrs[group]}')
-                        first_intra = False
-            weights = np.asarray(weights)
-            # multiply rt_diff weights with group weights
-            for groups in group_index_start:
-                start, end = group_index_start[groups], group_index_end[groups]
-                g_weight = group_weights[groups]
-                weights[start:end] *= g_weight
-        return np.asarray(x1_indices), np.asarray(x2_indices), np.asarray(
-            y_trans), np.asarray(weights)
+        all_groups_list = list(pair_nrs)
+        print(pd.DataFrame({'group': all_groups_list, 'pair numbers':
+                            [pair_nrs[g] for g in all_groups_list]}).describe())
+        nr_group_pairs_max = max(pair_nrs.values())
+        for g in pair_nrs:
+            weight_modifier = 100
+            for i in range(group_index_start[g], group_index_end[g]):
+                rt_diff = (1e8 if isinstance(g, tuple) # no statement can be made on rt diff for inter-group pairs
+                           else np.abs(y[x1_indices[i]] - y[x2_indices[i]]))
+                weights[i] = pair_weights(ids[x1_indices[i]], ids[x2_indices[i]], rt_diff,
+                                          pair_nrs[g] if use_group_weights else nr_group_pairs_max,
+                                          nr_group_pairs_max, weight_modifier, conflicting_smiles_pairs,
+                                          only_confl=True)
+                # NOTE: pair weights can be "None"
+        # remove Nones
+        x1_indices_new = []
+        x2_indices_new = []
+        y_trans_new = []
+        weights_new = []
+        removed_counter = 0
+        for i in range (len(y_trans)):
+            if (weights[i] is not None):
+                x1_indices_new.append(x1_indices[i])
+                x2_indices_new.append(x2_indices[i])
+                y_trans_new.append(y_trans[i])
+                weights_new.append(weights[i])
+            else:
+                removed_counter += 1
+        print(f'removed {removed_counter} (of {len(y_trans)}) pairs for having "None" weights')
+        # if (use_group_weights):
+        #     # group weights: intra_pair balanced and inter_pair balanced individually
+        #     group_weights = {}
+        #     info(f'{inter_pair_nr=}, {intra_pair_nr=}')
+        #     first_inter = first_intra = True
+        #     for group in pair_nrs:
+        #         if pair_nrs[group] == 0:
+        #             group_weights[group] = 1.0
+        #             continue
+        #         if isinstance(group, tuple): # same overall weight on inter vs intra weights
+        #             group_weights[group] = inter_pair_nr / pair_nrs[group] / len(groups)
+        #             if (first_inter):
+        #                 info(f'inter group weights * nr_pairs = {group_weights[group] * pair_nrs[group]}')
+        #                 first_inter = False
+        #         else:
+        #             group_weights[group] = intra_pair_nr / pair_nrs[group]
+        #             if (first_intra):
+        #                 info(f'intra group weights * nr_pairs = {group_weights[group] * pair_nrs[group]}')
+        #                 first_intra = False
+        #     weights = np.asarray(weights)
+        #     # multiply rt_diff weights with group weights
+        #     for groups in group_index_start:
+        #         start, end = group_index_start[groups], group_index_end[groups]
+        #         g_weight = group_weights[groups]
+        #         weights[start:end] *= g_weight
+        #     if (use_conflict_weights):
+        #         # drastically up-weigh pairs which have different orders depending on the column
+        #         for groups in group_index_start: # inter and intra?
+        #             start, end = group_index_start[groups], group_index_end[groups]
+        #             all_pair_weights = np.sum(weights[start:end])
+        #             # how many conflicting pairs are there in this group?
+        #             confl_pairs = [i for i in range(start, end)
+        #                            if frozenset([ids[x1_indices[i]], ids[x2_indices[i]]]) in conflicting_smiles_pairs]
+        #             if (len(confl_pairs) > 0):
+        #                 # w(non_confl_pairs) == w(confl_pairs)
+        #                 # confl_weights = all_pair_weights / len(confl_pairs)
+        #                 confl_weights = 100
+        #                 for i in confl_pairs:
+        #                     weights[i] *= confl_weights
+        #                 confl_pair_report[groups] = len(confl_pairs)
+        #         print('# conflicting pairs detected per dataset(-pair):', pformat(confl_pair_report))
+        # debug dump
+        # from time import time
+        # pickle.dump([[(frozenset([ids[x1_indices[i]], ids[x2_indices[i]]]), y_trans[i], weights[i])
+        #               for i in range(len(y_trans))],
+        #              group_index_start, group_index_end],
+        #             open(f'/tmp/rtranknet_weights_dump_{int(time() * 1000)}.pkl', 'wb'))
+        return np.asarray(x1_indices_new), np.asarray(x2_indices_new), np.asarray(
+            y_trans_new), np.asarray(weights_new)
 
     def __len__(self):
         return np.ceil(self.y_trans.shape[0] / self.batch_size).astype(int)

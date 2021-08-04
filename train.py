@@ -81,6 +81,7 @@ class TrainArgs(Tap):
     no_inter_pairs: bool = False # don't use pairs of compounds of different datasets
     no_intra_pairs: bool = False # don't use pairs of compounds of the same dataset
     max_pair_compounds: Optional[int] = None
+    conflicting_smiles_pairs: Optional[str] = None # pickle file with conflicting pairs (smiles)
     # data locations
     repo_root_folder: str = '/home/fleming/Documents/Projects/RtPredTrainingData/'
     add_desc_file: str = '/home/fleming/Documents/Projects/rtranknet/data/qm_merged.csv'
@@ -154,6 +155,7 @@ if __name__ == '__main__':
     args = TrainArgs().parse_args()
     if (args.run_name is None):
         run_name = generic_run_name()
+        print(f'preparing rtranknet model "{run_name}"')
     else:
         run_name = args.run_name
     # logging
@@ -281,7 +283,9 @@ if __name__ == '__main__':
                         no_intra_pairs=args.no_intra_pairs,
                         max_indices_size=args.max_pair_compounds,
                         weight_mid=args.weight_mid,
-                        multix=graphs, y_neg=(args.mpn_loss == 'margin'))
+                        multix=graphs, y_neg=(args.mpn_loss == 'margin'),
+                        conflicting_smiles_pairs=(pickle.load(open(args.conflicting_smiles_pairs, 'rb'))
+                                                  if args.conflicting_smiles_pairs is not None else []))
     vg = BatchGenerator((val_graphs, val_x) if graphs else train_x, val_y,
                         ids=data.df.iloc[data.val_indices].smiles.tolist(),
                         batch_size=args.batch_size, pair_step=args.pair_step,
@@ -293,7 +297,9 @@ if __name__ == '__main__':
                         no_intra_pairs=args.no_intra_pairs,
                         max_indices_size=args.max_pair_compounds,
                         weight_mid=args.weight_mid,
-                        multix=graphs, y_neg=(args.mpn_loss == 'margin'))
+                        multix=graphs, y_neg=(args.mpn_loss == 'margin'),
+                        conflicting_smiles_pairs=(pickle.load(open(args.conflicting_smiles_pairs, 'rb'))
+                                                  if args.conflicting_smiles_pairs is not None else []))
     if (args.plot_weights):
         plot_x = np.linspace(0, 10 * args.weight_mid, 100)
         import matplotlib.pyplot as plt
