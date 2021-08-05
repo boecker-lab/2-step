@@ -276,7 +276,8 @@ class BatchGenerator(tf.keras.utils.Sequence):
                             [pair_nrs[g] for g in all_groups_list]}).describe())
         nr_group_pairs_max = max(pair_nrs.values())
         for g in pair_nrs:
-            weight_modifier = 100
+            # weight_modifier = 100 TODO:
+            weight_modifier = 1
             for i in range(group_index_start[g], group_index_end[g]):
                 rt_diff = (1e8 if isinstance(g, tuple) # no statement can be made on rt diff for inter-group pairs
                            else np.abs(y[x1_indices[i]] - y[x2_indices[i]]))

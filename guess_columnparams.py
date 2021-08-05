@@ -81,7 +81,60 @@ def guesses_different_datasets(dss, ranker, guesses, scaler, custom_features=['M
     return pd.DataFrame.from_records(losses).set_index(['dataset', 'guess'])
 
 if __name__ == '__main__':
-    m, data, config = load_model('runs/newweightsconfl_only_bal_ep16', 'mpn')
-    test = "0048 0072 0078 0084 0098 0083 0076 0101 0019 0079 0099 0070 0102 0087 0086 0066 0062 0017 0095 0067 0097 0082 0124 0069 0181 0024 0085 0093 0094 0100 0092 0179 0068".split()
-    losses = guesses_different_datasets(['0226'] + test, m, list(guess_from_data(data)), data.scaler)
-    losses.to_csv('gues_columnparams_losses_newweightsconfl_only_bal_ep16.tsv', sep='\t')
+    import os.path
+    from argparse import ArgumentParser
+    parser = ArgumentParser()
+    parser.add_argument('model')
+    parser.add_argument('--mode', choices=['testall', 'specific', 'allpairs'])
+    parser.add_argument('--pairs_file', default='/home/fleming/Documents/Uni/RTpred/pairs2.pkl')
+    args = parser.parse_args()
+    m, data, config = load_model(args.model, 'mpn')
+    if (args.mode == 'testall'):
+        # test all column param configurations
+        test = "0048 0072 0078 0084 0098 0083 0076 0101 0019 0079 0099 0070 0102 0087 0086 0066 0062 0017 0095 0067 0097 0082 0124 0069 0181 0024 0085 0093 0094 0100 0092 0179 0068".split()
+        losses = guesses_different_datasets(['0226'] + test, m, list(guess_from_data(data)), data.scaler)
+        losses.to_csv(f'guess_columnparams_losses_{os.path.splitext(os.path.basename(args.model))[0]}.tsv', sep='\t')
+    elif (args.mode == 'specific'):
+        # specific data
+        df = data.df.reset_index()
+        # get caffeine/phenylalanine pair on datasets 0067 and 0002 (conflicting)
+        df.loc[~df.name.isna() & (df.name.str.contains('caffeine', case=False) | df.name.str.contains('phenylalanine', case=False)) & (df.id.str.contains('0067_') | df.id.str.contains('0002_'))]
+        indices = {
+            ('c', '0067'): df.loc[~df.name.isna() & (df.name.str.contains('caffeine', case=False)) & (df.id.str.contains('0067_'))].index[0],
+            ('c', '0002'): df.loc[~df.name.isna() & (df.name.str.contains('caffeine', case=False)) & (df.id.str.contains('0002_'))].index[0],
+            ('F', '0067'): df.loc[~df.name.isna() & (df.name.str.contains('phenylalanine', case=False) & (df.formula == 'C9H11NO2')) & (df.id.str.contains('0067_'))].index[0],
+            ('F', '0002'): df.loc[~df.name.isna() & (df.name.str.contains('phenylalanine', case=False) & (df.formula == 'C9H11NO2')) & (df.id.str.contains('0002_'))].index[0]}
+        m.eval()
+        with torch.no_grad():
+            rois = {i: m([[[data.get_graphs()[indices[i]]], torch.as_tensor([data.get_x()[indices[i]]], dtype=torch.float)]])
+                    for i in indices}
+        rts = {i: data.get_y()[indices[i]] for i in indices}
+        from pprint import pprint
+        print('(compound, dataset): (roi, rt)')
+        pprint({i: (rois[i], rts[i]) for i in indices})
+    elif (args.mode == 'allpairs'):
+        import pickle
+        df = data.df.reset_index()
+        pairs = pickle.load(open(args.pairs_file, 'rb'))
+        correct_pairs = []
+        for p, datasets in tqdm(pairs.items()):
+            for dss in datasets:
+                # check if part of data
+                rows = {(c, ds): df.loc[(df['smiles.std'] == c) & (df.id.str.contains(ds + '_'))].index
+                        for c in p for ds in dss}
+                if (not all(len(v) > 0 for v in rows.values())):
+                    continue
+                rois = {i: m([[[data.get_graphs()[rows[i][0]]], torch.as_tensor([data.get_x()[rows[i][0]]], dtype=torch.float)]])[0].detach().numpy()[0]
+                        for i in rows}
+                # check order
+                if (len(p) != 2):
+                    print('wtf?', p)
+                    continue
+                c1, c2 = p
+                correct = [(data.get_y()[rows[(c1, ds)][0]] - data.get_y()[rows[(c2, ds)][0]]) * (rois[(c1, ds)] - rois[(c2, ds)]) > 0
+                           for ds in dss]
+                # print(rois)
+                # print(correct)
+                correct_pairs.append({'pair': p, 'datasets': dss, 'correct': all(correct)})
+        correct_df = pd.DataFrame.from_records(correct_pairs)
+        print(correct_df.groupby('pair').describe())
