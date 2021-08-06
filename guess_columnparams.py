@@ -137,4 +137,12 @@ if __name__ == '__main__':
                 # print(correct)
                 correct_pairs.append({'pair': p, 'datasets': dss, 'correct': all(correct)})
         correct_df = pd.DataFrame.from_records(correct_pairs)
+        correct_df.to_csv(f'confl_pairs_preds_{os.path.splitext(os.path.basename(args.model))[0]}.tsv', sep='\t')
         print(correct_df.groupby('pair').describe())
+        num_correct = len(correct_df.loc[correct_df.correct == True])
+        print('correct pairs (for one dataset): '
+              f'{num_correct}/{len(correct_df)} ({num_correct/len(correct_df):.2%})')
+        num_correct = (correct_df.groupby('pair').correct.min() == True).sum()
+        print('pairs correct for all datasets: '
+              f'{num_correct}/{len(correct_df.groupby("pair"))} ({num_correct/len(correct_df.groupby("pair")):.2%})')
+ 
