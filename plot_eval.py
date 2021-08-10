@@ -10,6 +10,7 @@ if __name__ == '__main__':
     parser.add_argument('jsons', nargs='+')
     parser.add_argument('--basename', default=None)
     parser.add_argument('--save', default=None)
+    parser.add_argument('--no_plot', action='store_true')
     args = parser.parse_args()
     jsons = {}
     for j in args.jsons:
@@ -27,10 +28,11 @@ if __name__ == '__main__':
     accs_simple = accs.transpose().agg(['mean', 'median']).transpose()
     print(accs_simple)
     # import pdb; pdb.set_trace()
-    accs_simple.plot()
-    plt.show()
-    accs.transpose().boxplot(figsize=(15, 5))
-    if args.save is None:
+    if (not args.no_plot):
+        accs_simple.plot()
         plt.show()
-    else:
-        plt.savefig(args.save, bbox_inches='tight')
+        accs.transpose().boxplot(figsize=(15, 5))
+        if args.save is None:
+            plt.show()
+        else:
+            plt.savefig(args.save, bbox_inches='tight')
