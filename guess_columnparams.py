@@ -87,6 +87,9 @@ if __name__ == '__main__':
     parser.add_argument('model')
     parser.add_argument('--mode', choices=['testall', 'specific', 'allpairs'])
     parser.add_argument('--pairs_file', default='/home/fleming/Documents/Uni/RTpred/pairs2.pkl')
+    parser.add_argument('--verbose', action='store_true')
+    parser.add_argument('--no_save', action='store_true')
+    # args = parser.parse_args('/home/fleming/Documents/Projects/rtranknet/runs/newweightsconfl/newweightsconfl'.split())
     args = parser.parse_args()
     m, data, config = load_model(args.model, 'mpn')
     if (args.mode == 'testall'):
@@ -117,7 +120,11 @@ if __name__ == '__main__':
         df = data.df.reset_index()
         pairs = pickle.load(open(args.pairs_file, 'rb'))
         correct_pairs = []
+        verb_counter = 0        # for verbose print at most 10 instances
         for p, datasets in tqdm(pairs.items()):
+            if (args.verbose and verb_counter >= 10):
+                break
+            verb_counter += 1
             for dss in datasets:
                 # check if part of data
                 rows = {(c, ds): df.loc[(df['smiles.std'] == c) & (df.id.str.contains(ds + '_'))].index
@@ -133,11 +140,16 @@ if __name__ == '__main__':
                 c1, c2 = p
                 correct = [(data.get_y()[rows[(c1, ds)][0]] - data.get_y()[rows[(c2, ds)][0]]) * (rois[(c1, ds)] - rois[(c2, ds)]) > 0
                            for ds in dss]
-                # print(rois)
-                # print(correct)
+                if (args.verbose):
+                    # print(rois)
+                    # print(correct)
+                    print(pd.DataFrame.from_records([{'compound': c, 'dataset': ds, 'roi': rois[(c, ds)],
+                                                      'rt': data.get_y()[rows[(c, ds)][0]]}
+                                                     for c, ds in rows]).set_index(['dataset', 'compound']).sort_values(by=['dataset', 'rt']))
                 correct_pairs.append({'pair': p, 'datasets': dss, 'correct': all(correct)})
         correct_df = pd.DataFrame.from_records(correct_pairs)
-        correct_df.to_csv(f'confl_pairs_preds_{os.path.splitext(os.path.basename(args.model))[0]}.tsv', sep='\t')
+        if (not args.no_save):
+            correct_df.to_csv(f'confl_pairs_preds_{os.path.splitext(os.path.basename(args.model))[0]}.tsv', sep='\t')
         print(correct_df.groupby('pair').describe())
         num_correct = len(correct_df.loc[correct_df.correct == True])
         print('correct pairs (for one dataset): '
@@ -145,4 +157,3 @@ if __name__ == '__main__':
         num_correct = (correct_df.groupby('pair').correct.min() == True).sum()
         print('pairs correct for all datasets: '
               f'{num_correct}/{len(correct_df.groupby("pair"))} ({num_correct/len(correct_df.groupby("pair")):.2%})')
- 
