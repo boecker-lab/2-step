@@ -274,7 +274,7 @@ class BatchGenerator(tf.keras.utils.Sequence):
         all_groups_list = list(pair_nrs)
         print(pd.DataFrame({'group': all_groups_list, 'pair numbers':
                             [pair_nrs[g] for g in all_groups_list]}).describe())
-        nr_group_pairs_max = max(pair_nrs.values())
+        nr_group_pairs_max = max(list(pair_nrs.values()) + [0])
         for g in pair_nrs:
             # weight_modifier = 100 TODO:
             weight_modifier = 1
