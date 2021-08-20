@@ -325,7 +325,7 @@ class BatchGenerator(tf.keras.utils.Sequence):
                 weights[i] = pair_weights(ids[x1_indices[i]], ids[x2_indices[i]], rt_diff,
                                           pair_nrs[g] if use_group_weights else nr_group_pairs_max,
                                           nr_group_pairs_max, weight_modifier, conflicting_smiles_pairs,
-                                          only_confl=True)
+                                          only_confl=False)
                 # NOTE: pair weights can be "None"
         # remove Nones
         x1_indices_new = []
