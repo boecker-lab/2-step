@@ -743,10 +743,16 @@ class Data:
         df.file = f
         # rows without RT data are useless
         df = df[~pd.isna(df.rt)]
-        # add dummy dataset_id
-        df['dataset_id'] = os.path.basename(f)
+        # get dataset ID(s) and void time(s)
+        if ('dataset_id' not in df.columns):
+            # add dummy dataset_id
+            df['dataset_id'] = os.path.basename(f)
+        if (not metadata_void_rt or 'column.t0' not in df.columns):
+            df['column.t0'] = void_rt
+        void_info = {t[0]: t[1] for t in set(
+            df[['dataset_id', 'column.t0']].itertuples(index=False))}
         return Data(df=df, graph_mode=graph_mode,
-                    void_info={df.dataset_id.iloc[0]: void_rt},
+                    void_info=void_info,
                     **extra_data_args)
 
     def balance(self):
