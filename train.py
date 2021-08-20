@@ -286,6 +286,7 @@ if __name__ == '__main__':
                         multix=graphs, y_neg=(args.mpn_loss == 'margin'),
                         conflicting_smiles_pairs=(pickle.load(open(args.conflicting_smiles_pairs, 'rb'))
                                                   if args.conflicting_smiles_pairs is not None else []))
+    # pickle.dump(bg, open('bg.pkl', 'wb'))
     vg = BatchGenerator((val_graphs, val_x) if graphs else train_x, val_y,
                         ids=data.df.iloc[data.val_indices].smiles.tolist(),
                         batch_size=args.batch_size, pair_step=args.pair_step,

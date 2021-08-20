@@ -201,6 +201,47 @@ class BatchGenerator(tf.keras.utils.Sequence):
         x2_indices = []
         y_trans = []
         weights = []
+
+        ###############
+        # DEBUG START #
+        ###############
+
+        """
+        pairs = pickle.load(open('/home/fleming/Documents/Uni/RTpred/pairs_0068_0138.pkl', 'rb'))
+        from itertools import permutations, combinations
+        for n, (i, j) in enumerate(combinations(range(len(y)), 2)):
+            id1, id2 = ids[i], ids[j]
+            if (dataset_info[i] != dataset_info[j]):
+                continue
+            if (frozenset([id1, id2]) not in pairs):
+                continue
+            if (np.abs(y[i] - y[j]) < 0.5):
+                print('void continue', dataset_info[i], y[i], y[j])
+                continue
+            y_res = 1 if y[i] > y[j] else (-1 if self.y_neg else 0)
+            if (-1**n == 1):
+                x1_indices.append(i)
+                x2_indices.append(j)
+                y_trans.append(y_res)
+            else:
+                x1_indices.append(j)
+                x2_indices.append(i)
+                y_trans.append(1 if y_res != 1 else (-1 if self.y_neg else 0))
+            weights.append(1.0)
+        from time import time
+        pickle.dump([(tuple([ids[x1_indices[i]], ids[x2_indices[i]]]), y_trans[i], dataset_info[x1_indices[i]])
+                      for i in range(len(y_trans))],
+                    open(f'/tmp/rtranknet_weights_dump_{int(time() * 1000)}.pkl', 'wb'))
+        return np.asarray(x1_indices), np.asarray(x2_indices), np.asarray(
+            y_trans), np.asarray(weights)
+
+        """
+
+        #############
+        # DEBUG END #
+        #############
+
+
         # group by dataset
         groups = {}
         pair_nrs = {}
@@ -656,9 +697,9 @@ class Data:
                                 if self.use_system_information else None)
         self.classes_indices = ([xs.shape[1] - self.x_classes.shape[1], xs.shape[1] - 1]
                              if self.use_compound_classes else None)
-        print(f'{np.diff(self.features_indices) + 1} molecule features, '
-              f'{(np.diff(self.info_indices) + 1) if self.info_indices is not None else 0} column features, '
-              f'{(np.diff(self.classes_indices) + 1) if self.classes_indices is not None else 0} molecule class features')
+        # print(f'{np.diff(self.features_indices) + 1} molecule features, '
+        #       f'{(np.diff(self.info_indices) + 1) if self.info_indices is not None else 0} column features, '
+        #       f'{(np.diff(self.classes_indices) + 1) if self.classes_indices is not None else 0} molecule class features')
         return xs
 
     def get_graphs(self):
