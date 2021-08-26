@@ -127,7 +127,9 @@ if __name__ == '__main__':
             verb_counter += 1
             for dss in datasets:
                 # check if part of data
-                rows = {(c, ds): df.loc[(df['smiles.std'] == c) & (df.id.str.contains(ds + '_'))].index
+                rows = {(c, ds): df.loc[(df['smiles.std'] == c) &
+                                        (df.dataset_id == ds if 'dataset_id' in df.columns
+                                         else df.id.str.contains(ds + '_'))].index
                         for c in p for ds in dss}
                 if (not all(len(v) > 0 for v in rows.values())):
                     continue
