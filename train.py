@@ -4,7 +4,8 @@ import tensorflow as tf
 import torch
 from LambdaRankNN import RankNetNN
 from mpnranker import MPNranker, train as mpn_train, predict as mpn_predict
-from tensorboardX import SummaryWriter
+# from tensorboardX import SummaryWriter
+from torch.utils.tensorboard import SummaryWriter
 from rdkit import rdBase
 import pickle
 import json
@@ -363,8 +364,10 @@ if __name__ == '__main__':
             ranker = MPNranker(sigmoid=(args.mpn_loss == 'bce'), extra_features_dim=train_x.shape[1],
                                hidden_units=args.sizes, encoder_size=args.encoder_size,
                                dropout_rate=args.dropout_rate)
+        rename_old_writer_logs(f'runs/{run_name}')
         writer = SummaryWriter(f'runs/{run_name}_train')
         val_writer = SummaryWriter(f'runs/{run_name}_val')
+        confl_writer = SummaryWriter(f'runs/{run_name}_confl')
         if (args.save_data):
             pickle.dump(data, open(os.path.join(f'{run_name}_data.pkl'), 'wb'))
             json.dump({'train_sets': args.input, 'name': run_name,
@@ -372,6 +375,7 @@ if __name__ == '__main__':
                       open(f'{run_name}_config.json', 'w'), indent=2)
         try:
             mpn_train(ranker, bg, args.epochs, writer, vg, val_writer=val_writer,
+                      confl_writer=confl_writer,
                       steps_train_loss=np.ceil(len(bg) / 100).astype(int),
                       steps_val_loss=np.ceil(len(bg) / 5).astype(int),
                       batch_size=args.batch_size, epsilon=args.epsilon,

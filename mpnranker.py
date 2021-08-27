@@ -1,7 +1,8 @@
-from tensorboardX.writer import SummaryWriter
+# from tensorboardX.writer import SummaryWriter
 import torch
 import torch.nn as nn
 import torch.optim as optim
+from torch.utils.tensorboard import SummaryWriter
 import pandas as pd
 from typing import List, Union, Tuple
 from tqdm import tqdm
@@ -12,6 +13,7 @@ from chemprop.features import mol2graph, BatchMolGraph
 from evaluate import eval_
 from utils import BatchGenerator
 import numpy as np
+from pprint import pprint
 
 
 class MPNranker(nn.Module):
@@ -92,20 +94,21 @@ def loss_step(ranker, x, y, weights, loss_fun):
     y = torch.as_tensor(y).float().to(ranker.encoder.device)
     weights = torch.as_tensor(weights).to(ranker.encoder.device)
     if isinstance(loss_fun, nn.MarginRankingLoss):
-        loss = (loss_fun(*pred, y) * weights).mean()
+        loss = ((loss_fun(*pred, y) * weights).mean(), loss_fun(*pred, y) * weights)
     else:
-        loss = (loss_fun(pred, y) * weights).mean()
+        loss = ((loss_fun(pred, y) * weights).mean(), loss_fun(pred, y) * weights)
     return loss
 
 def train(ranker: MPNranker, bg: BatchGenerator, epochs=2,
           writer:SummaryWriter=None, val_g: BatchGenerator=None,
           epsilon=0.5, val_writer:SummaryWriter=None,
+          confl_writer:SummaryWriter=None,
           steps_train_loss=10, steps_val_loss=100,
           batch_size=8192, sigmoid_loss=False,
           margin_loss=0.1, early_stopping_patience=None,
           ep_save=False, learning_rate=1e-3, no_encoder_train=False):
     save_name = ('mpnranker' if writer is None else
-                 writer.logdir.split('/')[-1].replace('_train', ''))
+                 writer.get_logdir().split('/')[-1].replace('_train', ''))
     ranker.to(ranker.encoder.device)
     print('device:', ranker.encoder.device)
     if (no_encoder_train):
@@ -116,6 +119,8 @@ def train(ranker: MPNranker, bg: BatchGenerator, epochs=2,
                 else nn.MarginRankingLoss(margin_loss, reduction='none'))
     ranker.train()
     loss_sum = iter_count = val_loss_sum = val_iter_count = val_pat = 0
+    confl_loss = {}
+    rel_confl_len = 0
     last_val_step = np.infty
     stop = False
     for epoch in range(epochs):
@@ -128,9 +133,30 @@ def train(ranker: MPNranker, bg: BatchGenerator, epochs=2,
                 x[0][1] = torch.as_tensor(x[0][1]).float().to(ranker.encoder.device)
                 x[1][1] = torch.as_tensor(x[1][1]).float().to(ranker.encoder.device)
             loss = loss_step(ranker, x, y, weights, loss_fun)
-            loss_sum += loss.item()
+            loss_sum += loss[0].item()
             iter_count += 1
-            loss.backward()
+            loss[0].backward()
+            if (confl_writer is not None):
+                if ((weights > 9).any()): # TODO: DEBUG for confl pairs
+                    # NOTE: makes the following assumptions:
+                    # 1. confl_weights_modifier > 9 and groups roughly balanced so that
+                    # all confl pairs have weights >9
+                    # 2. has extra features from which the first one is used as ID for the
+                    # compound (logp, 5 decimals)
+                    for logp1, logp2, yi, l in zip(x[0][1][weights > 9, 0], x[1][1][weights > 9, 0],
+                                                   y[weights > 9], loss[1][weights > 9]):
+                        logp1, logp2 = f'{logp1:.5f}', f'{logp2:.5f}'
+                        confl_loss.setdefault(frozenset([logp1, logp2]), {})[yi] = l.item()
+                    rel_confl_items = [(v[0 if sigmoid_loss else -1] + v[1]) / 2
+                                       for k, v in confl_loss.items() if 1 in v and (0 if sigmoid_loss else -1) in v]
+                    if (len(rel_confl_items) > rel_confl_len):
+                        # a new conflicting pair was trained on with conflicting target values
+                        rel_confl_len = len(rel_confl_items)
+                        if (confl_writer is not None):
+                            confl_writer.add_scalar('loss', sum(rel_confl_items) / rel_confl_len, iter_count)
+                    # pprint(ranker.get_parameter('hidden.0.weight').grad[:, -ranker.extra_features_dim:])
+                    # pprint(ranker.get_parameter('hidden.0.weight').grad[:, -ranker.extra_features_dim+1:].sum(1))
+                    # pprint([(p[0], p[1].size(), p[1].grad) for p in ranker.named_parameters()])
             optimizer.step()
             if (iter_count % steps_train_loss == (steps_train_loss - 1) and writer is not None):
                 loss_avg = loss_sum / iter_count
@@ -146,7 +172,7 @@ def train(ranker: MPNranker, bg: BatchGenerator, epochs=2,
                         if (ranker.extra_features_dim > 0):
                             x[0][1] = torch.as_tensor(x[0][1]).float().to(ranker.encoder.device)
                             x[1][1] = torch.as_tensor(x[1][1]).float().to(ranker.encoder.device)
-                        val_loss_sum += loss_step(ranker, x, y, weights, loss_fun).item()
+                        val_loss_sum += loss_step(ranker, x, y, weights, loss_fun)[0].item()
                         val_iter_count += 1
                 val_step = val_loss_sum / val_iter_count
                 val_writer.add_scalar('loss', val_step, iter_count)
@@ -158,10 +184,12 @@ def train(ranker: MPNranker, bg: BatchGenerator, epochs=2,
                     val_pat += 1
                 last_val_step = min(val_step, last_val_step)
                 ranker.train()
+        val_writer.flush()
         ranker.eval()
         if writer is not None:
             train_acc = eval_(bg.y, predict(bg.x, ranker, batch_size=batch_size), epsilon=epsilon)
             writer.add_scalar('acc', train_acc, iter_count)
+            writer.flush()
             print(f'{train_acc=:.2%}')
             if (val_writer is not None):
                 if (val_g.dataset_info is not None):
@@ -181,6 +209,7 @@ def train(ranker: MPNranker, bg: BatchGenerator, epochs=2,
                 else:
                     val_acc = eval_(val_g.y, predict(val_g.x, ranker, batch_size=batch_size), epsilon=epsilon)
                 val_writer.add_scalar('acc', val_acc, iter_count)
+                val_writer.flush()
                 print(f'{val_acc=:.2%}')
         if (ep_save):
             torch.save(ranker, f'{save_name}_ep{epoch + 1}.pt')
