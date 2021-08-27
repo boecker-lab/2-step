@@ -316,6 +316,7 @@ class BatchGenerator(tf.keras.utils.Sequence):
         print(pd.DataFrame({'group': all_groups_list, 'pair numbers':
                             [pair_nrs[g] for g in all_groups_list]}).describe())
         nr_group_pairs_max = max(list(pair_nrs.values()) + [0])
+        info('computing pair weights')
         for g in pair_nrs:
             # weight_modifier = 100 TODO:
             weight_modifier = 10
@@ -327,6 +328,7 @@ class BatchGenerator(tf.keras.utils.Sequence):
                                           nr_group_pairs_max, weight_modifier, conflicting_smiles_pairs,
                                           only_confl=False)
                 # NOTE: pair weights can be "None"
+        info('done. removing None weights')
         # remove Nones
         x1_indices_new = []
         x2_indices_new = []
@@ -389,6 +391,7 @@ class BatchGenerator(tf.keras.utils.Sequence):
         #               for i in range(len(y_trans))],
         #              group_index_start, group_index_end],
         #             open(f'/tmp/rtranknet_weights_dump_{int(time() * 1000)}.pkl', 'wb'))
+        info('done generating pairs')
         return np.asarray(x1_indices_new), np.asarray(x2_indices_new), np.asarray(
             y_trans_new), np.asarray(weights_new)
 
