@@ -151,6 +151,19 @@ def prepare_tf_model(args: TrainArgs, input_size: int) -> RankNetNN:
                          solver='adam',
                          dropout_rate=args.dropout_rate)
 
+def rename_old_writer_logs(prefix):
+    suffixes = ['_train', '_val', '_confl']
+    if (any(os.path.exists(prefix + suffix) for suffix in suffixes)):
+        from datetime import datetime
+        stamp = datetime.fromtimestamp(os.path.getmtime(
+            [prefix + suffix for suffix in suffixes if os.path.exists(prefix + suffix)][0]
+        )).strftime('%Y%m%d_%H-%M-%S')
+        for suffix in suffixes:
+            if os.path.exists(prefix + suffix):
+                new_dir = prefix + '_' + stamp + suffix
+                os.rename(prefix + suffix, new_dir)
+                print(f'old logdir {prefix + suffix} -> {new_dir}')
+
 if __name__ == '__main__':
     args = TrainArgs().parse_args()
     if (args.run_name is None):
