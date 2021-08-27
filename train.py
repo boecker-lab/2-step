@@ -188,7 +188,17 @@ if __name__ == '__main__':
             print('input from CSV/TSV file')
             # csv file
             data = Data.from_raw_file(input_, void_rt=args.void_rt,
-                                      graph_mode=graphs)
+                                      graph_mode=graphs,
+                                      use_compound_classes=args.comp_classes, use_system_information=args.sysinfo,
+                                      metadata_void_rt=args.metadata_void_rt,
+                                      classes_l_thr=args.classes_l_thr, classes_u_thr=args.classes_u_thr,
+                                      repo_root_folder=args.repo_root_folder,
+                                      use_usp_codes=args.usp_codes, custom_features=args.features,
+                                      use_hsm=args.columns_use_hsm,
+                                      custom_column_fields=args.custom_column_fields or None,
+                                      hsm_fields=args.hsm_fields,
+                                      fallback_column=args.fallback_column,
+                                      fallback_metadata=args.fallback_metadata)
         elif (input_.endswith('.tf')):
             print('input is trained Tensorflow model')
             # tensorflow model
