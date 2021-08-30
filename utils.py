@@ -1,5 +1,5 @@
 from itertools import combinations, product
-from random import sample
+from random import sample, shuffle
 import pandas as pd
 import numpy as np
 # import matplotlib.pyplot as plt
@@ -169,15 +169,20 @@ class BatchGenerator(tf.keras.utils.Sequence):
             return neg_idx, pos_idx, (-1 if y_neg else 0)
 
     def get_comparable_pairs(self, indices_i, indices_j, rts, ids,
-                             void_i=0, void_j=0, y_neg=False, epsilon=0.5):
+                             void_i=0, void_j=0, y_neg=False, epsilon=0.5,
+                             pairs_compute_threshold=None):
         pairs = set()
         def make_pairs(indices_pre, indices_post):
             for i, (i_pre, i_post) in enumerate(product(indices_pre, indices_post)):
                 yield (i_post, i_pre, 1) if 1 == (-1)**i else (i_pre, i_post, -1 if y_neg else 0)
-        inters = set([ids[i] for i in indices_i]) & set([ids[j] for j in indices_j])
-        # print(f'{inters=}')
+        inters = list(set([ids[i] for i in indices_i]) & set([ids[j] for j in indices_j]))
+        shuffle(inters)
         # TODO: problem if IDs not unique, assert this somewhere!
         for id_k in inters:
+            if (pairs_compute_threshold is not None and len(pairs) > pairs_compute_threshold):
+                info('too many inter-pairs to consider; aborting with compute threshold')
+                warning('inter-pairs might be unbalanced due to their potentially large number!')
+                break
             k_i = [i for i in indices_i if ids[i] == id_k][0]
             k_j = [j for j in indices_j if ids[j] == id_k][0]
             if (rts[k_i] < void_i or rts[k_j] < void_j):
@@ -309,7 +314,8 @@ class BatchGenerator(tf.keras.utils.Sequence):
                                * (1/(inter_group_nr / len(groups)))).astype(int)
                 potential_pairs = self.get_comparable_pairs(groups[group1], groups[group2], y, ids,
                                                             void_i=void_i or 0, void_j=void_j or 0,
-                                                            y_neg=self.y_neg, epsilon=0.5)
+                                                            y_neg=self.y_neg, epsilon=0.5,
+                                                            pairs_compute_threshold=10 * max_pair_nr)
                 # debug
                 # for i, j, yi in potential_pairs:
                 #     if yi > 0:
