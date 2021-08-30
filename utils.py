@@ -19,6 +19,8 @@ from typing import Optional, List, Tuple, Union, Iterable, Callable
 import logging
 import sys
 from pprint import pformat
+from time import time
+from datetime import timedelta
 
 from features import features
 
@@ -257,12 +259,18 @@ class BatchGenerator(tf.keras.utils.Sequence):
         # same-dataset pairs
         inter_pair_nr = intra_pair_nr = 0
         if (not no_intra_pairs):
+            info('computing intra-dataset pairs...')
+            t0 = time()
             for group in groups:
                 group_index_start[group] = len(weights)
                 group_void_rt = void_info[group] if void_info is not None and group in void_info else self.void
                 pair_nr = 0
-                for i, j in BatchGenerator.dataset_pair_it(groups[group], self.pair_step, self.pair_stop,
-                                                           max_indices_size=max_indices_size):
+                it = BatchGenerator.dataset_pair_it(groups[group], self.pair_step, self.pair_stop,
+                                                           max_indices_size=max_indices_size)
+                if (logger.level <= logging.INFO):
+                    from tqdm import tqdm
+                    it = tqdm(it)
+                for i, j in it:
                     res = BatchGenerator.get_pair(y, i, j, group_void_rt or 0, group_void_rt or 0, self.y_neg)
                     if (res is None):
                         continue
@@ -281,10 +289,17 @@ class BatchGenerator(tf.keras.utils.Sequence):
                 pair_nrs[group] = pair_nr
                 intra_pair_nr += pair_nr
                 group_index_end[group] = len(weights)
+            info(f'done ({str(timedelta(seconds=time() - t0))} elapsed)')
         # between groups
         if (not no_inter_pairs):
+            info('compute inter dataset pairs...')
+            t0 = time()
             inter_group_nr = len(list(combinations(groups, 2)))
-            for group1, group2 in combinations(groups, 2):
+            it = combinations(groups, 2)
+            if (logger.level <= logging.INFO):
+                    from tqdm import tqdm
+                    it = tqdm(list(it))
+            for group1, group2 in it:
                 group_index_start[(group1, group2)] = len(weights)
                 void_i = void_info[group1] if void_info is not None and group1 in void_info else self.void
                 void_j = void_info[group2] if void_info is not None and group2 in void_info else self.void
@@ -311,6 +326,7 @@ class BatchGenerator(tf.keras.utils.Sequence):
                 pair_nrs[(group1, group2)] = pair_nr
                 inter_pair_nr += pair_nr
                 group_index_end[(group1, group2)] = len(weights)
+            info(f'done ({str(timedelta(seconds=time() - t0))} elapsed)')
         print(f'{inter_pair_nr=}, {intra_pair_nr=}')
         all_groups_list = list(pair_nrs)
         print(pd.DataFrame({'group': all_groups_list, 'pair numbers':

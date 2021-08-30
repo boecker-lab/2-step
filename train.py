@@ -178,6 +178,7 @@ if __name__ == '__main__':
     logger.addHandler(ch)
     if (args.verbose):
         logger.setLevel(logging.INFO)
+        logging.getLogger('rtranknet.utils').setLevel(logging.INFO)
         fh = logging.FileHandler(run_name + '.log')
         fh.setLevel(logging.INFO)
         fh.setFormatter(logging.Formatter('%(asctime)s %(name)s %(levelname)s: %(message)s'))
