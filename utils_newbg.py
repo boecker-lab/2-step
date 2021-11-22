@@ -38,6 +38,8 @@ class RankDataset(Dataset):
     max_indices_size:Optional[int]=None           # limit for the size of indices
     y_neg : bool=False                            # -1 instead of 0 for negative pair
     conflicting_smiles_pairs:Iterable = field(default_factory=list) # conflicting pairs (smiles)
+    only_confl: bool=False                                          # gather only conflicting pairs
+    confl_weight: float=100.                                        # weight modifier for conflicting pairs
 
     def __post_init__(self):
         if (isinstance(self.x_extra, np.ndarray)):
@@ -144,8 +146,7 @@ class RankDataset(Dataset):
         nr_group_pairs_max = max(list(pair_nrs.values()) + [0])
         info('computing pair weights')
         for g in pair_nrs:
-            # weight_modifier = 100 TODO:
-            weight_modifier = 10
+            weight_modifier = self.confl_weight # TODO:
             for i in range(group_index_start[g], group_index_end[g]):
                 rt_diff = (np.infty if isinstance(g, tuple) # no statement can be made for inter-group pairs
                            or not self.use_pair_weights
@@ -153,7 +154,7 @@ class RankDataset(Dataset):
                 weights[i] = pair_weights(self.x_ids[x1_indices[i]], self.x_ids[x2_indices[i]], rt_diff,
                                                pair_nrs[g] if self.use_group_weights else nr_group_pairs_max,
                                                nr_group_pairs_max, weight_modifier, self.conflicting_smiles_pairs,
-                                               only_confl=False)
+                                               only_confl=self.only_confl)
         # NOTE: pair weights can be "None"
         info('done. removing None weights')
         # remove Nones
@@ -251,6 +252,10 @@ class RankDataset(Dataset):
         return self.y_trans.shape[0]
 
     def __getitem__(self, index):
-        return (((self.x_mols[self.x1_indices[index]], self.x_extra[self.x1_indices[index]]),
-                 (self.x_mols[self.x2_indices[index]], self.x_extra[self.x2_indices[index]]),
-                 self.x_sys[self.sys_indices[index]]), self.y_trans[index], self.weights[index])
+        # for now, only pairs from one system are returned; thus x1_sys == x2_sys
+        # returns ((graph, extra, sys) x 2, y, weight)
+        return (((self.x_mols[self.x1_indices[index]], self.x_extra[self.x1_indices[index]],
+                  self.x_sys[self.sys_indices[index]]),
+                 (self.x_mols[self.x2_indices[index]], self.x_extra[self.x2_indices[index]],
+                  self.x_sys[self.sys_indices[index]])),
+                self.y_trans[index], self.weights[index])

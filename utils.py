@@ -546,7 +546,6 @@ class Data:
         self.val_y = None
         self.test_y = None
         self.features_indices = None
-        self.info_indices = None
         self.classes_indices = None
         self.train_indices = None
         self.val_indices = None
@@ -715,17 +714,11 @@ class Data:
                                             hsm_fields=self.hsm_fields,
                                             fallback_column=self.fallback_column,
                                             fallback_metadata=self.fallback_metadata)
-        xs = np.concatenate(list(filter(lambda x: x is not None, (self.x_features, self.x_info, self.x_classes))),
+        xs = np.concatenate(list(filter(lambda x: x is not None, (self.x_features, self.x_classes))),
                             axis=1)
-        self.info_indices = ([self.features_indices[-1] + 1,
-                                self.features_indices[-1] + self.x_info.shape[1]]
-                                if self.use_system_information else None)
         self.classes_indices = ([xs.shape[1] - self.x_classes.shape[1], xs.shape[1] - 1]
-                             if self.use_compound_classes else None)
-        # print(f'{np.diff(self.features_indices) + 1} molecule features, '
-        #       f'{(np.diff(self.info_indices) + 1) if self.info_indices is not None else 0} column features, '
-        #       f'{(np.diff(self.classes_indices) + 1) if self.classes_indices is not None else 0} molecule class features')
-        return xs
+                                if self.use_compound_classes else None)
+        return (xs, self.x_info)
 
     def get_graphs(self):
         if (self.graphs is None):
@@ -905,11 +898,11 @@ class Data:
         else:
             split_info = None
         if (self.graph_mode):
-            ((self.train_graphs, self.train_x, self.train_y),
-             (self.val_graphs, self.val_x, self.val_y),
-             (self.test_graphs, self.test_x, self.test_y),
+            ((self.train_graphs, self.train_x, self.train_sys, self.train_y),
+             (self.val_graphs, self.val_x, self.val_sys, self.val_y),
+             (self.test_graphs, self.test_x, self.test_sys, self.test_y,),
              (self.train_indices, self.val_indices, self.test_indices)) = split_arrays(
-                 (self.get_graphs(), self.get_x(), self.get_y()), split,
+                 (self.get_graphs(), *self.get_x(), self.get_y()), split,
                  split_info=split_info, stratify=self.df.dataset_id.tolist())
         else:
             ((self.train_x, self.train_y),
@@ -931,9 +924,9 @@ class Data:
                 self.train_x, self.train_y, self.val_x, self.val_y, self.test_x, self.test_y
         ] + ([self.train_graphs, self.val_graphs, self.test_graphs] if self.graph_mode else [])))):
             self.split_data(split)
-        return ((self.train_graphs, self.train_x, self.train_y),
-                (self.val_graphs, self.val_x, self.val_y),
-                (self.test_graphs, self.test_x, self.test_y))
+        return ((self.train_graphs, self.train_x, self.train_sys, self.train_y),
+                (self.val_graphs, self.val_x, self.val_sys, self.val_y),
+                (self.test_graphs, self.test_x, self.test_sys, self.test_y))
 
 def export_predictions(data, preds, out, mode='all'):
     if (mode == 'all'):
