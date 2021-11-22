@@ -1,4 +1,4 @@
-from mpnranker import MPNranker
+from mpnranker2 import MPNranker
 from evaluate import load_model
 import torch
 from utils import Data, BatchGenerator, get_column_scaling
@@ -7,7 +7,7 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 from tqdm import tqdm
-
+import pickle
 
 def guess_from_data(d: Data):
     possibilities = set(list(map(tuple, np.concatenate([d.train_x, d.val_x, d.test_x])[:, 1:].tolist())))
@@ -33,6 +33,8 @@ def try_column_vector(m: MPNranker, bg: BatchGenerator, guess, mpn_margin=0.1):
             cf_guess = torch.stack([torch.Tensor(guess)] * len(y))
             pred = m(((x[0][0], torch.cat([x[0][1], cf_guess], 1)),
                       (x[1][0], torch.cat([x[1][1], cf_guess], 1))))
+            pickle.dump(((x[0][0], torch.cat([x[0][1], cf_guess], 1)),
+                         (x[1][0], torch.cat([x[1][1], cf_guess], 1))), open('/tmp/torchvizdump.pkl', 'wb'))
             # print(pred)
             # print(pred[0] - pred[1])
             # print(y)
@@ -45,6 +47,7 @@ def try_column_vector_pred(m, x, guess):
     m.eval()
     with torch.no_grad():
         x[1] = torch.as_tensor(x[1]).float().to(m.encoder.device)
+        pickle.dump(((x[0], torch.cat([x[1], torch.stack([torch.Tensor(guess)] * len(x[1]))], 1)), ), open('/tmp/torchvizdump.pkl', 'wb'))
         return m(((x[0], torch.cat([x[1], torch.stack([torch.Tensor(guess)] * len(x[1]))], 1)), ))
 
 def guesses_different_datasets(dss, ranker, guesses, scaler, custom_features=['MolLogP']):
@@ -133,8 +136,18 @@ if __name__ == '__main__':
                         for c in p for ds in dss}
                 if (not all(len(v) > 0 for v in rows.values())):
                     continue
-                rois = {i: m([[[data.get_graphs()[rows[i][0]]], torch.as_tensor([data.get_x()[rows[i][0]]], dtype=torch.float)]])[0].detach().numpy()[0]
+                # for normal [(graphs, extra, sys), (graphs, extra, sys)] ranker
+                rois = {i: m([[[data.get_graphs()[rows[i][0]]],
+                               torch.as_tensor([data.get_x()[0][rows[i][0]]], dtype=torch.float),
+                               torch.as_tensor([data.get_x()[1][rows[i][0]]], dtype=torch.float)]]
+                             )[0].detach().numpy()[0]
                         for i in rows}
+                # for nonsym [((graphs, extra), (graphs, extra)), sys] ranker
+                # rois = {i: 1- m([([data.get_graphs()[rows[i][0]]],
+                #                torch.as_tensor([data.get_x()[0][rows[i][0]]], dtype=torch.float)),
+                #               torch.as_tensor([data.get_x()[1][rows[i][0]]], dtype=torch.float)]).detach().item()
+                #         for i in rows}
+                # pickle.dump([[[data.get_graphs()[list(rows.values())[0][0]]], torch.as_tensor([data.get_x()[list(rows.values())[0][0]]], dtype=torch.float)]], open('/tmp/torchvizdump.pkl', 'wb'))
                 # check order
                 if (len(p) != 2):
                     print('wtf?', p)
@@ -145,9 +158,17 @@ if __name__ == '__main__':
                 if (args.verbose):
                     # print(rois)
                     # print(correct)
-                    print(pd.DataFrame.from_records([{'compound': c, 'dataset': ds, 'roi': rois[(c, ds)],
-                                                      'rt': data.get_y()[rows[(c, ds)][0]]}
-                                                     for c, ds in rows]).set_index(['dataset', 'compound']).sort_values(by=['dataset', 'rt']))
+                    verb_df = pd.DataFrame.from_records(
+                        [{'compound': c, 'dataset': ds, 'roi': rois[(c, ds)], 'rt': data.get_y()[rows[(c, ds)][0]]}
+                         for c, ds in rows])
+                    print(verb_df.set_index(['dataset', 'compound']).sort_values(by=['dataset', 'rt']))
+                    print(verb_df.groupby('compound').roi.diff().dropna().abs())
+                    # gradient fuer ROIs
+                    # rois = {i: m([[[data.get_graphs()[rows[i][0]]],
+                    #            torch.as_tensor([data.get_x()[0][rows[i][0]]], dtype=torch.float),
+                    #            torch.as_tensor([data.get_x()[1][rows[i][0]]], dtype=torch.float)]]
+                    #          )[0][0].detach().numpy()[0]
+                    #     for i in rows}
                 correct_pairs.append({'pair': p, 'datasets': dss, 'correct': all(correct)})
         correct_df = pd.DataFrame.from_records(correct_pairs)
         if (not args.no_save):
