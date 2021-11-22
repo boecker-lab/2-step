@@ -259,6 +259,12 @@ def train(ranker: MPNranker, bg: Union[BatchGenerator, DataLoader], epochs=2,
             break
         loop = tqdm(bg)
         for x, y, weights in loop:
+            if (ranker.extra_features_dim > 0):
+                x[0][1] = torch.as_tensor(x[0][1]).float().to(ranker.encoder.device)
+                x[1][1] = torch.as_tensor(x[1][1]).float().to(ranker.encoder.device)
+            if (ranker.sys_features_dim > 0):
+                x[0][2] = torch.as_tensor(x[0][2]).float().to(ranker.encoder.device)
+                x[1][2] = torch.as_tensor(x[1][2]).float().to(ranker.encoder.device)
             ranker.zero_grad()
             loss = ranker.loss_step(x, y, weights, loss_fun)
             loss_sum += loss[0].item()
@@ -300,6 +306,9 @@ def train(ranker: MPNranker, bg: Union[BatchGenerator, DataLoader], epochs=2,
                         if (ranker.extra_features_dim > 0):
                             x[0][1] = torch.as_tensor(x[0][1]).float().to(ranker.encoder.device)
                             x[1][1] = torch.as_tensor(x[1][1]).float().to(ranker.encoder.device)
+                        if (ranker.sys_features_dim > 0):
+                            x[0][2] = torch.as_tensor(x[0][2]).float().to(ranker.encoder.device)
+                            x[1][2] = torch.as_tensor(x[1][2]).float().to(ranker.encoder.device)
                         val_loss_sum += ranker.loss_step(x, y, weights, loss_fun)[0].item()
                         val_iter_count += 1
                 val_step = val_loss_sum / val_iter_count
