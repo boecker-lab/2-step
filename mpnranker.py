@@ -2,6 +2,7 @@
 import torch
 import torch.nn as nn
 import torch.optim as optim
+from torch.utils.data.dataloader import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 import pandas as pd
 from typing import List, Union, Tuple
@@ -14,10 +15,13 @@ from evaluate import eval_
 from utils import BatchGenerator
 import numpy as np
 from pprint import pprint
+import logging
 
 
 class MPNranker(nn.Module):
-    def __init__(self, sigmoid=False, extra_features_dim=0, hidden_units=[],
+    def __init__(self, sigmoid=False, extra_features_dim=0,
+                 sys_features_dim=0,
+                 hidden_units=[],
                  encoder_size=300, dropout_rate=0.0):
         super(MPNranker, self).__init__()
         self.sigmoid = sigmoid
@@ -28,34 +32,36 @@ class MPNranker(nn.Module):
                         'dropout': dropout_rate})
         self.encoder = MPNEncoder(args, get_atom_fdim(), get_bond_fdim())
         self.extra_features_dim = extra_features_dim
+        self.sys_features_dim = sys_features_dim
         self.encextra_size = self.encoder.hidden_size + extra_features_dim
+        self.features_ident = Linear(self.encextra_size, 1)
         self.hidden = nn.ModuleList()
         for i, u in enumerate(hidden_units):
-            self.hidden.append(Linear(self.encextra_size
+            self.hidden.append(Linear(1 + sys_features_dim
                                       if i == 0 else hidden_units[i - 1], u))
-        self.ident = Linear(self.encextra_size if len(self.hidden) == 0 else hidden_units[-1], 1)
+        self.res_ident = Linear(1 + sys_features_dim
+                                if len(hidden_units) == 0 else hidden_units[-1], 1)
         self.rank = nn.Sigmoid()
-    def set_from_encoder(self, state_dict):
-        state_dict = {k.replace('.0.', ''): v for k, v in state_dict.items()}
-        self.encoder.load_state_dict(state_dict)
     def forward(self, batch, features=False):
-        """n x [batch_size x (smiles|graphs) + batch_size x extra_features]"""
         res = []
-        for inp in batch:       # normally 1 or 2
-            if (self.extra_features_dim > 0):
-                inp, extra = inp
-            else:
-                extra = None
+        (graphs1, extra1), (graphs2, extra2), sys = batch
+        # for each compound
+        for graphs, extra in [(graphs1, extra1), (graphs2, extra2)]:
             # encode molecules
-            if (isinstance(inp[0], str)):
-                inp = [mol2graph([_]) for _ in inp]
-            enc = torch.cat([self.encoder(g) for g in inp], 0)  # [batch_size x 300]
-            if (self.extra_features_dim > 0):
-                # include extra features (e.g., chr. system)
-                enc = torch.cat([enc, extra], 1)
-            for h in self.hidden:
-                enc = h(enc)
-            res.append(self.ident(enc).transpose(0, 1)[0])      # [batch_size]
+            if (isinstance(graphs[0], str)):
+                graphs = [mol2graph([_]) for _ in graphs]
+            enc = torch.cat([self.encoder(g) for g in graphs], 0)  # [batch_size x 300]
+            # include extra compound fetures (e.g., MolLogP)
+            enc = torch.cat([enc, extra], 1)
+            res.append(self.features_ident(enc).transpose(0, 1)[0])      # [batch_size]
+        # for the whole pair
+        assert len(res) == 2
+        pair = res[1] - res[0]
+        concat = torch.cat([torch.stack([pair]).transpose(0,1), sys], 1) if sys is not None else pair
+        for h in self.hidden:
+            concat = h(concat)
+        # single value
+        return(self.rank(self.res_ident(concat)).transpose(0, 1)[0])
         if (features):
             return res
         if (self.sigmoid and len(res) == 2):
@@ -99,14 +105,15 @@ def loss_step(ranker, x, y, weights, loss_fun):
         loss = ((loss_fun(pred, y) * weights).mean(), loss_fun(pred, y) * weights)
     return loss
 
-def train(ranker: MPNranker, bg: BatchGenerator, epochs=2,
-          writer:SummaryWriter=None, val_g: BatchGenerator=None,
+def train(ranker: MPNranker, bg: Union[BatchGenerator, DataLoader], epochs=2,
+          writer:SummaryWriter=None, val_g: Union[BatchGenerator, DataLoader]=None,
           epsilon=0.5, val_writer:SummaryWriter=None,
           confl_writer:SummaryWriter=None,
           steps_train_loss=10, steps_val_loss=100,
           batch_size=8192, sigmoid_loss=False,
           margin_loss=0.1, early_stopping_patience=None,
-          ep_save=False, learning_rate=1e-3, no_encoder_train=False):
+          ep_save=False, learning_rate=1e-3, no_encoder_train=False,
+          accs=False):
     save_name = ('mpnranker' if writer is None else
                  writer.get_logdir().split('/')[-1].replace('_train', ''))
     ranker.to(ranker.encoder.device)
@@ -115,8 +122,9 @@ def train(ranker: MPNranker, bg: BatchGenerator, epochs=2,
         for p in ranker.encoder.parameters():
             p.requires_grad = False
     optimizer = optim.Adam(ranker.parameters(), lr=learning_rate)
-    loss_fun = (nn.BCELoss(reduction='none') if sigmoid_loss
-                else nn.MarginRankingLoss(margin_loss, reduction='none'))
+    # loss_fun = (nn.BCELoss(reduction='none') if sigmoid_loss
+    #             else nn.MarginRankingLoss(margin_loss, reduction='none'))
+    loss_fun = nn.BCEWithLogitsLoss(reduction='none')
     ranker.train()
     loss_sum = iter_count = val_loss_sum = val_iter_count = val_pat = 0
     confl_loss = {}
@@ -126,12 +134,9 @@ def train(ranker: MPNranker, bg: BatchGenerator, epochs=2,
     for epoch in range(epochs):
         if stop:
             break
-        print(f'epoch {epoch + 1}/{epochs}')
-        for x, y, weights in tqdm(bg):
+        loop = tqdm(bg)
+        for x, y, weights in loop:
             ranker.zero_grad()
-            if (ranker.extra_features_dim > 0):
-                x[0][1] = torch.as_tensor(x[0][1]).float().to(ranker.encoder.device)
-                x[1][1] = torch.as_tensor(x[1][1]).float().to(ranker.encoder.device)
             loss = loss_step(ranker, x, y, weights, loss_fun)
             loss_sum += loss[0].item()
             iter_count += 1
@@ -184,9 +189,12 @@ def train(ranker: MPNranker, bg: BatchGenerator, epochs=2,
                     val_pat += 1
                 last_val_step = min(val_step, last_val_step)
                 ranker.train()
+            loop.set_description(f'Epoch [{epoch+1}/{epochs}]')
+            loop.set_postfix(loss=loss_sum/iter_count if iter_count > 0 else np.nan,
+                             val_loss=val_loss_sum/val_iter_count if val_iter_count > 0 else np.nan)
         val_writer.flush()
         ranker.eval()
-        if writer is not None:
+        if accs and writer is not None:
             train_acc = eval_(bg.y, predict(bg.x, ranker, batch_size=batch_size), epsilon=epsilon)
             writer.add_scalar('acc', train_acc, iter_count)
             writer.flush()
@@ -211,6 +219,7 @@ def train(ranker: MPNranker, bg: BatchGenerator, epochs=2,
                 val_writer.add_scalar('acc', val_acc, iter_count)
                 val_writer.flush()
                 print(f'{val_acc=:.2%}')
+
         if (ep_save):
             torch.save(ranker, f'{save_name}_ep{epoch + 1}.pt')
         ranker.train()
