@@ -67,6 +67,7 @@ class TrainArgs(Tap):
     add_descs: bool = False     # use additional stored descriptors (e.g, qm8)
     classes_l_thr: float = 0.005
     classes_u_thr: float = 0.25
+    columns_use_newonehot: bool = False
     # model general
     sizes: List[int] = [128, 16] # hidden layer sizes for ranking: [mol, sysxmol] -> ROI
     sizes_sys: List[int] = [256] # hidden layer sizes for system feature vs. molecule encoding
@@ -215,6 +216,7 @@ if __name__ == '__main__':
                                       repo_root_folder=args.repo_root_folder,
                                       use_usp_codes=args.usp_codes, custom_features=args.features,
                                       use_hsm=args.columns_use_hsm,
+                                      # TODO: use_newonehot
                                       custom_column_fields=args.custom_column_fields or None,
                                       hsm_fields=args.hsm_fields,
                                       fallback_column=args.fallback_column,
@@ -252,7 +254,8 @@ if __name__ == '__main__':
                     metadata_void_rt=args.metadata_void_rt,
                     classes_l_thr=args.classes_l_thr, classes_u_thr=args.classes_u_thr,
                     use_usp_codes=args.usp_codes, custom_features=args.features,
-                    use_hsm=args.columns_use_hsm, repo_root_folder=args.repo_root_folder,
+                    use_hsm=args.columns_use_hsm, use_newonehot=args.columns_use_newonehot,
+                    repo_root_folder=args.repo_root_folder,
                     custom_column_fields=args.custom_column_fields or None,
                     hsm_fields=args.hsm_fields, graph_mode=graphs,
                     fallback_column=args.fallback_column,

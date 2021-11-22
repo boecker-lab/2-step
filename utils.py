@@ -34,6 +34,7 @@ REL_COLUMNS = ['column.length', 'column.id', 'column.particle.size', 'column.tem
                'eluent.B.h2o', 'eluent.B.meoh', 'eluent.B.acn', 'eluent.B.formic',
                'eluent.B.nh4ac', 'eluent.B.nh4form', 'gradient.start.A',
                'gradient.end.A']
+REL_ONEHOT_COLUMNS = ['class.pH.A', 'class.pH.B', 'class.solvent']
 
 
 def csr2tf(csr):
@@ -444,7 +445,7 @@ def get_column_scaling(cols, repo_root_folder='/home/fleming/Documents/Projects/
         from pandas_dfs import get_dataset_df
         ds = get_dataset_df()
         info_columns = [c for c in ds.columns
-                        if re.match(r'^(column|gradient|eluent)\..*', c)
+                        if re.match(r'^(column|gradient|eluent|class)\..*', c)
                         and 'name' not in c and 'usp.code' not in c]
         # empirical
         s = StandardScaler()
@@ -525,6 +526,7 @@ class Data:
     use_usp_codes: bool = False
     custom_features: List[str] = field(default_factory=list)
     use_hsm: bool = False
+    use_newonehot: bool = False
     repo_root_folder: str = '/home/fleming/Documents/Projects/RtPredTrainingData'
     custom_column_fields: Optional[list] = None
     columns_remove_na: bool = True
@@ -552,6 +554,7 @@ class Data:
         self.test_indices = None
         self.datasets_df = None
         self.descriptors = None
+        self.ph = None
 
 
     def compute_graphs(self):
@@ -613,7 +616,7 @@ class Data:
                                        for oids in classes])
 
     def compute_system_information(self, onehot_ids=False, other_dataset_ids=None,
-                                   use_usp_codes=False, use_hsm=False,
+                                   use_usp_codes=False, use_hsm=False, use_newonehot=False,
                                    repo_root_folder='/home/fleming/Documents/Projects/RtPredTrainingData',
                                    custom_column_fields=None, remove_na=True, drop_hsm_dups=False,
                                    fallback_column='Waters, ACQUITY UPLC BEH C18', hsm_fallback=True,
@@ -690,6 +693,12 @@ class Data:
             code_fields = np.array([codes_vector(c) for c in self.df['column.usp.code']])
             # NOTE: not scaled!
             fields.append(code_fields)
+        if (use_newonehot):
+            onehot_fields = [c for c in self.df if any(
+                c.startswith(prefix + '_') for prefix in REL_ONEHOT_COLUMNS)]
+            print('using onehot fields', ', '.join(onehot_fields))
+            fields.append(self.df[onehot_fields].astype(float).values)
+            # NOTE: not scaled!
         # np.savetxt('/tmp/sys_array.txt', np.concatenate(fields, axis=1), fmt='%.2f')
         self.x_info = np.concatenate(fields, axis=1)
         self.custom_column_fields = names
@@ -708,6 +717,7 @@ class Data:
         if (self.use_system_information and self.x_info is None):
             self.compute_system_information(use_usp_codes=self.use_usp_codes,
                                             use_hsm=self.use_hsm,
+                                            use_newonehot=self.use_newonehot,
                                             repo_root_folder=self.repo_root_folder,
                                             custom_column_fields=self.custom_column_fields,
                                             remove_na=self.columns_remove_na,
@@ -728,6 +738,7 @@ class Data:
     def add_dataset_id(self, dataset_id,
                        repo_root_folder='/home/fleming/Documents/Projects/RtPredTrainingData/',
                        void_rt=0.0, isomeric=True, split_type='train'):
+        global REL_ONEHOT_COLUMNS
         paths = [os.path.join(repo_root_folder, 'processed_data', dataset_id,
                               f'{dataset_id}_rtdata_canonical_success.txt'),
                  os.path.join(repo_root_folder, 'processed_data', dataset_id,
@@ -764,6 +775,19 @@ class Data:
                 sep='\t')
             column_information['dataset_id'] = [str(x).rjust(4, '0') for x in column_information['id']]
             del column_information['id']
+            # column_information.set_index('dataset_id', inplace=True, drop=False)
+            if (self.use_newonehot):
+                # include pH info (TODO: should be included in metadata)
+                if (self.ph is None):
+                    # only read in once
+                    self.ph = pd.read_csv(os.path.join(repo_root_folder, 'ph_info.csv'), sep='\t', index_col=0)[REL_ONEHOT_COLUMNS]
+                    # one-hot columns:
+                    for c in REL_ONEHOT_COLUMNS:
+                        self.ph = pd.merge(left=self.ph, right=pd.get_dummies(self.ph[c], prefix=c),
+                                           left_index=True, right_index=True).drop(columns=c)
+                    self.ph.columns = self.ph.columns.str.replace(' ', '') # remove space from col names
+                column_information = column_information.set_index('dataset_id').join(
+                    self.ph, rsuffix='excel')
             df = df.merge(column_information, on='dataset_id')
         # rows without RT data are useless
         df = df[~pd.isna(df.rt)]
