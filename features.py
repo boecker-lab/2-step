@@ -126,7 +126,8 @@ def features(smiles, filter_='rdk', overwrite_cache=False, verbose=False,
                     to_calc.setdefault(s, []).append(fname)
         to_calc = [(smile, descriptors) for smile, descriptors in to_calc.items()]
         if (len(to_calc) > 0):
-            features.write_cache = True # cache has to be written in the end
+            if (hasattr(features, 'write_cache')):
+                features.write_cache = True # cache has to be written in the end
             nthreads = np.floor(mp.cpu_count() * load_factor).astype(int)
             if (verbose):
                 info(f'calculating {len(to_calc)} feature values using {nthreads} threads')
