@@ -3,7 +3,8 @@ import numpy as np
 import tensorflow as tf
 import torch
 from LambdaRankNN import RankNetNN
-from mpnranker import MPNranker, train as mpn_train, predict as mpn_predict
+from torch.utils.data.dataloader import DataLoader
+from mpnranker2 import MPNranker, train as mpn_train
 # from tensorboardX import SummaryWriter
 from torch.utils.tensorboard import SummaryWriter
 from rdkit import rdBase
@@ -19,13 +20,14 @@ import pandas as pd
 from utils import BatchGenerator, Data
 from features import features, parse_feature_spec
 from evaluate import eval_, predict, export_predictions
+from utils_newbg import RankDataset
 
 logger = logging.getLogger('rtranknet')
 info = logger.info
 
 class TrainArgs(Tap):
     input: List[str]            # Either CSV or dataset ids
-    model_type: Literal['ranknet', 'mpn'] = 'ranknet'
+    model_type: Literal['ranknet', 'mpn'] = 'mpn'
     feature_type: Literal['None', 'rdkall', 'rdk2d', 'rdk3d'] = 'rdkall' # type of features to use
     # training
     batch_size: int = 256
@@ -36,7 +38,7 @@ class TrainArgs(Tap):
     device: Optional[str] = None  # either `mirrored` or specific device name like gpu:1 or None (auto)
     remove_test_compounds: List[str] = [] # remove compounds occuring in the specified (test) datasets
     exclude_compounds_list: Optional[str] = None # list of compounds to exclude from training
-    learning_rate: float = 1e-3
+    learning_rate: float = 5e-4
     no_encoder_train: bool = False # don't train the encoder(embedding) layers
     # data
     isomeric: bool = False      # use isomeric data (if available)
@@ -66,8 +68,9 @@ class TrainArgs(Tap):
     classes_l_thr: float = 0.005
     classes_u_thr: float = 0.25
     # model general
-    sizes: List[int] = [10, 10] # hidden layer sizes
-    encoder_size: int = 300     # MPNencoder size
+    sizes: List[int] = [128, 16] # hidden layer sizes for ranking: [mol, sysxmol] -> ROI
+    sizes_sys: List[int] = [256] # hidden layer sizes for system feature vs. molecule encoding
+    encoder_size: int = 256 # MPNencoder size
     dropout_rate: float = 0.0
     # mpn model
     mpn_loss: Literal['margin', 'bce'] = 'margin'
@@ -83,6 +86,7 @@ class TrainArgs(Tap):
     no_intra_pairs: bool = False # don't use pairs of compounds of the same dataset
     max_pair_compounds: Optional[int] = None
     conflicting_smiles_pairs: Optional[str] = None # pickle file with conflicting pairs (smiles)
+    confl_weight: float=100.                       # weight modifier for conflicting pairs
     # data locations
     repo_root_folder: str = '/home/fleming/Documents/Projects/RtPredTrainingData/'
     add_desc_file: str = '/home/fleming/Documents/Projects/rtranknet/data/qm_merged.csv'
@@ -107,17 +111,18 @@ def preprocess(data: Data, args: TrainArgs):
                           add_descs=args.add_descs, add_desc_file=args.add_desc_file)
     if (data.train_y is not None):
         # assume everything was computed, split etc. already
-        return ((data.train_graphs, data.train_x, data.train_y),
-                (data.val_graphs, data.val_x, data.val_y),
-                (data.test_graphs, data.test_x, data.test_y))
-    if (args.cache_file is not None and features.write_cache):
+        return ((data.train_graphs, data.train_x, data.train_sys, data.train_y),
+                (data.val_graphs, data.val_x, data.val_sys, data.val_y),
+                (data.test_graphs, data.test_x, data.test_sys, data.test_y))
+    if (args.cache_file is not None and hasattr(features, 'write_cache')
+        and features.write_cache):
         info('writing cache, don\'t interrupt!!')
         pickle.dump(features.cached, open(args.cache_file, 'wb'))
     if args.debug_onehot_sys:
         sorted_dataset_ids = sorted(set(args.input) | set(args.onehot_test_sets))
         data.compute_system_information(True, sorted_dataset_ids, repo_root_folder=args.repo_root_folder)
     info('done. preprocessing...')
-    if (graphs):
+    if (data.graph_mode):
         data.compute_graphs()
     data.split_data((args.test_split, args.val_split))
     if (args.standardize):
@@ -293,39 +298,73 @@ if __name__ == '__main__':
                             set(data.df[['dataset_id', 'column.name']].itertuples(index=False))]))
     else:
         raise Exception(f'input {args.input} not supported')
-    ((train_graphs, train_x, train_y),
-     (val_graphs, val_x, val_y),
-     (test_graphs, test_x, test_y)) = preprocess(data, args)
+    ((train_graphs, train_x, train_sys, train_y),
+     (val_graphs, val_x, val_sys, val_y),
+     (test_graphs, test_x, test_sys, test_y)) = preprocess(data, args)
+    conflicting_smiles_pairs = (pickle.load(open(args.conflicting_smiles_pairs, 'rb'))
+                                if args.conflicting_smiles_pairs is not None else [])
     info('done. Initializing BatchGenerator...')
-    bg = BatchGenerator((train_graphs, train_x) if graphs else train_x, train_y,
-                        ids=data.df.iloc[data.train_indices].smiles.tolist(),
-                        batch_size=args.batch_size, pair_step=args.pair_step,
-                        pair_stop=args.pair_stop, use_weights=args.use_weights,
-                        use_group_weights=(not args.no_group_weights),
-                        dataset_info=data.df.dataset_id.iloc[data.train_indices].tolist(),
-                        void_info=data.void_info, weight_steep=args.weight_steep,
-                        no_inter_pairs=args.no_inter_pairs,
-                        no_intra_pairs=args.no_intra_pairs,
-                        max_indices_size=args.max_pair_compounds,
-                        weight_mid=args.weight_mid,
-                        multix=graphs, y_neg=(args.mpn_loss == 'margin'),
-                        conflicting_smiles_pairs=(pickle.load(open(args.conflicting_smiles_pairs, 'rb'))
-                                                  if args.conflicting_smiles_pairs is not None else []))
-    # pickle.dump(bg, open('bg.pkl', 'wb'))
-    vg = BatchGenerator((val_graphs, val_x) if graphs else train_x, val_y,
-                        ids=data.df.iloc[data.val_indices].smiles.tolist(),
-                        batch_size=args.batch_size, pair_step=args.pair_step,
-                        pair_stop=args.pair_stop, use_weights=args.use_weights,
-                        use_group_weights=(not args.no_group_weights),
-                        dataset_info=data.df.dataset_id.iloc[data.val_indices].tolist(),
-                        void_info=data.void_info, weight_steep=args.weight_steep,
-                        no_inter_pairs=args.no_inter_pairs,
-                        no_intra_pairs=args.no_intra_pairs,
-                        max_indices_size=args.max_pair_compounds,
-                        weight_mid=args.weight_mid,
-                        multix=graphs, y_neg=(args.mpn_loss == 'margin'),
-                        conflicting_smiles_pairs=(pickle.load(open(args.conflicting_smiles_pairs, 'rb'))
-                                                  if args.conflicting_smiles_pairs is not None else []))
+    # bg = BatchGenerator((train_graphs, train_x) if graphs else train_x, train_y,
+    #                     ids=data.df.iloc[data.train_indices].smiles.tolist(),
+    #                     batch_size=args.batch_size, pair_step=args.pair_step,
+    #                     pair_stop=args.pair_stop, use_weights=args.use_weights,
+    #                     use_group_weights=(not args.no_group_weights),
+    #                     dataset_info=data.df.dataset_id.iloc[data.train_indices].tolist(),
+    #                     void_info=data.void_info, weight_steep=args.weight_steep,
+    #                     no_inter_pairs=args.no_inter_pairs,
+    #                     no_intra_pairs=args.no_intra_pairs,
+    #                     max_indices_size=args.max_pair_compounds,
+    #                     weight_mid=args.weight_mid,
+    #                     multix=graphs, y_neg=(args.mpn_loss == 'margin'),
+    #                     conflicting_smiles_pairs=(pickle.load(open(args.conflicting_smiles_pairs, 'rb'))
+    #                                               if args.conflicting_smiles_pairs is not None else []))
+    traindata = RankDataset(x_mols=train_graphs, x_extra=train_x, x_sys=train_sys,
+                            x_ids=data.df.iloc[data.train_indices].smiles.tolist(),
+                            y=train_y, dataset_info=data.df.dataset_id.iloc[data.train_indices].tolist(),
+                            void_info=data.void_info,
+                            pair_step=args.pair_step,
+                            pair_stop=args.pair_stop, use_pair_weights=args.use_weights,
+                            use_group_weights=(not args.no_group_weights),
+                            no_inter_pairs=args.no_inter_pairs,
+                            no_intra_pairs=args.no_intra_pairs,
+                            max_indices_size=args.max_pair_compounds,
+                            weight_mid=args.weight_mid,
+                            y_neg=(args.mpn_loss == 'margin'),
+                            conflicting_smiles_pairs=conflicting_smiles_pairs,
+                            confl_weight=args.confl_weight)
+    valdata = RankDataset(x_mols=val_graphs, x_extra=val_x, x_sys=val_sys,
+                          x_ids=data.df.iloc[data.val_indices].smiles.tolist(),
+                          y=val_y, dataset_info=data.df.dataset_id.iloc[data.val_indices].tolist(),
+                          void_info=data.void_info,
+                          pair_step=args.pair_step,
+                          pair_stop=args.pair_stop, use_pair_weights=args.use_weights,
+                          use_group_weights=(not args.no_group_weights),
+                          no_inter_pairs=args.no_inter_pairs,
+                          no_intra_pairs=args.no_intra_pairs,
+                          max_indices_size=args.max_pair_compounds,
+                          weight_mid=args.weight_mid,
+                          y_neg=(args.mpn_loss == 'margin'),
+                          conflicting_smiles_pairs=conflicting_smiles_pairs,
+                          confl_weight=args.confl_weight)
+    # NOTE: DEBUG dump traindata for examination
+    # pickle.dump(traindata, open('td.pkl', 'wb'))
+    # exit(0)
+    # vg = BatchGenerator((val_graphs, val_x) if graphs else train_x, val_y,
+    #                     ids=data.df.iloc[data.val_indices].smiles.tolist(),
+    #                     batch_size=args.batch_size, pair_step=args.pair_step,
+    #                     pair_stop=args.pair_stop, use_weights=args.use_weights,
+    #                     use_group_weights=(not args.no_group_weights),
+    #                     dataset_info=data.df.dataset_id.iloc[data.val_indices].tolist(),
+    #                     void_info=data.void_info, weight_steep=args.weight_steep,
+    #                     no_inter_pairs=args.no_inter_pairs,
+    #                     no_intra_pairs=args.no_intra_pairs,
+    #                     max_indices_size=args.max_pair_compounds,
+    #                     weight_mid=args.weight_mid,
+    #                     multix=graphs, y_neg=(args.mpn_loss == 'margin'),
+    #                     conflicting_smiles_pairs=(pickle.load(open(args.conflicting_smiles_pairs, 'rb'))
+    #                                               if args.conflicting_smiles_pairs is not None else []))
+    trainloader = DataLoader(traindata, args.batch_size, shuffle=True)
+    valloader = DataLoader(valdata, args.batch_size, shuffle=True)
     if (args.plot_weights):
         plot_x = np.linspace(0, 10 * args.weight_mid, 100)
         import matplotlib.pyplot as plt
@@ -362,8 +401,10 @@ if __name__ == '__main__':
     else:
         # MPNranker
         if (ranker is None):    # otherwise loaded already
-            ranker = MPNranker(sigmoid=(args.mpn_loss == 'bce'), extra_features_dim=train_x.shape[1],
-                               hidden_units=args.sizes, encoder_size=args.encoder_size,
+            ranker = MPNranker(extra_features_dim=train_x.shape[1],
+                               sys_features_dim=train_sys.shape[1],
+                               hidden_units=args.sizes, hidden_units_pv=args.sizes_sys,
+                               encoder_size=args.encoder_size,
                                dropout_rate=args.dropout_rate)
         rename_old_writer_logs(f'runs/{run_name}')
         writer = SummaryWriter(f'runs/{run_name}_train')
@@ -375,10 +416,11 @@ if __name__ == '__main__':
                        'args': args._log_all()},
                       open(f'{run_name}_config.json', 'w'), indent=2)
         try:
-            mpn_train(ranker, bg, args.epochs, writer, vg, val_writer=val_writer,
-                      confl_writer=confl_writer,
-                      steps_train_loss=np.ceil(len(bg) / 100).astype(int),
-                      steps_val_loss=np.ceil(len(bg) / 5).astype(int),
+            mpn_train(ranker=ranker, bg=trainloader, epochs=args.epochs,
+                      writer=writer, val_g=valloader, val_writer=val_writer,
+                      confl_writer=confl_writer, # TODO:
+                      steps_train_loss=np.ceil(len(trainloader) / 100).astype(int),
+                      steps_val_loss=np.ceil(len(trainloader) / 5).astype(int),
                       batch_size=args.batch_size, epsilon=args.epsilon,
                       sigmoid_loss=(args.mpn_loss == 'bce'), margin_loss=args.mpn_margin,
                       early_stopping_patience=args.early_stopping_patience,
@@ -388,11 +430,13 @@ if __name__ == '__main__':
             print('caught interrupt; stopping training')
         if (args.save_data):
             torch.save(ranker, run_name + '.pt')
-        train_preds = mpn_predict((train_graphs, train_x), ranker, batch_size=args.batch_size)
+        train_preds = ranker.predict(train_graphs, train_x, train_sys, batch_size=8192,
+                                     # TODO: batch size can be much greater than that for training
+                                     prog_bar=args.verbose)
         if (len(val_x) > 0):
-            val_preds = mpn_predict((val_graphs, val_x), ranker, batch_size=args.batch_size)
+            val_preds = ranker.predict(val_graphs, val_x, val_sys, batch_size=8192)
         if (len(test_x) > 0):
-            test_preds = mpn_predict((test_graphs, test_x), ranker, batch_size=args.batch_size)
+            val_preds = ranker.predict(test_graphs, test_x, test_sys, batch_size=8192)
     print(f'train: {eval_(train_y, train_preds, args.epsilon):.3f}')
     if (len(test_x) > 0):
         print(f'test: {eval_(test_y, test_preds, args.epsilon):.3f}')
