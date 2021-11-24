@@ -73,6 +73,8 @@ class RankDataset(Dataset):
         else:
             for i in range(len(self.y)):
                 groups.setdefault(self.dataset_info[i], []).append(i)
+        # preprocess confl pair list for O(1) lookup
+        confl_pairs_lookup = set(self.conflicting_smiles_pairs)
         # same-dataset pairs
         inter_pair_nr = intra_pair_nr = 0
         if (not self.no_intra_pairs):
@@ -83,8 +85,15 @@ class RankDataset(Dataset):
                 group_void_rt = (self.void_info[group] if self.void_info is not None
                                  and group in self.void_info else self.void)
                 pair_nr = 0
+                # get conflicting smiles pairs indices
+                confl_indices = set()
+                if (len(confl_pairs_lookup) > 0):
+                    for i, j in combinations(groups[group], 2):
+                        if frozenset((self.x_ids[i], self.x_ids[j])) in confl_pairs_lookup:
+                            confl_indices.add(frozenset((i, j)))
                 it = self.dataset_pair_it(groups[group], self.pair_step, self.pair_stop,
-                                          max_indices_size=self.max_indices_size)
+                                          max_indices_size=self.max_indices_size,
+                                          obl_indices=confl_indices)
                 if (logger.level <= logging.INFO):
                     from tqdm import tqdm
                     it = tqdm(it)
@@ -184,7 +193,7 @@ class RankDataset(Dataset):
 
     @staticmethod
     def dataset_pair_it(indices, pair_step=1, pair_stop=None,
-                        max_indices_size=None):
+                        max_indices_size=None, obl_indices=set()):
         n = len(indices)
         if (max_indices_size is None):
             it = range(n)
@@ -194,7 +203,10 @@ class RankDataset(Dataset):
             for j in range(i + 1,
                            (n if pair_stop is None else min(i + pair_stop, n)),
                            pair_step):
-                yield indices[i], indices[j]
+                if (frozenset((indices[i], indices[j])) not in obl_indices):
+                    yield indices[i], indices[j]
+        for i, j in obl_indices:
+            yield i, j
 
     @staticmethod
     def inter_dataset_pair_it(indices1, indices2, pair_step=1, pair_stop=None,
