@@ -72,7 +72,8 @@ class TrainArgs(Tap):
     sizes: List[int] = [128, 16] # hidden layer sizes for ranking: [mol, sysxmol] -> ROI
     sizes_sys: List[int] = [256] # hidden layer sizes for system feature vs. molecule encoding
     encoder_size: int = 256 # MPNencoder size
-    dropout_rate: float = 0.0
+    mpn_depth: int = 3      # Number of message-passing steps
+    dropout_rate: float = 0.0   # MPN dropout rate
     # mpn model
     mpn_loss: Literal['margin', 'bce'] = 'margin'
     mpn_margin: float = 0.1
@@ -408,6 +409,7 @@ if __name__ == '__main__':
                                sys_features_dim=train_sys.shape[1],
                                hidden_units=args.sizes, hidden_units_pv=args.sizes_sys,
                                encoder_size=args.encoder_size,
+                               depth=args.mpn_depth,
                                dropout_rate=args.dropout_rate)
         rename_old_writer_logs(f'runs/{run_name}')
         writer = SummaryWriter(f'runs/{run_name}_train')

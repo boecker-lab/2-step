@@ -25,12 +25,13 @@ warning = logger.warning
 class MPNranker(nn.Module):
     def __init__(self, extra_features_dim=0, sys_features_dim=0,
                  hidden_units=[16, 8], hidden_units_pv=[16, 2], encoder_size=300,
-                 dropout_rate=0.0):
+                 depth=3, dropout_rate=0.0):
         super(MPNranker, self).__init__()
         args = TrainArgs()
         args.from_dict({'dataset_type': 'classification',
                         'data_path': None,
                         'hidden_size': encoder_size,
+                        'depth': depth,
                         'dropout': dropout_rate})
         self.encoder = MPNEncoder(args, get_atom_fdim(), get_bond_fdim())
         self.extra_features_dim = extra_features_dim
