@@ -1,3 +1,4 @@
+from random import shuffle
 from mpnranker2 import MPNranker
 from evaluate import load_model
 import torch
@@ -122,9 +123,12 @@ if __name__ == '__main__':
         import pickle
         df = data.df.reset_index()
         pairs = pickle.load(open(args.pairs_file, 'rb'))
+        pairs_keys = list(pairs)
+        shuffle(pairs_keys)
         correct_pairs = []
-        verb_counter = 0        # for verbose print at most 10 instances
-        for p, datasets in tqdm(pairs.items()):
+        verb_counter = 0        # for verbose print at most 50 instances
+        for p in tqdm(pairs_keys):
+            datasets = pairs[p]
             if (args.verbose and verb_counter >= 10):
                 break
             verb_counter += 1
