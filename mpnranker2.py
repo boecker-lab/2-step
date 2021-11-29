@@ -253,6 +253,7 @@ def train(ranker: MPNranker, bg: Union[BatchGenerator, DataLoader], epochs=2,
     loss_sum = iter_count = val_loss_sum = val_iter_count = val_pat = 0
     confl_loss = {}
     rel_confl_len = 0
+    confl_loss_avg = np.nan
     last_val_step = np.infty
     stop = False
     for epoch in range(epochs):
@@ -272,23 +273,32 @@ def train(ranker: MPNranker, bg: Union[BatchGenerator, DataLoader], epochs=2,
             iter_count += 1
             loss[0].backward()
             if (confl_writer is not None):
-                if ((weights > (0.9 * bg.dataset.confl_weight)).any()): # TODO: DEBUG for confl pairs
+                confl_weight_thr = 0.9 * bg.dataset.confl_weight
+                if ((weights > confl_weight_thr).any()): # TODO: DEBUG for confl pairs
+                    # import pdb; pdb.set_trace()
                     # NOTE: makes the following assumptions:
                     # 1. confl_weights_modifier > 9 and groups roughly balanced so that
                     # all confl pairs have weights >9
                     # 2. has extra features from which the first one is used as ID for the
                     # compound (logp, 5 decimals)
-                    for logp1, logp2, yi, l in zip(x[0][1][weights > 9, 0], x[1][1][weights > 9, 0],
-                                                   y[weights > 9], loss[1][weights > 9]):
-                        logp1, logp2 = f'{logp1:.5f}', f'{logp2:.5f}'
-                        confl_loss.setdefault(frozenset([logp1, logp2]), {})[yi] = l.item()
+                    for g1, g2, yi, l in zip(np.array(x[0][0])[weights > confl_weight_thr],
+                                             np.array(x[1][0])[weights > confl_weight_thr],
+                                             y[weights > confl_weight_thr], loss[1][weights > confl_weight_thr]):
+                        # print(g1, g2)
+                        # print(id(g1), id(g2))
+                        confl_loss.setdefault(frozenset((id(g1), id(g2))), {}
+                                              )[yi.item()] = l.item() / bg.dataset.confl_weight
+                    # pprint(confl_loss)
                     rel_confl_items = [(v[0 if sigmoid_loss else -1] + v[1]) / 2
                                        for k, v in confl_loss.items() if 1 in v and (0 if sigmoid_loss else -1) in v]
-                    if (len(rel_confl_items) > rel_confl_len):
+                    # pprint(rel_confl_items)
+                    if (len(rel_confl_items) > 0 and  len(rel_confl_items) >= rel_confl_len):
+                        # print(rel_confl_items)
                         # a new conflicting pair was trained on with conflicting target values
                         rel_confl_len = len(rel_confl_items)
+                        confl_loss_avg = sum(rel_confl_items) / rel_confl_len
                         if (confl_writer is not None):
-                            confl_writer.add_scalar('loss', sum(rel_confl_items) / rel_confl_len, iter_count)
+                            confl_writer.add_scalar('loss', confl_loss_avg, iter_count)
                     # pprint(ranker.get_parameter('hidden.0.weight').grad[:, -ranker.extra_features_dim:])
                     # pprint(ranker.get_parameter('hidden.0.weight').grad[:, -ranker.extra_features_dim+1:].sum(1))
                     # pprint([(p[0], p[1].size(), p[1].grad) for p in ranker.named_parameters()])
@@ -324,7 +334,8 @@ def train(ranker: MPNranker, bg: Union[BatchGenerator, DataLoader], epochs=2,
                 ranker.train()
             loop.set_description(f'Epoch [{epoch+1}/{epochs}]')
             loop.set_postfix(loss=loss_sum/iter_count if iter_count > 0 else np.nan,
-                             val_loss=val_loss_sum/val_iter_count if val_iter_count > 0 else np.nan)
+                             val_loss=val_loss_sum/val_iter_count if val_iter_count > 0 else np.nan,
+                             confl_loss=confl_loss_avg)
         if val_writer is not None:
             val_writer.flush()
         ranker.eval()

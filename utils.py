@@ -558,9 +558,14 @@ class Data:
 
 
     def compute_graphs(self):
-        # TODO: compute only unique smiles + multithreaded
         from chemprop.features import mol2graph
-        self.graphs = np.array([mol2graph([s]) for s in self.df.smiles])
+        info('computing graphs')
+        t0 = time()
+        smiles_unique = set(self.df.smiles)
+        graphs_unique = {s: mol2graph([s]) for s in smiles_unique}
+        self.graphs = np.array([graphs_unique[s] for s in self.df.smiles])
+        info(f'computing graphs done ({str(timedelta(seconds=time() - t0))} elapsed)')
+        # self.graphs = np.array([mol2graph([s]) for s in self.df.smiles])
 
     def compute_features(self,
                          filter_features=None,
