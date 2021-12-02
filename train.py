@@ -368,7 +368,7 @@ if __name__ == '__main__':
     #                     conflicting_smiles_pairs=(pickle.load(open(args.conflicting_smiles_pairs, 'rb'))
     #                                               if args.conflicting_smiles_pairs is not None else []))
     trainloader = DataLoader(traindata, args.batch_size, shuffle=True)
-    valloader = DataLoader(valdata, args.batch_size, shuffle=True)
+    valloader = DataLoader(valdata, args.batch_size, shuffle=True) if len(valdata) > 0 else None
     if (args.plot_weights):
         plot_x = np.linspace(0, 10 * args.weight_mid, 100)
         import matplotlib.pyplot as plt
@@ -413,8 +413,9 @@ if __name__ == '__main__':
                                dropout_rate=args.dropout_rate)
         rename_old_writer_logs(f'runs/{run_name}')
         writer = SummaryWriter(f'runs/{run_name}_train')
-        val_writer = SummaryWriter(f'runs/{run_name}_val')
-        confl_writer = SummaryWriter(f'runs/{run_name}_confl')
+        val_writer = SummaryWriter(f'runs/{run_name}_val') if len(valdata) > 0 else None
+        # confl_writer = SummaryWriter(f'runs/{run_name}_confl')
+        confl_writer = None
         if (args.save_data):
             pickle.dump(data, open(os.path.join(f'{run_name}_data.pkl'), 'wb'))
             json.dump({'train_sets': args.input, 'name': run_name,

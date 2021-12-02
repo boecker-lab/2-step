@@ -97,7 +97,7 @@ class RankDataset(Dataset):
                 if (logger.level <= logging.INFO):
                     from tqdm import tqdm
                     it = tqdm(it)
-                for i, j in it:
+                for i, j, w in it:
                     res = self.get_pair(self.y, i, j, group_void_rt or 0, group_void_rt or 0, self.y_neg)
                     if (res is None):
                         continue
@@ -106,7 +106,7 @@ class RankDataset(Dataset):
                     x2_indices.append(neg_idx)
                     y_trans.append(yi)
                     # weights
-                    weights.append(1.0) # will be computed later when group weights are known
+                    weights.append(w)
                     # sysinfo
                     sys_indices.append(pos_idx)
                     pair_nr += 1
@@ -155,15 +155,17 @@ class RankDataset(Dataset):
         nr_group_pairs_max = max(list(pair_nrs.values()) + [0])
         info('computing pair weights')
         for g in pair_nrs:
-            weight_modifier = self.confl_weight # TODO:
+            # weight_modifier = self.confl_weight # TODO:
+            weight_modifier = 1.0 # confl weights already there
             for i in range(group_index_start[g], group_index_end[g]):
                 rt_diff = (np.infty if isinstance(g, tuple) # no statement can be made for inter-group pairs
                            or not self.use_pair_weights
                            else np.abs(self.y[x1_indices[i]] - self.y[x2_indices[i]]))
-                weights[i] = pair_weights(self.x_ids[x1_indices[i]], self.x_ids[x2_indices[i]], rt_diff,
-                                               pair_nrs[g] if self.use_group_weights else nr_group_pairs_max,
-                                               nr_group_pairs_max, weight_modifier, self.conflicting_smiles_pairs,
-                                               only_confl=self.only_confl)
+                weights_mod = pair_weights(self.x_ids[x1_indices[i]], self.x_ids[x2_indices[i]], rt_diff,
+                                           pair_nrs[g] if self.use_group_weights else nr_group_pairs_max,
+                                           nr_group_pairs_max, weight_modifier, self.conflicting_smiles_pairs,
+                                           only_confl=self.only_confl)
+                weights[i] = (weights_mod * weights[i]) if weights_mod is not None else None
         # NOTE: pair weights can be "None"
         info('done. removing None weights')
         # remove Nones
@@ -199,14 +201,19 @@ class RankDataset(Dataset):
             it = range(n)
         else:
             it = sorted(sample(list(range(n)), min(max_indices_size, n)))
+        non_obl_pairs = 0
         for i in it:
             for j in range(i + 1,
                            (n if pair_stop is None else min(i + pair_stop, n)),
                            pair_step):
                 if (frozenset((indices[i], indices[j])) not in obl_indices):
-                    yield indices[i], indices[j]
-        for i, j in obl_indices:
-            yield i, j
+                    yield indices[i], indices[j], 1.0
+                    non_obl_pairs += 1
+        if (len(obl_indices) > 0):
+            obl_weight = non_obl_pairs / len(obl_indices)
+            print(f'{non_obl_pairs} non-conflicting pairs, {len(obl_indices)} conflicting pairs; weight: {obl_weight:.2f}')
+            for i, j in obl_indices:
+                yield i, j, obl_weight
 
     @staticmethod
     def inter_dataset_pair_it(indices1, indices2, pair_step=1, pair_stop=None,

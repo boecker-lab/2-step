@@ -283,11 +283,12 @@ def train(ranker: MPNranker, bg: Union[BatchGenerator, DataLoader], epochs=2,
                     # compound (logp, 5 decimals)
                     for g1, g2, yi, l in zip(np.array(x[0][0])[weights > confl_weight_thr],
                                              np.array(x[1][0])[weights > confl_weight_thr],
-                                             y[weights > confl_weight_thr], loss[1][weights > confl_weight_thr]):
+                                             y[weights > confl_weight_thr],
+                                             loss[1][weights > confl_weight_thr] / weights[weights > confl_weight_thr]):
                         # print(g1, g2)
                         # print(id(g1), id(g2))
                         confl_loss.setdefault(frozenset((id(g1), id(g2))), {}
-                                              )[yi.item()] = l.item() / bg.dataset.confl_weight
+                                              )[yi.item()] = l.item()
                     # pprint(confl_loss)
                     rel_confl_items = [(v[0 if sigmoid_loss else -1] + v[1]) / 2
                                        for k, v in confl_loss.items() if 1 in v and (0 if sigmoid_loss else -1) in v]
