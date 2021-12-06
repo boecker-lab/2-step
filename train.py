@@ -88,7 +88,7 @@ class TrainArgs(Tap):
     no_intra_pairs: bool = False # don't use pairs of compounds of the same dataset
     max_pair_compounds: Optional[int] = None
     conflicting_smiles_pairs: Optional[str] = None # pickle file with conflicting pairs (smiles)
-    confl_weight: float=100.                       # weight modifier for conflicting pairs
+    confl_weight: float = 1.                       # weight modifier for conflicting pairs
     # data locations
     repo_root_folder: str = '/home/fleming/Documents/Projects/RtPredTrainingData/'
     add_desc_file: str = '/home/fleming/Documents/Projects/rtranknet/data/qm_merged.csv'

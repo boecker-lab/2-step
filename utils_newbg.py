@@ -160,8 +160,7 @@ class RankDataset(Dataset):
         nr_group_pairs_max = max(list(pair_nrs.values()) + [0])
         info('computing pair weights')
         for g in pair_nrs:
-            # weight_modifier = self.confl_weight # TODO:
-            weight_modifier = 1.0 # confl weights already there
+            weight_modifier = self.confl_weight # confl pairs are already balanced by weight; here they can be boosted additionally
             for i in range(group_index_start[g], group_index_end[g]):
                 rt_diff = (np.infty if isinstance(g, tuple) # no statement can be made for inter-group pairs
                            or not self.use_pair_weights
