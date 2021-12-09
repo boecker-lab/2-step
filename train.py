@@ -44,6 +44,7 @@ class TrainArgs(Tap):
     isomeric: bool = False      # use isomeric data (if available)
     balance: bool = False       # balance data by dataset
     no_group_weights: bool = False # don't scale weights by number of dataset pairs
+    cluster: bool = False          # cluster datasets with same column params for calculating group weights
     void_rt: float = 0.0        # void time threshold; used for ALL datasets
     metadata_void_rt: bool = False # use t0 value from repo metadata (times 3)
     validation_datasets: List[str] = [] # datasets to use for validation (instead of split of training data)
@@ -329,6 +330,7 @@ if __name__ == '__main__':
                             pair_step=args.pair_step,
                             pair_stop=args.pair_stop, use_pair_weights=args.use_weights,
                             use_group_weights=(not args.no_group_weights),
+                            cluster=args.cluster,
                             no_inter_pairs=args.no_inter_pairs,
                             no_intra_pairs=args.no_intra_pairs,
                             max_indices_size=args.max_pair_compounds,
@@ -343,6 +345,7 @@ if __name__ == '__main__':
                           pair_step=args.pair_step,
                           pair_stop=args.pair_stop, use_pair_weights=args.use_weights,
                           use_group_weights=(not args.no_group_weights),
+                          cluster=args.cluster,
                           no_inter_pairs=args.no_inter_pairs,
                           no_intra_pairs=args.no_intra_pairs,
                           max_indices_size=args.max_pair_compounds,

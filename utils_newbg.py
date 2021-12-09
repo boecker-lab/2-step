@@ -26,6 +26,8 @@ class RankDataset(Dataset):
     use_pair_weights: bool=True                   # use pair weights (epsilon)
     epsilon: float=0.5                                  # soft threshold for retention time difference
     use_group_weights: bool=True                  # weigh number of samples per group
+    cluster: bool=False                           # cluster datasets with same column params for calculating
+                                                  # group weights
     weight_steepness: float=4                     # steepness of the pair_weight_fn
     weight_mid: float=0.75                        # mid-factor of the weight_mid
     pair_step: int=1                              # step size for generating pairs
@@ -156,6 +158,22 @@ class RankDataset(Dataset):
                 group_index_end[(group1, group2)] = len(weights)
             info(f'done ({str(timedelta(seconds=time() - t0))} elapsed)')
         info(f'{inter_pair_nr=}, {intra_pair_nr=}')
+        # cluster groups by system params
+        if (self.cluster):
+            cluster_sys = {g: self.x_sys[sys_indices[group_index_start[g]]] for g in pair_nrs
+                           if group_index_end[g] != group_index_start[g]} # empty group
+            clusters = {}
+            for g, sysf in cluster_sys.items():
+                clusters.setdefault(tuple(sysf), []).append(g)
+            from pprint import pprint
+            pprint(clusters)
+            clusters = list(clusters.values())
+            pprint(pair_nrs)
+            for c in clusters:
+                pair_num_sum = sum([pair_nrs[g] for g in c])
+                for g in c:
+                    pair_nrs[g] = pair_num_sum
+            pprint(pair_nrs)
         all_groups_list = list(pair_nrs)
         nr_group_pairs_max = max(list(pair_nrs.values()) + [0])
         info('computing pair weights')
