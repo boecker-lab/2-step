@@ -56,7 +56,7 @@ class RankDataset(Dataset):
             'no_inter_pairs and no_intra_pairs can\'t be both set')
         # transform single compounds(+info) into pairs for ranking
         (self.x1_indices, self.x2_indices, self.y_trans,
-         self.weights, self.sys_indices) = self._transform_pairwise()
+         self.weights, self.sys_indices, self.is_confl) = self._transform_pairwise()
 
     def _transform_pairwise(self):
         x1_indices = []
@@ -64,6 +64,7 @@ class RankDataset(Dataset):
         y_trans = []
         weights = []
         sys_indices = []
+        is_confl = []
         # group by dataset
         groups = {}
         pair_nrs = {}
@@ -116,6 +117,8 @@ class RankDataset(Dataset):
                     weights.append(w)
                     # sysinfo
                     sys_indices.append(pos_idx)
+                    # is conflicting pair?
+                    is_confl.append(frozenset((pos_idx, neg_idx)) in confl_indices)
                     pair_nr += 1
                 pair_nrs[group] = pair_nr
                 intra_pair_nr += pair_nr
@@ -152,6 +155,7 @@ class RankDataset(Dataset):
                     weights.append(1.0) # absolute rt difference of pairs of two different datasets can't be compared
                     # NOTE: sysinfo does not work for inter pairs, therefore append None to get runtime error
                     sys_indices.append(None)
+                    is_confl.append(None)
                     pair_nr += 1
                 pair_nrs[(group1, group2)] = pair_nr
                 inter_pair_nr += pair_nr
@@ -195,6 +199,7 @@ class RankDataset(Dataset):
         x2_indices_new = []
         y_trans_new = []
         weights_new = []
+        is_confl_new = []
         removed_counter = 0
         for i in range (len(y_trans)):
             if (weights[i] is not None):
@@ -202,12 +207,13 @@ class RankDataset(Dataset):
                 x2_indices_new.append(x2_indices[i])
                 y_trans_new.append(y_trans[i])
                 weights_new.append(weights[i])
+                is_confl_new.append(is_confl[i])
             else:
                 removed_counter += 1
         info(f'removed {removed_counter} (of {len(y_trans)}) pairs for having "None" weights')
         info('done generating pairs')
         return np.asarray(x1_indices_new), np.asarray(x2_indices_new), np.asarray(
-            y_trans_new), np.asarray(weights_new), np.asarray(sys_indices)
+            y_trans_new), np.asarray(weights_new), np.asarray(sys_indices), np.asarray(is_confl)
 
 
     @staticmethod
@@ -299,4 +305,4 @@ class RankDataset(Dataset):
                   self.x_sys[self.sys_indices[index]]),
                  (self.x_mols[self.x2_indices[index]], self.x_extra[self.x2_indices[index]],
                   self.x_sys[self.sys_indices[index]])),
-                self.y_trans[index], self.weights[index])
+                self.y_trans[index], self.weights[index], self.is_confl[index])

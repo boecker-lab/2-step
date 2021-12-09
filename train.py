@@ -417,8 +417,7 @@ if __name__ == '__main__':
         rename_old_writer_logs(f'runs/{run_name}')
         writer = SummaryWriter(f'runs/{run_name}_train')
         val_writer = SummaryWriter(f'runs/{run_name}_val') if len(valdata) > 0 else None
-        # confl_writer = SummaryWriter(f'runs/{run_name}_confl')
-        confl_writer = None
+        confl_writer = SummaryWriter(f'runs/{run_name}_confl')
         if (args.save_data):
             pickle.dump(data, open(os.path.join(f'{run_name}_data.pkl'), 'wb'))
             json.dump({'train_sets': args.input, 'name': run_name,

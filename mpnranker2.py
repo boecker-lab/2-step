@@ -17,6 +17,8 @@ from utils import BatchGenerator, Data
 import numpy as np
 from pprint import pprint
 import logging
+from rdkit.Chem import Draw
+from PIL import ImageDraw
 
 logger = logging.getLogger('rtranknet.mpnranker2')
 info = logger.info
@@ -233,7 +235,7 @@ def train(ranker: MPNranker, bg: Union[BatchGenerator, DataLoader], epochs=2,
           batch_size=8192, sigmoid_loss=False,
           margin_loss=0.1, early_stopping_patience=None,
           ep_save=False, learning_rate=1e-3, no_encoder_train=False,
-          accs=True):
+          accs=True, confl_images=True):
     save_name = ('mpnranker' if writer is None else
                  writer.get_logdir().split('/')[-1].replace('_train', ''))
     ranker.to(ranker.encoder.device)
@@ -250,17 +252,14 @@ def train(ranker: MPNranker, bg: Union[BatchGenerator, DataLoader], epochs=2,
     if (sigmoid_loss):
         warning('sigmoid loss is not implemented anymore! margin loss will be used')
     ranker.train()
-    loss_sum = iter_count = val_loss_sum = val_iter_count = val_pat = 0
-    confl_loss = {}
-    rel_confl_len = 0
-    confl_loss_avg = np.nan
+    loss_sum = iter_count = val_loss_sum = val_iter_count = val_pat = confl_loss_sum = 0
     last_val_step = np.infty
     stop = False
     for epoch in range(epochs):
         if stop:                # CTRL+C
             break
         loop = tqdm(bg)
-        for x, y, weights in loop:
+        for x, y, weights, is_confl in loop:
             if (ranker.extra_features_dim > 0):
                 x[0][1] = torch.as_tensor(x[0][1]).float().to(ranker.encoder.device)
                 x[1][1] = torch.as_tensor(x[1][1]).float().to(ranker.encoder.device)
@@ -272,49 +271,35 @@ def train(ranker: MPNranker, bg: Union[BatchGenerator, DataLoader], epochs=2,
             loss_sum += loss[0].item()
             iter_count += 1
             loss[0].backward()
-            if (confl_writer is not None):
-                confl_weight_thr = 0.9 * bg.dataset.confl_weight
-                if ((weights > confl_weight_thr).any()): # TODO: DEBUG for confl pairs
-                    # import pdb; pdb.set_trace()
-                    # NOTE: makes the following assumptions:
-                    # 1. confl_weights_modifier > 9 and groups roughly balanced so that
-                    # all confl pairs have weights >9
-                    # 2. has extra features from which the first one is used as ID for the
-                    # compound (logp, 5 decimals)
-                    for g1, g2, yi, l in zip(np.array(x[0][0])[weights > confl_weight_thr],
-                                             np.array(x[1][0])[weights > confl_weight_thr],
-                                             y[weights > confl_weight_thr],
-                                             loss[1][weights > confl_weight_thr] / weights[weights > confl_weight_thr]):
-                        # print(g1, g2)
-                        # print(id(g1), id(g2))
-                        confl_loss.setdefault(frozenset((id(g1), id(g2))), {}
-                                              )[yi.item()] = l.item()
-                    # pprint(confl_loss)
-                    rel_confl_items = [(v[0 if sigmoid_loss else -1] + v[1]) / 2
-                                       for k, v in confl_loss.items() if 1 in v and (0 if sigmoid_loss else -1) in v]
-                    # pprint(rel_confl_items)
-                    if (len(rel_confl_items) > 0 and  len(rel_confl_items) >= rel_confl_len):
-                        # print(rel_confl_items)
-                        # a new conflicting pair was trained on with conflicting target values
-                        rel_confl_len = len(rel_confl_items)
-                        confl_loss_avg = sum(rel_confl_items) / rel_confl_len
-                        if (confl_writer is not None):
-                            confl_writer.add_scalar('loss', confl_loss_avg, iter_count)
-                    # pprint(ranker.get_parameter('hidden.0.weight').grad[:, -ranker.extra_features_dim:])
-                    # pprint(ranker.get_parameter('hidden.0.weight').grad[:, -ranker.extra_features_dim+1:].sum(1))
-                    # pprint([(p[0], p[1].size(), p[1].grad) for p in ranker.named_parameters()])
             optimizer.step()
+            if (is_confl.sum() > 0):
+                confl_loss_sum += loss[1][is_confl].mean().item()
+                high_loss = (loss[1] / weights > 2 * (loss[1] / weights)[is_confl].median().item()) & is_confl
+                if (high_loss.sum() > 0 and confl_images):
+                    # add pair with highest loss as images
+                    high_i = np.argmax((loss[1] / weights)[high_loss].detach().numpy())
+                    mols = (np.asarray(x[0][0])[high_loss][high_i].mols[0],
+                            np.asarray(x[1][0])[high_loss][high_i].mols[0])
+                    im1, im2 = Draw.MolToImage(mols[0]), Draw.MolToImage(mols[1])
+                    ImageDraw.Draw(im1).text((20, im1.height - 20),
+                                             f'loss: {(loss[1] / weights)[high_loss][high_i].item()}',
+                                             fill=(0, 0, 0))
+                    # import pdb; pdb.set_trace()
+                    confl_writer.add_image('conflicting pair', np.concatenate(
+                        [np.asarray(im1), np.asarray(im2)], 1), iter_count, dataformats='HWC')
             if (iter_count % steps_train_loss == (steps_train_loss - 1) and writer is not None):
                 loss_avg = loss_sum / iter_count
                 if writer is not None:
                     writer.add_scalar('loss', loss_avg, iter_count)
                 else:
                     print(f'Loss = {loss_avg:.4f}')
+                if (confl_writer is not None):
+                    confl_writer.add_scalar('loss', confl_loss_sum / iter_count, iter_count)
             if (val_writer is not None and len(val_g) > 0
                 and iter_count % steps_val_loss == (steps_val_loss - 1)):
                 ranker.eval()
                 with torch.no_grad():
-                    for x, y, weights in val_g:
+                    for x, y, weights, is_confl in val_g:
                         if (ranker.extra_features_dim > 0):
                             x[0][1] = torch.as_tensor(x[0][1]).float().to(ranker.encoder.device)
                             x[1][1] = torch.as_tensor(x[1][1]).float().to(ranker.encoder.device)
@@ -336,7 +321,7 @@ def train(ranker: MPNranker, bg: Union[BatchGenerator, DataLoader], epochs=2,
             loop.set_description(f'Epoch [{epoch+1}/{epochs}]')
             loop.set_postfix(loss=loss_sum/iter_count if iter_count > 0 else np.nan,
                              val_loss=val_loss_sum/val_iter_count if val_iter_count > 0 else np.nan,
-                             confl_loss=confl_loss_avg)
+                             confl_loss=confl_loss_sum/iter_count)
         if val_writer is not None:
             val_writer.flush()
         ranker.eval()
