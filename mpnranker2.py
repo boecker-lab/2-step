@@ -233,7 +233,7 @@ def train(ranker: MPNranker, bg: Union[BatchGenerator, DataLoader], epochs=2,
           batch_size=8192, sigmoid_loss=False,
           margin_loss=0.1, early_stopping_patience=None,
           ep_save=False, learning_rate=1e-3, no_encoder_train=False,
-          accs=False):
+          accs=True):
     save_name = ('mpnranker' if writer is None else
                  writer.get_logdir().split('/')[-1].replace('_train', ''))
     ranker.to(ranker.encoder.device)
@@ -341,27 +341,26 @@ def train(ranker: MPNranker, bg: Union[BatchGenerator, DataLoader], epochs=2,
             val_writer.flush()
         ranker.eval()
         if accs and writer is not None:
-            train_acc = eval_(bg.y, predict(bg.x, ranker, batch_size=batch_size), epsilon=epsilon)
+            train_acc = eval_(bg.dataset.y, ranker.predict(
+                bg.dataset.x_mols, bg.dataset.x_extra, bg.dataset.x_sys, batch_size=batch_size), epsilon=epsilon)
             writer.add_scalar('acc', train_acc, iter_count)
             writer.flush()
             print(f'{train_acc=:.2%}')
             if (val_writer is not None):
-                if (val_g.dataset_info is not None):
+                if (val_g.dataset.dataset_info is not None):
                     val_accs = []
-                    for ds in set(val_g.dataset_info):
-                        if (val_g.multix):
-                            x = [[val_g.x[j][i] for i in range(len(val_g.dataset_info)) if val_g.dataset_info[i] == ds]
-                                 for j in range(len(val_g.x))]
-                        else:
-                            x = [val_g.x[i] for i in range(len(val_g.dataset_info)) if val_g.dataset_info[i] == ds]
-                        y = [val_g.y[i] for i in range(len(val_g.dataset_info)) if val_g.dataset_info[i] == ds]
-                        val_acc = eval_(y, predict(x, ranker, batch_size=batch_size), epsilon=epsilon)
+                    for ds in set(val_g.dataset.dataset_info):
+                        ds_indices = [i for i, dsi in enumerate(val_g.dataset.dataset_info) if dsi == ds]
+                        val_acc = eval_(val_g.dataset.y[ds_indices], ranker.predict(
+                            val_g.dataset.x_mols[ds_indices], val_g.dataset.x_extra[ds_indices],
+                            val_g.dataset.x_sys[ds_indices], batch_size=batch_size), epsilon=epsilon)
                         if (not np.isnan(val_acc)):
                             val_accs.append(val_acc)
                         print(f'{ds}: \t{val_acc=:.2%}')
                     val_acc = np.mean(val_accs)
                 else:
-                    val_acc = eval_(val_g.y, predict(val_g.x, ranker, batch_size=batch_size), epsilon=epsilon)
+                    val_acc = eval_(val_g.dataset.y, ranker.predict(val_g.dataset.x_mols, val_g.dataset.x_extra, val_g.dataset.x_sys,
+                                                            batch_size=batch_size), epsilon=epsilon)
                 val_writer.add_scalar('acc', val_acc, iter_count)
                 val_writer.flush()
                 print(f'{val_acc=:.2%}')
