@@ -215,6 +215,7 @@ class EvalArgs(Tap):
     dataset_stats: bool = False # stats for each dataset
     diffs: bool = False         # compute outliers
     classyfire: bool = False    # compound class stats
+    confl_pairs: Optional[str] = None # pickle file with conflicting pairs (smiles)
 
 def load_model(path: str, type_='keras'):
     if (type_ == 'keras'):
@@ -341,12 +342,21 @@ if __name__ == '__main__':
                  'use_usp_codes': data.use_usp_codes,
                  'custom_features': data.descriptors,
                  'use_hsm': data.use_hsm,
+                 'use_newonehot': data.use_newonehot,
                  'repo_root_folder': args.repo_root_folder,
                  'custom_column_fields': data.custom_column_fields,
                  'columns_remove_na': False,
                  'hsm_fields': data.hsm_fields,
                  'graph_mode': args.model_type == 'mpn'}
     info('model preprocessing done')
+    if (args.confl_pairs):
+        info('loading conflicting pairs')
+        confl_pairs = pickle.load(open(args.confl_pairs, 'rb'))
+        # filter confl pairs to only consider relevant ones
+        confl_pairs = {k: v for k, v in confl_pairs.items()
+                       if any(x[0] in args.test_sets and x[1] in args.test_sets for x in v)}
+    else:
+        confl_pairs = None
     for ds in args.test_sets:
         info(f'loading data for {ds}')
         if (not re.match(r'\d{4}', ds)):
@@ -395,17 +405,23 @@ if __name__ == '__main__':
         if (hasattr(data, 'scaler')):
             info('standardize data')
             d.standardize(data.scaler)
-        ((train_graphs, train_x, train_y),
-         (val_graphs, val_x, val_y),
-         (test_graphs, test_x, test_y)) = d.get_split_data()
+        ((train_graphs, train_x, train_sys, train_y),
+         (val_graphs, val_x, val_sys, val_y),
+         (test_graphs, test_x, test_sys, test_y)) = d.get_split_data()
         X = np.concatenate((train_x, test_x, val_x))
+        X_sys = np.concatenate((train_sys, test_sys, val_sys))
         Y = np.concatenate((train_y, test_y, val_y))
+        if (args.confl_pairs is not None):
+            rel_confl = {k for k, v in confl_pairs.items()
+                         if any(x[0] == ds or x[1] == ds for x in v)
+                         and all(s in d.df.smiles.tolist() for s in k)}
+            rel_confl = {_ for x in rel_confl for _ in x}
+            confl = [smiles in rel_confl for smiles in d.df.smiles]
         info('done preprocessing. predicting...')
         if (args.model_type == 'mpn'):
-            from mpnranker import predict as mpn_predict
             graphs = np.concatenate((train_graphs, test_graphs, val_graphs))
             if (args.export_embeddings):
-                preds, embeddings = mpn_predict((graphs, X), model, batch_size=args.batch_size,
+                preds, embeddings = model.predict(graphs, X, X_sys, batch_size=args.batch_size,
                                                 prog_bar=args.verbose, ret_features=True)
                 embeddings_df = pd.DataFrame({'smiles': d.df.smiles} |
                                              {f'e{i}': embeddings[:, i]
@@ -414,12 +430,15 @@ if __name__ == '__main__':
                 embeddings_df.to_csv(f'runs/{config["name"]}_{ds_id}_embeddings.tsv',
                                      sep='\t')
             else:
-                preds = mpn_predict((graphs, X), model, batch_size=args.batch_size,
-                                    prog_bar=args.verbose, ret_features=False)
+                preds = model.predict(graphs, X, X_sys, batch_size=args.batch_size,
+                                      prog_bar=args.verbose, ret_features=False)
         else:
             preds = predict(X, model, args.batch_size)
         info('done predicting. evaluation...')
         acc = eval_(Y, preds, args.epsilon)
+        if (confl_pairs is not None):
+            acc_confl = eval_(Y[confl], preds[confl], args.epsilon) if any(confl) else np.nan
+            acc_nonconfl = eval_(Y[~np.array(confl)], preds[~np.array(confl)], args.epsilon) if any(confl) else acc
         d.df['roi'] = preds[np.arange(len(d.df.rt))[ # restore correct order
             np.argsort(np.concatenate([d.train_indices, d.test_indices, d.val_indices]))]]
         # acc2, results = eval2(d.df, args.epsilon)
@@ -436,6 +455,10 @@ if __name__ == '__main__':
             info('computing test stats')
             stats = data_stats(d, data, data.custom_column_fields)
             stats.update({'acc': acc, 'id': ds})
+            if (confl_pairs is not None):
+                stats.update({'acc_confl': acc_confl, 'acc_nonconfl': acc_nonconfl, 'num_confl': np.array(confl).sum()})
+            else:
+                stats.update({'acc_confl': np.nan, 'acc_nonconfl': np.nan, 'num_confl': np.nan})
             test_stats.append(stats)
         else:
             print(f'{ds}: {acc:.3f} \t (#data: {len(Y)})')
@@ -460,7 +483,9 @@ if __name__ == '__main__':
                              title=f'{ds} data ({acc:.2%} accuracy)')
             fig.show(renderer='browser')
     if (args.test_stats and len(test_stats) > 0):
-        print(pd.DataFrame.from_records(test_stats, index='id'))
+        test_stats_df = pd.DataFrame.from_records(test_stats, index='id')
+        print(test_stats_df)
+        print(test_stats_df[['acc', 'acc_confl', 'acc_nonconfl']].agg(['mean', 'median']))
         if (args.output is not None):
             json.dump({t['id']: t for t in test_stats},
                       open(args.output, 'w'), indent=2)
