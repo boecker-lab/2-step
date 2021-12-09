@@ -442,7 +442,7 @@ if __name__ == '__main__':
         if (len(val_x) > 0):
             val_preds = ranker.predict(val_graphs, val_x, val_sys, batch_size=8192)
         if (len(test_x) > 0):
-            val_preds = ranker.predict(test_graphs, test_x, test_sys, batch_size=8192)
+            test_preds = ranker.predict(test_graphs, test_x, test_sys, batch_size=8192)
     print(f'train: {eval_(train_y, train_preds, args.epsilon):.3f}')
     if (len(test_x) > 0):
         print(f'test: {eval_(test_y, test_preds, args.epsilon):.3f}')
