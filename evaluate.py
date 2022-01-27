@@ -21,6 +21,16 @@ import torch
 from utils import REL_COLUMNS, Data, export_predictions
 from features import features, parse_feature_spec
 
+class NpEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, np.integer):
+            return int(obj)
+        if isinstance(obj, np.floating):
+            return float(obj)
+        if isinstance(obj, np.ndarray):
+            return obj.tolist()
+        return super(NpEncoder, self).default(obj)
+
 def eval_(y, preds, epsilon=1):
     assert len(y) == len(preds)
     if (not any(preds)):
@@ -488,4 +498,4 @@ if __name__ == '__main__':
         print(test_stats_df[['acc', 'acc_confl', 'acc_nonconfl']].agg(['mean', 'median']))
         if (args.output is not None):
             json.dump({t['id']: t for t in test_stats},
-                      open(args.output, 'w'), indent=2)
+                      open(args.output, 'w'), indent=2, cls=NpEncoder)
