@@ -353,8 +353,12 @@ if __name__ == '__main__':
         info('loading conflicting pairs')
         confl_pairs = pickle.load(open(args.confl_pairs, 'rb'))
         # filter confl pairs to only consider relevant ones
+        train_sets = data.df.iloc[data.train_indices].dataset_id.unique().tolist()
         confl_pairs = {k: v for k, v in confl_pairs.items()
-                       if any(x[0] in args.test_sets and x[1] in args.test_sets for x in v)}
+                       if any((x[0] in args.test_sets and x[1] in args.test_sets)
+                              or (x[0] in args.test_sets and x[1] in train_sets)
+                              or (x[1] in args.test_sets and x[0] in train_sets)
+                              for x in v)}
     else:
         confl_pairs = None
     for ds in args.test_sets:
