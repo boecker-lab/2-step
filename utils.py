@@ -37,6 +37,41 @@ REL_COLUMNS = ['column.length', 'column.id', 'column.particle.size', 'column.tem
 REL_ONEHOT_COLUMNS = ['class.pH.A', 'class.pH.B', 'class.solvent']
 
 
+def match_column_names(metadata_columns, hsm_columns):
+    d = { 'Advanced Chromatography Technologies ACE C18': 'Advanced Chromatography Techn. ACE C18',
+          'Agilent InfnityLab Poroshell 120 EC-C18': 'Agilent InfinityLab Poroshell 120 EC-C18',
+          'Agilent ZORBAX Extend-C18': 'Agilent ZORBAX Extend C18',
+          'Agilent ZORBAX RRHD Eclipse Plus C18': 'Agilent ZORBAX Eclipse Plus C18', # not perfect match
+          'Grace Alltech Alltima HP C18': 'Grace-Alltech Alltima HP C18',
+          'Merck LiChrospher 100 RP-18': 'Merck LiChrospher RP-C18', # not perfetct match
+          'Merck SeQuant ZIC-HILIC': None,
+          'Merck SeQuant ZIC-pHILIC': None,
+          'Merck Supelco Ascentis Express C18': 'Merck Ascentis Express C18',
+          'Merck Supelco Ascentis Express ES-Cyano': 'Merck Ascentis Express ES-Cyano',
+          'Merck Supelco Ascentis Express F5 (PFP)': 'Merck Ascentis Express F5',
+          'Merck Supelco Ascentis Express Phenyl-Hexyl': 'Merck Ascentis Express Phenyl-Hexyl',
+          'Merck Supelco SUPELCOSIL LC-18': 'Merck SUPELCOSIL LC-C18',
+          'Phenomenex, Phenomenex Kinetex EVO C18': 'Phenomenex Kinetex EVO C18',
+          'Thermo Scientific Accucore C18': 'Thermo Fisher Accucore C18',
+          'Thermo Scientific Accucore HILIC': None,
+          'Thermo Scientific Hypercarb': None,
+          'Thermo Scientific Hypersil GOLD': 'Thermo Fisher Hypersil GOLD',
+          'Thermo Scientific Hypersil GOLD PFP': 'Thermo Fisher Hypersil GOLD PFP',
+          'Waters ACQUITY UPLC BEH Amide': None,
+          'Waters ACQUITY UPLC HSS T3': None,
+          'Waters XBridge Amide': None}
+    norm_not = []
+    for c in metadata_columns:
+        if c in d:
+            c = d[c]
+        l = [r.replace(',', '') if not isinstance(r, float) else None for r in hsm_columns]
+        if (c in l):
+            new_c = hsm_columns[l.index(c)]
+        else:
+            new_c = c
+        norm_not.append(new_c)
+    return norm_not
+
 def csr2tf(csr):
     indices = []
     values = []
