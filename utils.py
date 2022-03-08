@@ -569,7 +569,7 @@ class Data:
             graphs_unique = {s: mol2graph([s]) for s in smiles_unique}
         elif (self.encoder.lower() in ['dualmpnnplus', 'dualmpnn']):
             import sys
-            sys.path.append('/home/fleming/Documents/Projects/CD-MVGNN')
+            sys.path.append('../CD-MVGNN')
             from dglt.data.featurization.mol2graph import mol2graph
             graph_dict = {}
             graphs_unique = {s: mol2graph([s], graph_dict, self.graph_args)

@@ -1,5 +1,5 @@
 import sys
-sys.path.append('/home/fleming/Documents/Projects/CD-MVGNN')
+sys.path.append('../CD-MVGNN')
 from dglt.models.zoo.mpnn import DualMPNNPlus, DualMPNN
 from argparse import Namespace
 
