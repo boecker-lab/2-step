@@ -5,6 +5,7 @@ import torch
 from LambdaRankNN import RankNetNN
 from torch.utils.data.dataloader import DataLoader
 from mpnranker2 import MPNranker, train as mpn_train
+from cdmvgnn import get_cdmvgnn_args
 # from tensorboardX import SummaryWriter
 from torch.utils.tensorboard import SummaryWriter
 from rdkit import rdBase
@@ -78,6 +79,7 @@ class TrainArgs(Tap):
     # mpn model
     mpn_loss: Literal['margin', 'bce'] = 'margin'
     mpn_margin: float = 0.1
+    mpn_encoder: Literal['dmpnn', 'dualmpnnplus', 'dualmpnn'] = 'dmpnn'
     # pairs
     epsilon: float = 0.5 # difference in evaluation measure below which to ignore falsely predicted pairs
     pair_step: int = 1
@@ -205,6 +207,11 @@ if __name__ == '__main__':
     info('reading in data and computing features...')
     graphs = (args.model_type == 'mpn')
     ranker: Union[RankNetNN, MPNranker] = None
+    if (args.mpn_encoder.lower() in ['dualmpnnplus', 'dualmpnn']):
+        graph_args = get_cdmvgnn_args(
+            encoder_size=args.encoder_size, depth=args.mpn_depth, dropout_rate=args.dropout_rate)
+    else:
+        graph_args = None
     # TRAINING
     if (len(args.input) == 1 and os.path.exists(input_ := args.input[0])):
         if (input_.endswith('.csv') or input_.endswith('.tsv')):
@@ -261,7 +268,8 @@ if __name__ == '__main__':
                     custom_column_fields=args.custom_column_fields or None,
                     hsm_fields=args.hsm_fields, graph_mode=graphs,
                     fallback_column=args.fallback_column,
-                    fallback_metadata=args.fallback_metadata)
+                    fallback_metadata=args.fallback_metadata,
+                    encoder=args.mpn_encoder, graph_args=graph_args)
         for did in args.input:
             data.add_dataset_id(did,
                                 repo_root_folder=args.repo_root_folder,
@@ -408,12 +416,14 @@ if __name__ == '__main__':
     else:
         # MPNranker
         if (ranker is None):    # otherwise loaded already
-            ranker = MPNranker(extra_features_dim=train_x.shape[1],
+            ranker = MPNranker(encoder=args.mpn_encoder,
+                               extra_features_dim=train_x.shape[1],
                                sys_features_dim=train_sys.shape[1],
                                hidden_units=args.sizes, hidden_units_pv=args.sizes_sys,
                                encoder_size=args.encoder_size,
                                depth=args.mpn_depth,
-                               dropout_rate=args.dropout_rate)
+                               dropout_rate=args.dropout_rate,
+                               graph_args=graph_args)
         rename_old_writer_logs(f'runs/{run_name}')
         writer = SummaryWriter(f'runs/{run_name}_train')
         val_writer = SummaryWriter(f'runs/{run_name}_val') if len(valdata) > 0 else None

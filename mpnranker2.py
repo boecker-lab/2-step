@@ -19,35 +19,42 @@ from pprint import pprint
 import logging
 from rdkit.Chem import Draw
 from PIL import ImageDraw
+from functools import reduce
+from cdmvgnn import get_cdmvgnn_encoder
 
 logger = logging.getLogger('rtranknet.mpnranker2')
 info = logger.info
 warning = logger.warning
 
 class MPNranker(nn.Module):
-    def __init__(self, extra_features_dim=0, sys_features_dim=0,
+    def __init__(self, encoder='dmpnn', extra_features_dim=0, sys_features_dim=0,
                  hidden_units=[16, 8], hidden_units_pv=[16, 2], encoder_size=300,
-                 depth=3, dropout_rate=0.0):
+                 depth=3, dropout_rate=0.0, graph_args=None):
         super(MPNranker, self).__init__()
-        args = TrainArgs()
-        args.from_dict({'dataset_type': 'classification',
-                        'data_path': None,
-                        'hidden_size': encoder_size,
-                        'depth': depth,
-                        'dropout': dropout_rate})
-        self.encoder = MPNEncoder(args, get_atom_fdim(), get_bond_fdim())
+        if (encoder == 'dmpnn'):
+            args = TrainArgs()
+            args.from_dict({'dataset_type': 'classification',
+                            'data_path': None,
+                            'hidden_size': encoder_size,
+                            'depth': depth,
+                            'dropout': dropout_rate})
+            self.encoder = MPNEncoder(args, get_atom_fdim(), get_bond_fdim())
+        elif (encoder.lower() in ['dualmpnnplus', 'dualmpnn']):
+            # CD-MVGNN
+            self.encoder = get_cdmvgnn_encoder(encoder, encoder_size=encoder_size,
+                                               depth=depth, dropout_rate=dropout_rate,
+                                               args=graph_args)
         self.extra_features_dim = extra_features_dim
         self.sys_features_dim = sys_features_dim
-        self.encextra_size = self.encoder.hidden_size + extra_features_dim + sys_features_dim
+        self.encextra_size = encoder_size + extra_features_dim + sys_features_dim
         # System x molecule preference encoding
         self.hidden_pv = nn.ModuleList()
         for i, u in enumerate(hidden_units_pv):
-            self.hidden_pv.append(Linear(self.encextra_size
-                                         if i == 0 else hidden_units_pv[i - 1], u))
+            self.hidden_pv.append(Linear(self.encextra_size if i == 0 else hidden_units_pv[i - 1], u))
         # actual ranking layers
         self.hidden = nn.ModuleList()
         for i, u in enumerate(hidden_units):
-            self.hidden.append(Linear(self.encoder.hidden_size + extra_features_dim + hidden_units_pv[-1]
+            self.hidden.append(Linear(encoder_size + extra_features_dim + hidden_units_pv[-1]
                                       if i == 0 else hidden_units[i - 1], u))
         # One ROI value for (graph,extr,sys) sample
         self.ident = Linear(hidden_units[-1], 1)
@@ -58,7 +65,14 @@ class MPNranker(nn.Module):
             # encode molecules
             if (isinstance(graphs[0], str)):
                 graphs = [mol2graph([_]) for _ in graphs]
-            enc = torch.cat([self.encoder(g) for g in graphs], 0)  # [batch_size x encoder size]
+            if (isinstance(self.encoder, MPNEncoder)):
+                enc = torch.cat([self.encoder(g) for g in graphs], 0)  # [batch_size x encoder size]
+            else:
+                # just assume cd-mvgnn model
+                # NOTE: has two outputs: for bonds and atom
+                # TODO: just ADD for now
+                enc = torch.cat([reduce(torch.Tensor.add_,
+                                        self.encoder(g.get_components(), None)) for g in graphs], 0)
             # encode system x molecule relationships
             enc_pv = torch.cat([enc, extra, sysf], 1)
             for h in self.hidden_pv:
@@ -77,7 +91,12 @@ class MPNranker(nn.Module):
 
     def predict(self, graphs, extra, sysf, batch_size=8192,
                 prog_bar=False, ret_features=False):
-        self.eval()
+        if (isinstance(self.encoder, MPNEncoder)):
+            self.eval()
+        else:
+            # TODO: necessary because dualmpnn(plus) has different `forward` outputs
+            # depending on training/eval
+            self.train()
         preds = []
         features = []
         if (not isinstance(extra, torch.Tensor)):

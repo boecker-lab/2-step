@@ -1,3 +1,4 @@
+from argparse import Namespace
 from itertools import combinations, product
 from random import sample, shuffle
 import pandas as pd
@@ -15,7 +16,7 @@ import os
 import re
 from classyfire import get_onehot, get_binary
 from dataclasses import dataclass, field
-from typing import Optional, List, Tuple, Union, Iterable, Callable
+from typing import Optional, List, Tuple, Union, Iterable, Callable, Literal
 import logging
 import sys
 from pprint import pformat
@@ -570,6 +571,8 @@ class Data:
     void_info: dict = field(default_factory=dict)
     fallback_column: str = 'Waters, ACQUITY UPLC BEH C18' # can be 'average'
     fallback_metadata: str = '0045'                       # can be 'average'
+    encoder: Literal['dmpnn', 'dualmpnnplus', 'dualmpnn'] = 'dmpnn'
+    graph_args: Optional[Namespace] = None
 
     def __post_init__(self):
         self.x_features = None
@@ -593,11 +596,19 @@ class Data:
 
 
     def compute_graphs(self):
-        from chemprop.features import mol2graph
         info('computing graphs')
         t0 = time()
         smiles_unique = set(self.df.smiles)
-        graphs_unique = {s: mol2graph([s]) for s in smiles_unique}
+        if (self.encoder == 'dmpnn'):
+            from chemprop.features import mol2graph
+            graphs_unique = {s: mol2graph([s]) for s in smiles_unique}
+        elif (self.encoder.lower() in ['dualmpnnplus', 'dualmpnn']):
+            import sys
+            sys.path.append('/home/fleming/Documents/Projects/CD-MVGNN')
+            from dglt.data.featurization.mol2graph import mol2graph
+            graph_dict = {}
+            graphs_unique = {s: mol2graph([s], graph_dict, self.graph_args)
+                             for s in smiles_unique}
         self.graphs = np.array([graphs_unique[s] for s in self.df.smiles])
         info(f'computing graphs done ({str(timedelta(seconds=time() - t0))} elapsed)')
         # self.graphs = np.array([mol2graph([s]) for s in self.df.smiles])
@@ -680,7 +691,9 @@ class Data:
             hsm.drop_duplicates(['normalized notation'], keep=False if drop_hsm_dups else 'last', inplace=True)
             hsm.set_index('normalized notation', drop=False, verify_integrity=True, inplace=True)
             self.df.loc[pd.isna(self.df['column.name']), 'column.name'] = 'unknown' # instead of NA
-            for c in self.df['column.name'].unique():
+            self.df['normalized notation'] = match_column_names(self.df['column.name'].tolist(),
+                                                                hsm['normalized notation'].tolist())
+            for c in self.df['normalized notation'].unique():
                 if (c not in hsm['normalized notation'].tolist()):
                     if (not hsm_fallback):
                         raise Exception(
