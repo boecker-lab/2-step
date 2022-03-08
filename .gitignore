@@ -6,3 +6,10 @@
 /*.pkl
 /*.log
 /*.json
+/*.tsv
+/*.csv
+/*.txt
+/data/
+/runs.old
+/RtPredTrainingData
+/*.obo
