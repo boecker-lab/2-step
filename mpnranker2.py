@@ -254,7 +254,7 @@ def train(ranker: MPNranker, bg: Union[BatchGenerator, DataLoader], epochs=2,
           batch_size=8192, sigmoid_loss=False,
           margin_loss=0.1, early_stopping_patience=None,
           ep_save=False, learning_rate=1e-3, no_encoder_train=False,
-          accs=True, confl_images=True):
+          accs=True, confl_images=False):
     save_name = ('mpnranker' if writer is None else
                  writer.get_logdir().split('/')[-1].replace('_train', ''))
     ranker.to(ranker.encoder.device)
