@@ -712,7 +712,7 @@ class Data:
                 elif (c in hsm_dups):
                     warning(f'multiple HSM entries exist for column {c}, the last entry is used')
             # NOTE: not scaled!
-            fields.append(hsm.loc[self.df['column.name'], hsm_fields].astype(float).values)
+            fields.append(hsm.loc[self.df['normalized notation'], hsm_fields].astype(float).values)
         field_names = custom_column_fields if custom_column_fields is not None else REL_COLUMNS
         na_columns = [col for col in field_names if self.df[col].isna().any()]
         if (len(na_columns) > 0):
