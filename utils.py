@@ -816,7 +816,7 @@ class Data:
         if (self.df is None):
             self.df = df
         else:
-            self.df = self.df.append(df, ignore_index=True)
+            self.df = pd.concat([self.df, df], ignore_index=True)
 
 
     @staticmethod
