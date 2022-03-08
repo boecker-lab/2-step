@@ -38,41 +38,6 @@ REL_COLUMNS = ['column.length', 'column.id', 'column.particle.size', 'column.tem
 REL_ONEHOT_COLUMNS = ['class.pH.A', 'class.pH.B', 'class.solvent']
 
 
-def match_column_names(metadata_columns, hsm_columns):
-    d = { 'Advanced Chromatography Technologies ACE C18': 'Advanced Chromatography Techn. ACE C18',
-          'Agilent InfnityLab Poroshell 120 EC-C18': 'Agilent InfinityLab Poroshell 120 EC-C18',
-          'Agilent ZORBAX Extend-C18': 'Agilent ZORBAX Extend C18',
-          'Agilent ZORBAX RRHD Eclipse Plus C18': 'Agilent ZORBAX Eclipse Plus C18', # not perfect match
-          'Grace Alltech Alltima HP C18': 'Grace-Alltech Alltima HP C18',
-          'Merck LiChrospher 100 RP-18': 'Merck LiChrospher RP-C18', # not perfetct match
-          'Merck SeQuant ZIC-HILIC': None,
-          'Merck SeQuant ZIC-pHILIC': None,
-          'Merck Supelco Ascentis Express C18': 'Merck Ascentis Express C18',
-          'Merck Supelco Ascentis Express ES-Cyano': 'Merck Ascentis Express ES-Cyano',
-          'Merck Supelco Ascentis Express F5 (PFP)': 'Merck Ascentis Express F5',
-          'Merck Supelco Ascentis Express Phenyl-Hexyl': 'Merck Ascentis Express Phenyl-Hexyl',
-          'Merck Supelco SUPELCOSIL LC-18': 'Merck SUPELCOSIL LC-C18',
-          'Phenomenex, Phenomenex Kinetex EVO C18': 'Phenomenex Kinetex EVO C18',
-          'Thermo Scientific Accucore C18': 'Thermo Fisher Accucore C18',
-          'Thermo Scientific Accucore HILIC': None,
-          'Thermo Scientific Hypercarb': None,
-          'Thermo Scientific Hypersil GOLD': 'Thermo Fisher Hypersil GOLD',
-          'Thermo Scientific Hypersil GOLD PFP': 'Thermo Fisher Hypersil GOLD PFP',
-          'Waters ACQUITY UPLC BEH Amide': None,
-          'Waters ACQUITY UPLC HSS T3': None,
-          'Waters XBridge Amide': None}
-    norm_not = []
-    for c in metadata_columns:
-        if c in d:
-            c = d[c]
-        l = [r.replace(',', '') if not isinstance(r, float) else None for r in hsm_columns]
-        if (c in l):
-            new_c = hsm_columns[l.index(c)]
-        else:
-            new_c = c
-        norm_not.append(new_c)
-    return norm_not
-
 def csr2tf(csr):
     indices = []
     values = []
@@ -569,7 +534,7 @@ class Data:
     hsm_fields: List[str] = field(default_factory=lambda: ['H', 'S*', 'A', 'B', 'C (pH 2.8)', 'C (pH 7.0)'])
     graph_mode: bool = False
     void_info: dict = field(default_factory=dict)
-    fallback_column: str = 'Waters, ACQUITY UPLC BEH C18' # can be 'average'
+    fallback_column: str = 'Waters ACQUITY UPLC BEH C18' # can be 'average'
     fallback_metadata: str = '0045'                       # can be 'average'
     encoder: Literal['dmpnn', 'dualmpnnplus', 'dualmpnn'] = 'dmpnn'
     graph_args: Optional[Namespace] = None
@@ -670,7 +635,7 @@ class Data:
                                    use_usp_codes=False, use_hsm=False, use_newonehot=False,
                                    repo_root_folder='/home/fleming/Documents/Projects/RtPredTrainingData',
                                    custom_column_fields=None, remove_na=True, drop_hsm_dups=False,
-                                   fallback_column='Waters, ACQUITY UPLC BEH C18', hsm_fallback=True,
+                                   fallback_column='Waters ACQUITY UPLC BEH C18', hsm_fallback=True,
                                    col_fields_fallback=True, fallback_metadata='0045',
                                    hsm_fields=['H', 'S*', 'A', 'B', 'C (pH 2.8)', 'C (pH 7.0)']):
         global REL_COLUMNS
@@ -686,18 +651,17 @@ class Data:
         names = []
         if (use_hsm):
             hsm = pd.read_csv(os.path.join(repo_root_folder, 'resources/hsm_database/hsm_database.txt'), sep='\t')
-            hsm_counts = hsm.value_counts('normalized notation')
+            hsm_cf = 'name_new'
+            hsm_counts = hsm.value_counts(hsm_cf)
             hsm_dups = hsm_counts.loc[hsm_counts > 1].index.tolist()
-            hsm.drop_duplicates(['normalized notation'], keep=False if drop_hsm_dups else 'last', inplace=True)
-            hsm.set_index('normalized notation', drop=False, verify_integrity=True, inplace=True)
+            hsm.drop_duplicates([hsm_cf], keep=False if drop_hsm_dups else 'last', inplace=True)
+            hsm.set_index(hsm_cf, drop=False, verify_integrity=True, inplace=True)
             self.df.loc[pd.isna(self.df['column.name']), 'column.name'] = 'unknown' # instead of NA
-            self.df['normalized notation'] = match_column_names(self.df['column.name'].tolist(),
-                                                                hsm['normalized notation'].tolist())
-            for c in self.df['normalized notation'].unique():
-                if (c not in hsm['normalized notation'].tolist()):
+            for c in self.df['column.name'].unique():
+                if (c not in hsm[hsm_cf].tolist()):
                     if (not hsm_fallback):
                         raise Exception(
-                            f'no HSM data for {", ".join([str(c) for c in set(self.df["column.name"]) if c not in hsm["normalized notation"].tolist()])}')
+                            f'no HSM data for {", ".join([str(c) for c in set(self.df["column.name"]) if c not in hsm[hsm_cf].tolist()])}')
                     else:
                         if (fallback_column == 'average'):
                             fallback = pd.Series(name=c, dtype='float64')
@@ -712,7 +676,7 @@ class Data:
                 elif (c in hsm_dups):
                     warning(f'multiple HSM entries exist for column {c}, the last entry is used')
             # NOTE: not scaled!
-            fields.append(hsm.loc[self.df['normalized notation'], hsm_fields].astype(float).values)
+            fields.append(hsm.loc[self.df['column.name'], hsm_fields].astype(float).values)
         field_names = custom_column_fields if custom_column_fields is not None else REL_COLUMNS
         na_columns = [col for col in field_names if self.df[col].isna().any()]
         if (len(na_columns) > 0):

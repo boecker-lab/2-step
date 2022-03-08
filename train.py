@@ -61,7 +61,7 @@ class TrainArgs(Tap):
     columns_use_hsm: bool = False
     hsm_fields: List[str] = ['H', 'S*', 'A', 'B', 'C (pH 2.8)', 'C (pH 7.0)']
     custom_column_fields: List[str] = []
-    fallback_column: str = 'Waters, ACQUITY UPLC BEH C18' # column data to use when needed and no data available; can also be 'average'
+    fallback_column: str = 'Waters ACQUITY UPLC BEH C18' # column data to use when needed and no data available; can also be 'average'
     fallback_metadata: str = '0045' # repository metadata to use when needed and no data available; can also be 'average'
     usp_codes: bool = False     # use column usp codes as onehot system features (only for `--sysinfo`)
     debug_onehot_sys: bool = False # onehot dataset encoding
