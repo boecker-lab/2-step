@@ -274,9 +274,9 @@ class BatchGenerator(tf.keras.utils.Sequence):
                 pair_nr = 0
                 it = BatchGenerator.dataset_pair_it(groups[group], self.pair_step, self.pair_stop,
                                                            max_indices_size=max_indices_size)
-                if (logger.level <= logging.INFO):
-                    from tqdm import tqdm
-                    it = tqdm(it)
+                # if (logger.level <= logging.INFO):
+                #     from tqdm import tqdm
+                #     it = tqdm(it)
                 for i, j in it:
                     res = BatchGenerator.get_pair(y, i, j, group_void_rt or 0, group_void_rt or 0, self.y_neg)
                     if (res is None):
