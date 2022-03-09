@@ -44,6 +44,7 @@ class MPNranker(nn.Module):
             self.encoder = get_cdmvgnn_encoder(encoder, encoder_size=encoder_size,
                                                depth=depth, dropout_rate=dropout_rate,
                                                args=graph_args)
+            self.graph_args = graph_args
         self.extra_features_dim = extra_features_dim
         self.sys_features_dim = sys_features_dim
         self.encextra_size = encoder_size + extra_features_dim + sys_features_dim

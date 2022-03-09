@@ -357,7 +357,11 @@ if __name__ == '__main__':
                  'custom_column_fields': data.custom_column_fields,
                  'columns_remove_na': False,
                  'hsm_fields': data.hsm_fields,
-                 'graph_mode': args.model_type == 'mpn'}
+                 'graph_mode': args.model_type == 'mpn',
+                 'encoder': (config['args']['mpn_encoder'] if 'mpn_encoder' in config['args']
+                             else None),
+                 'graph_args': (model.graph_args if hasattr(model, 'graph_args')
+                                else None),}
     info('model preprocessing done')
     if (args.confl_pairs):
         info('loading conflicting pairs')
