@@ -321,7 +321,7 @@ if __name__ == '__main__':
     if '__file__' in globals():
         args = EvalArgs().parse_args()
     else:
-        args = EvalArgs().parse_args('--model runs/cweights_big_longer --test_sets data/smrt_test.csv --metadata_void_rt --model_type mpn'.split())
+        args = EvalArgs().parse_args('--model runs/newranker/newranker_ph9 --test_sets 0129 0040 0030 0125 0070 0096 0004 0019 0038 0042 0049 0052 --metadata_void_rt --model_type mpn --epsilon 0.5 --test_stats --confl_pairs /home/fleming/Documents/Uni/RTpred/pairs3.pkl --export_rois'.split())
 
     if (args.verbose):
         basicConfig(level=INFO)
