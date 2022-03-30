@@ -527,11 +527,13 @@ class Data:
     use_usp_codes: bool = False
     custom_features: List[str] = field(default_factory=list)
     use_hsm: bool = False
+    use_tanaka: bool = False
     use_newonehot: bool = False
     repo_root_folder: str = '/home/fleming/Documents/Projects/RtPredTrainingData'
     custom_column_fields: Optional[list] = None
     columns_remove_na: bool = True
     hsm_fields: List[str] = field(default_factory=lambda: ['H', 'S*', 'A', 'B', 'C (pH 2.8)', 'C (pH 7.0)'])
+    tanaka_fields: List[str] = field(default_factory=lambda: ['kPB', 'αCH2', 'αT/O', 'αC/P', 'αB/P', 'αB/P.1'])
     graph_mode: bool = False
     void_info: dict = field(default_factory=dict)
     fallback_column: str = 'Waters ACQUITY UPLC BEH C18' # can be 'average'
@@ -632,12 +634,13 @@ class Data:
                                        for oids in classes])
 
     def compute_system_information(self, onehot_ids=False, other_dataset_ids=None,
-                                   use_usp_codes=False, use_hsm=False, use_newonehot=False,
+                                   use_usp_codes=False, use_hsm=False, use_tanaka=False, use_newonehot=False,
                                    repo_root_folder='/home/fleming/Documents/Projects/RtPredTrainingData',
                                    custom_column_fields=None, remove_na=True, drop_hsm_dups=False,
                                    fallback_column='Waters ACQUITY UPLC BEH C18', hsm_fallback=True,
                                    col_fields_fallback=True, fallback_metadata='0045',
-                                   hsm_fields=['H', 'S*', 'A', 'B', 'C (pH 2.8)', 'C (pH 7.0)']):
+                                   hsm_fields=['H', 'S*', 'A', 'B', 'C (pH 2.8)', 'C (pH 7.0)'],
+                                   tanaka_fields=['kPB', 'αCH2', 'αT/O', 'αC/P', 'αB/P', 'αB/P.1']):
         global REL_COLUMNS
         if (onehot_ids):
             if (other_dataset_ids is None):
@@ -677,6 +680,34 @@ class Data:
                     warning(f'multiple HSM entries exist for column {c}, the last entry is used')
             # NOTE: not scaled!
             fields.append(hsm.loc[self.df['column.name'], hsm_fields].astype(float).values)
+        if (use_tanaka):
+            tanaka = pd.read_csv(os.path.join(repo_root_folder, 'resources/tanaka_database/tanaka_database.txt'), sep='\t')
+            tanaka_cf = 'name_new'
+            tanaka_counts = tanaka.value_counts(tanaka_cf)
+            tanaka_dups = tanaka_counts.loc[tanaka_counts > 1].index.tolist()
+            tanaka.drop_duplicates([tanaka_cf], keep=False if drop_hsm_dups else 'last', inplace=True)
+            tanaka.set_index(tanaka_cf, drop=False, verify_integrity=True, inplace=True)
+            self.df.loc[pd.isna(self.df['column.name']), 'column.name'] = 'unknown' # instead of NA
+            for c in self.df['column.name'].unique():
+                if (c not in tanaka[tanaka_cf].tolist()):
+                    if (not hsm_fallback):
+                        raise Exception(
+                            f'no Tanaka data for {", ".join([str(c) for c in set(self.df["column.name"]) if c not in tanaka[tanaka_cf].tolist()])}')
+                    else:
+                        if (fallback_column == 'average'):
+                            fallback = pd.Series(name=c, dtype='float64')
+                            warning(f'using average Tanaka values for column {c}')
+                        elif (fallback_column == 'zeros'):
+                            fallback = pd.Series(name=c, dtype='float64')
+                            warning(f'using zeros Tanaka values for column {c}')
+                        else:
+                            fallback = pd.DataFrame(tanaka.loc[fallback_column]).transpose()
+                            fallback.index = [c]
+                        tanaka = tanaka.append(fallback)
+                elif (c in tanaka_dups):
+                    warning(f'multiple Tanaka entries exist for column {c}, the last entry is used')
+            # NOTE: not scaled!
+            fields.append(tanaka.loc[self.df['column.name'], tanaka_fields].astype(float).values)
         field_names = custom_column_fields if custom_column_fields is not None else REL_COLUMNS
         na_columns = [col for col in field_names if self.df[col].isna().any()]
         if (len(na_columns) > 0):
@@ -733,12 +764,12 @@ class Data:
             self.compute_classes()
         if (self.use_system_information and self.x_info is None):
             self.compute_system_information(use_usp_codes=self.use_usp_codes,
-                                            use_hsm=self.use_hsm,
+                                            use_hsm=self.use_hsm, use_tanaka=self.use_tanaka,
                                             use_newonehot=self.use_newonehot,
                                             repo_root_folder=self.repo_root_folder,
                                             custom_column_fields=self.custom_column_fields,
                                             remove_na=self.columns_remove_na,
-                                            hsm_fields=self.hsm_fields,
+                                            hsm_fields=self.hsm_fields, tanaka_fields=self.tanaka_fields,
                                             fallback_column=self.fallback_column,
                                             fallback_metadata=self.fallback_metadata)
         xs = np.concatenate(list(filter(lambda x: x is not None, (self.x_features, self.x_classes))),

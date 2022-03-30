@@ -352,11 +352,13 @@ if __name__ == '__main__':
                  'use_usp_codes': data.use_usp_codes,
                  'custom_features': data.descriptors,
                  'use_hsm': data.use_hsm,
+                 'use_tanaka': data.use_tanaka,
                  'use_newonehot': data.use_newonehot,
                  'repo_root_folder': args.repo_root_folder,
                  'custom_column_fields': data.custom_column_fields,
                  'columns_remove_na': False,
                  'hsm_fields': data.hsm_fields,
+                 'tanaka_fields': data.tanaka_fields,
                  'graph_mode': args.model_type == 'mpn',
                  'encoder': (config['args']['mpn_encoder'] if 'mpn_encoder' in config['args']
                              else None),

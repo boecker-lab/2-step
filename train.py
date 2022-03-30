@@ -59,7 +59,9 @@ class TrainArgs(Tap):
     comp_classes: bool = False  # use classyfire compound classes as add. features
     sysinfo: bool = False       # use column information as add. features
     columns_use_hsm: bool = False
+    columns_use_tanaka: bool = False
     hsm_fields: List[str] = ['H', 'S*', 'A', 'B', 'C (pH 2.8)', 'C (pH 7.0)']
+    tanaka_fields: List[str] = ['kPB', 'αCH2', 'αT/O', 'αC/P', 'αB/P', 'αB/P.1']
     custom_column_fields: List[str] = []
     fallback_column: str = 'Waters ACQUITY UPLC BEH C18' # column data to use when needed and no data available; can also be 'average'
     fallback_metadata: str = '0045' # repository metadata to use when needed and no data available; can also be 'average'
@@ -224,10 +226,10 @@ if __name__ == '__main__':
                                       classes_l_thr=args.classes_l_thr, classes_u_thr=args.classes_u_thr,
                                       repo_root_folder=args.repo_root_folder,
                                       use_usp_codes=args.usp_codes, custom_features=args.features,
-                                      use_hsm=args.columns_use_hsm,
+                                      use_hsm=args.columns_use_hsm, use_tanaka=args.columns_use_tanaka,
                                       # TODO: use_newonehot
                                       custom_column_fields=args.custom_column_fields or None,
-                                      hsm_fields=args.hsm_fields,
+                                      hsm_fields=args.hsm_fields, tanaka_fields=args.tanaka_fields,
                                       fallback_column=args.fallback_column,
                                       fallback_metadata=args.fallback_metadata)
         elif (input_.endswith('.tf')):
@@ -263,10 +265,12 @@ if __name__ == '__main__':
                     metadata_void_rt=args.metadata_void_rt,
                     classes_l_thr=args.classes_l_thr, classes_u_thr=args.classes_u_thr,
                     use_usp_codes=args.usp_codes, custom_features=args.features,
-                    use_hsm=args.columns_use_hsm, use_newonehot=args.columns_use_newonehot,
+                    use_hsm=args.columns_use_hsm, use_tanaka=args.columns_use_tanaka,
+                    use_newonehot=args.columns_use_newonehot,
                     repo_root_folder=args.repo_root_folder,
                     custom_column_fields=args.custom_column_fields or None,
-                    hsm_fields=args.hsm_fields, graph_mode=graphs,
+                    hsm_fields=args.hsm_fields, tanaka_fields=args.tanaka_fields,
+                    graph_mode=graphs,
                     fallback_column=args.fallback_column,
                     fallback_metadata=args.fallback_metadata,
                     encoder=args.mpn_encoder, graph_args=graph_args)
