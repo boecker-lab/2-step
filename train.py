@@ -319,7 +319,7 @@ if __name__ == '__main__':
      (val_graphs, val_x, val_sys, val_y),
      (test_graphs, test_x, test_sys, test_y)) = preprocess(data, args)
     conflicting_smiles_pairs = (pickle.load(open(args.conflicting_smiles_pairs, 'rb'))
-                                if args.conflicting_smiles_pairs is not None else [])
+                                if args.conflicting_smiles_pairs is not None else {})
     info('done. Initializing BatchGenerator...')
     # bg = BatchGenerator((train_graphs, train_x) if graphs else train_x, train_y,
     #                     ids=data.df.iloc[data.train_indices].smiles.tolist(),
