@@ -363,7 +363,8 @@ if __name__ == '__main__':
                  'encoder': (config['args']['mpn_encoder'] if 'mpn_encoder' in config['args']
                              else None),
                  'graph_args': (model.graph_args if hasattr(model, 'graph_args')
-                                else None),}
+                                else None),
+                 'sys_scales': data.sys_scales}
     info('model preprocessing done')
     if (args.confl_pairs):
         info('loading conflicting pairs')

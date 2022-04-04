@@ -22,6 +22,7 @@ import sys
 from pprint import pformat
 from time import time
 from datetime import timedelta
+import json
 
 from features import features
 
@@ -440,27 +441,15 @@ class BatchGenerator(tf.keras.utils.Sequence):
     def get_df(self, x_desc='features'):
         return pd.DataFrame({x_desc: self.x, 'rt': self.y})
 
-def get_column_scaling(cols, repo_root_folder='/home/fleming/Documents/Projects/RtPredTrainingData/'):
-    if (not hasattr(get_column_scaling, '_data')):
-        sys.path.append(repo_root_folder)
-        from pandas_dfs import get_dataset_df
-        ds = get_dataset_df()
-        info_columns = [c for c in ds.columns
-                        if re.match(r'^(column|gradient|eluent|class)\..*', c)
-                        and 'name' not in c and 'usp.code' not in c]
-        # empirical
-        s = StandardScaler()
-        s.fit(ds[info_columns])
-        get_column_scaling._data = {col: {'mean': mean, 'std': scale}
-                                    for col, mean, scale
-                                    in zip(info_columns, s.mean_, s.scale_)}
-        # manual
-        get_column_scaling._data.update({col: {'mean': 50., 'std': 50.} # values 0-100
-                                         for col in info_columns
-                                         if (col.startswith('eluent.')
-                                             or col.startswith('gradient.'))})
-    return (np.array([get_column_scaling._data[c]['mean'] for c in cols]),
-            np.array([get_column_scaling._data[c]['std'] for c in cols]))
+def get_column_scaling(cols, repo_root_folder='/home/fleming/Documents/Projects/RtPredTrainingData/',
+                       scale_dict={}):
+    if (any(c not in scale_dict for c in cols)):
+        # load stored info
+        if (len(scale_dict) > 0):
+            warning(f'scaling: replacing {scale_dict.keys()} with stored values')
+        scale_dict.update(json.load(open(os.path.join(repo_root_folder, 'scaling.json'))))
+    return (np.array([scale_dict[c]['mean'] for c in cols]),
+            np.array([scale_dict[c]['std'] for c in cols]))
 
 def split_arrays(arrays, sizes: tuple, split_info=None, stratify=None):
     for a in arrays:            # all same shape
@@ -540,6 +529,7 @@ class Data:
     fallback_metadata: str = '0045'                       # can be 'average'
     encoder: Literal['dmpnn', 'dualmpnnplus', 'dualmpnn'] = 'dmpnn'
     graph_args: Optional[Namespace] = None
+    sys_scales: dict = field(default_factory=dict)
 
     def __post_init__(self):
         self.x_features = None
@@ -678,8 +668,9 @@ class Data:
                         hsm = hsm.append(fallback)
                 elif (c in hsm_dups):
                     warning(f'multiple HSM entries exist for column {c}, the last entry is used')
-            # NOTE: not scaled!
-            fields.append(hsm.loc[self.df['column.name'], hsm_fields].astype(float).values)
+            means, scales = get_column_scaling(hsm_fields, repo_root_folder=repo_root_folder,
+                                               scale_dict=self.sys_scales)
+            fields.append((hsm.loc[self.df['column.name'], hsm_fields].astype(float).values - means) / scales)
         if (use_tanaka):
             tanaka = pd.read_csv(os.path.join(repo_root_folder, 'resources/tanaka_database/tanaka_database.txt'), sep='\t')
             tanaka_cf = 'name_new'
@@ -706,8 +697,9 @@ class Data:
                         tanaka = tanaka.append(fallback)
                 elif (c in tanaka_dups):
                     warning(f'multiple Tanaka entries exist for column {c}, the last entry is used')
-            # NOTE: not scaled!
-            fields.append(tanaka.loc[self.df['column.name'], tanaka_fields].astype(float).values)
+            means, scales = get_column_scaling(tanaka_fields, repo_root_folder=repo_root_folder,
+                                               scale_dict=self.sys_scales)
+            fields.append((tanaka.loc[self.df['column.name'], tanaka_fields].astype(float).values - means) / scales)
         field_names = custom_column_fields if custom_column_fields is not None else REL_COLUMNS
         na_columns = [col for col in field_names if self.df[col].isna().any()]
         if (len(na_columns) > 0):
@@ -731,7 +723,8 @@ class Data:
             else:
                 print('WARNING: system data contains NA values, the option to remove these columns was disabled though! '
                       + ', '.join(na_columns))
-        means, scales = get_column_scaling(field_names, repo_root_folder=repo_root_folder)
+        means, scales = get_column_scaling(field_names, repo_root_folder=repo_root_folder,
+                                           scale_dict=self.sys_scales)
         fields.append((self.df[field_names].astype(float).values - means) / scales)
         names.extend(field_names)
         if (use_usp_codes):
@@ -747,7 +740,7 @@ class Data:
             print('using onehot fields', ', '.join(onehot_fields))
             fields.append(self.df[onehot_fields].astype(float).values)
             # NOTE: not scaled!
-        # np.savetxt('/tmp/sys_array.txt', np.concatenate(fields, axis=1), fmt='%.2f')
+        np.savetxt('/tmp/sys_array.txt', np.concatenate(fields, axis=1), fmt='%.2f')
         self.x_info = np.concatenate(fields, axis=1)
         self.custom_column_fields = names
 
