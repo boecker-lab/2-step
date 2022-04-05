@@ -740,7 +740,7 @@ class Data:
             print('using onehot fields', ', '.join(onehot_fields))
             fields.append(self.df[onehot_fields].astype(float).values)
             # NOTE: not scaled!
-        np.savetxt('/tmp/sys_array.txt', np.concatenate(fields, axis=1), fmt='%.2f')
+        # np.savetxt('/tmp/sys_array.txt', np.concatenate(fields, axis=1), fmt='%.2f')
         self.x_info = np.concatenate(fields, axis=1)
         self.custom_column_fields = names
 

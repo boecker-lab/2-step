@@ -176,7 +176,7 @@ def data_stats(d, data, custom_column_fields=None):
     this_column = d.df['column.name'].values[0]
     train_compounds_col = set(data.df.loc[data.df['column.name'] == this_column, compound_identifier])
     test_compounds = set(d.df[compound_identifier])
-    system_fields = custom_column_fields if custom_column_fields is not None else REL_COLUMNS
+    system_fields = custom_column_fields
     train_configs = [t[1:] for t in set(data.df[['dataset_id', 'column.name'] + system_fields]
                                         .itertuples(index=False, name=None))]
     test_config = tuple(d.df[['column.name'] + system_fields].iloc[0].tolist())

@@ -228,7 +228,7 @@ if __name__ == '__main__':
                                       use_usp_codes=args.usp_codes, custom_features=args.features,
                                       use_hsm=args.columns_use_hsm, use_tanaka=args.columns_use_tanaka,
                                       # TODO: use_newonehot
-                                      custom_column_fields=args.custom_column_fields or None,
+                                      custom_column_fields=args.custom_column_fields,
                                       hsm_fields=args.hsm_fields, tanaka_fields=args.tanaka_fields,
                                       fallback_column=args.fallback_column,
                                       fallback_metadata=args.fallback_metadata)
@@ -268,7 +268,7 @@ if __name__ == '__main__':
                     use_hsm=args.columns_use_hsm, use_tanaka=args.columns_use_tanaka,
                     use_newonehot=args.columns_use_newonehot,
                     repo_root_folder=args.repo_root_folder,
-                    custom_column_fields=args.custom_column_fields or None,
+                    custom_column_fields=args.custom_column_fields,
                     hsm_fields=args.hsm_fields, tanaka_fields=args.tanaka_fields,
                     graph_mode=graphs,
                     fallback_column=args.fallback_column,
