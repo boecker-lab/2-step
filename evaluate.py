@@ -31,7 +31,7 @@ class NpEncoder(json.JSONEncoder):
             return obj.tolist()
         return super(NpEncoder, self).default(obj)
 
-def eval_(y, preds, epsilon=1):
+def eval_(y, preds, epsilon=0.5, roi_thr=1e-5):
     assert len(y) == len(preds)
     if (not any(preds)):
         return 0.0
@@ -40,12 +40,13 @@ def eval_(y, preds, epsilon=1):
     total = 0
     for i, j in combinations(range(len(y)), 2):
         diff = y[i] - y[j]
-        if (diff < epsilon):
+        #if (diff < epsilon and preds[i] < preds[j]):
+        if (diff < epsilon and (preds[j] - preds[i] > roi_thr)):
             matches += 1
         total += 1
     return matches / total if not total == 0 else np.nan
 
-def eval2(df, epsilon=1, classyfire_level=None):
+def eval2(df, epsilon=0.5, classyfire_level=None):
     df_eval = df.dropna(subset=['rt', 'roi'])
     df_eval.reset_index(drop=True, inplace=True)
     classes = (list(set(df_eval[classyfire_level].dropna().tolist()))
@@ -352,19 +353,22 @@ if __name__ == '__main__':
                  'use_usp_codes': data.use_usp_codes,
                  'custom_features': data.descriptors,
                  'use_hsm': data.use_hsm,
-                 'use_tanaka': data.use_tanaka,
                  'use_newonehot': data.use_newonehot,
                  'repo_root_folder': args.repo_root_folder,
                  'custom_column_fields': data.custom_column_fields,
                  'columns_remove_na': False,
                  'hsm_fields': data.hsm_fields,
-                 'tanaka_fields': data.tanaka_fields,
                  'graph_mode': args.model_type == 'mpn',
                  'encoder': (config['args']['mpn_encoder'] if 'mpn_encoder' in config['args']
-                             else None),
+                             else 'dmpnn'),
                  'graph_args': (model.graph_args if hasattr(model, 'graph_args')
-                                else None),
-                 'sys_scales': data.sys_scales}
+                                else None)}
+    if (hasattr(data, 'use_tanaka')):
+        data_args['use_tanaka'] = data.use_tanaka
+    if (hasattr(data, 'tanaka_fields')):
+        data_args['tanaka_fields'] = data.tanaka_fields
+    if (hasattr(data, 'sys_scales')):
+        data_args['sys_scales'] = data.sys_scales
     info('model preprocessing done')
     if (args.confl_pairs):
         info('loading conflicting pairs')
