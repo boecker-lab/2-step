@@ -31,7 +31,7 @@ class NpEncoder(json.JSONEncoder):
             return obj.tolist()
         return super(NpEncoder, self).default(obj)
 
-def eval_(y, preds, epsilon=1):
+def eval_(y, preds, epsilon=0.5, roi_thr=1e-5):
     assert len(y) == len(preds)
     if (not any(preds)):
         return 0.0
@@ -40,12 +40,13 @@ def eval_(y, preds, epsilon=1):
     total = 0
     for i, j in combinations(range(len(y)), 2):
         diff = y[i] - y[j]
-        if (diff < epsilon):
+        #if (diff < epsilon and preds[i] < preds[j]):
+        if (diff < epsilon and (preds[j] - preds[i] > roi_thr)):
             matches += 1
         total += 1
     return matches / total if not total == 0 else np.nan
 
-def eval2(df, epsilon=1, classyfire_level=None):
+def eval2(df, epsilon=0.5, classyfire_level=None):
     df_eval = df.dropna(subset=['rt', 'roi'])
     df_eval.reset_index(drop=True, inplace=True)
     classes = (list(set(df_eval[classyfire_level].dropna().tolist()))
