@@ -199,6 +199,7 @@ class RankDataset(Dataset):
         x2_indices_new = []
         y_trans_new = []
         weights_new = []
+        sys_indices_new = []
         is_confl_new = []
         removed_counter = 0
         for i in range (len(y_trans)):
@@ -208,12 +209,13 @@ class RankDataset(Dataset):
                 y_trans_new.append(y_trans[i])
                 weights_new.append(weights[i])
                 is_confl_new.append(is_confl[i])
+                sys_indices_new.append(sys_indices[i])
             else:
                 removed_counter += 1
         info(f'removed {removed_counter} (of {len(y_trans)}) pairs for having "None" weights')
         info('done generating pairs')
         return np.asarray(x1_indices_new), np.asarray(x2_indices_new), np.asarray(
-            y_trans_new), np.asarray(weights_new), np.asarray(sys_indices), np.asarray(is_confl)
+            y_trans_new), np.asarray(weights_new), np.asarray(sys_indices_new), np.asarray(is_confl_new)
 
 
     @staticmethod
