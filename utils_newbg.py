@@ -41,7 +41,7 @@ class RankDataset(Dataset):
     y_neg : bool=False                            # -1 instead of 0 for negative pair
     conflicting_smiles_pairs:dict = field(default_factory=dict) # conflicting pairs (smiles)
     only_confl: bool=False                                          # gather only conflicting pairs
-    confl_weight: float=100.                                        # weight modifier for conflicting pairs
+    confl_weight: float=1.                                          # weight modifier for conflicting pairs
 
     def __post_init__(self):
         if (isinstance(self.x_extra, np.ndarray)):
@@ -79,8 +79,7 @@ class RankDataset(Dataset):
         # preprocess confl pair list for O(1) lookup
         # and disregard confl pairs not conflicting for this training set
         confl_pairs_lookup = {k for k, v in self.conflicting_smiles_pairs.items()
-                              if any(x[0] in groups and x[1] in groups
-                                     for x in v)}
+                              if any(all(xi in groups for xi in x) for x in v)}
         print(f'using {len(confl_pairs_lookup)} out of the {len(self.conflicting_smiles_pairs)} '
               'conflicting pairs provided')
         # same-dataset pairs

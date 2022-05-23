@@ -832,6 +832,13 @@ class Data:
             df = df.merge(column_information, on='dataset_id')
         # rows without RT data are useless
         df = df[~pd.isna(df.rt)]
+        # so are compounds (smiles) with multiple rts
+        # unless they're the same (TODO: threshold)
+        old_len0 = len(df)
+        df = df.drop_duplicates(['smiles', 'rt'])
+        old_len1 = len(df)
+        df = df.drop_duplicates('smiles', keep=False)
+        print(f'{dataset_id}: removing duplicate measurements, {old_len0}→{old_len1}→{len(df)}')
         if (self.metadata_void_rt and 'column.t0' in df.columns):
             void_rt = df['column.t0'].iloc[0] * 2 # NOTE: 2 or 3?
         self.void_info[df.dataset_id.iloc[0]] = void_rt
