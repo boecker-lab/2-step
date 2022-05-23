@@ -21,7 +21,7 @@ import pandas as pd
 from utils import BatchGenerator, Data
 from features import features, parse_feature_spec
 from evaluate import eval_, predict, export_predictions
-from utils_newbg import RankDataset
+from utils_newbg import RankDataset, check_integrity
 
 logger = logging.getLogger('rtranknet')
 info = logger.info
@@ -94,6 +94,8 @@ class TrainArgs(Tap):
     max_pair_compounds: Optional[int] = None
     conflicting_smiles_pairs: Optional[str] = None # pickle file with conflicting pairs (smiles)
     confl_weight: float = 1.                       # weight modifier for conflicting pairs
+    check_data: bool = False                       # check how many pairs are conflicting/unpredictable
+    clean_data: bool = False                       # remove unpredictable pairs
     # data locations
     repo_root_folder: str = '/home/fleming/Documents/Projects/RtPredTrainingData/'
     add_desc_file: str = '/home/fleming/Documents/Projects/rtranknet/data/qm_merged.csv'
@@ -365,6 +367,19 @@ if __name__ == '__main__':
                           y_neg=(args.mpn_loss == 'margin'),
                           conflicting_smiles_pairs=conflicting_smiles_pairs,
                           confl_weight=args.confl_weight)
+    if (args.clean_data or args.check_data):
+        print('training data check:')
+        stats_train, clean_train, _ = check_integrity(traindata, clean=args.clean_data)
+        if (args.clean_data):
+            traindata.remove_indices(clean_train)
+            print(f'cleaning up {len(clean_train)} of {len(traindata.y_trans)} total '
+                  f'({len(clean_train)/len(traindata.y_trans):.0%}) pairs for being invalid')
+        print('validation data check:')
+        stats_val, clean_val, _ = check_integrity(valdata, clean=args.clean_data)
+        if (args.clean_data):
+            valdata.remove_indices(clean_val)
+            print(f'cleaning up {len(clean_val)} of {len(valdata.y_trans)} total '
+                  f'({len(clean_val)/len(valdata.y_trans):.0%}) pairs for being invalid')
     # NOTE: DEBUG dump traindata for examination
     # pickle.dump(traindata, open('td.pkl', 'wb'))
     # exit(0)

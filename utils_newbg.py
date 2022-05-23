@@ -10,6 +10,8 @@ from datetime import timedelta
 from itertools import combinations, product
 from random import sample, shuffle
 from utils import pair_weights
+import pandas as pd
+from collections import Counter
 
 logger = logging.getLogger('rtranknet.utils')
 info = logger.info
@@ -296,6 +298,31 @@ class RankDataset(Dataset):
             pairs |= set(make_pairs(pre_js, post_is))
         return list(pairs)
 
+    def remove_indices(self, indices):
+        assert all(len(_) == len(self.x1_indices) for _ in [
+            self.x1_indices, self.x2_indices, self.y_trans, self.weights,
+            self.sys_indices, self.is_confl])
+        x1_indices_new = []
+        x2_indices_new = []
+        y_trans_new = []
+        weights_new = []
+        sys_indices_new = []
+        is_confl_new = []
+        indices = set(indices)
+        for i in range(len(self.x1_indices)):
+            if (i not in indices):
+                x1_indices_new.append(self.x1_indices[i])
+                x2_indices_new.append(self.x2_indices[i])
+                y_trans_new.append(self.y_trans[i])
+                weights_new.append(self.weights[i])
+                sys_indices_new.append(self.sys_indices[i])
+                is_confl_new.append(self.is_confl[i])
+        (self.x1_indices, self.x2_indices, self.y_trans,
+         self.weights, self.sys_indices, self.is_confl) = (
+             np.asarray(x1_indices_new), np.asarray(x2_indices_new), np.asarray(y_trans_new), np.asarray(weights_new), np.asarray(sys_indices_new), np.asarray(is_confl_new))
+
+
+
     def __len__(self):
         return self.y_trans.shape[0]
 
@@ -307,3 +334,47 @@ class RankDataset(Dataset):
                  (self.x_mols[self.x2_indices[index]], self.x_extra[self.x2_indices[index]],
                   self.x_sys[self.sys_indices[index]])),
                 self.y_trans[index], self.weights[index], self.is_confl[index])
+
+def check_integrity(x: RankDataset, clean=False):
+    pairs = {}
+    for i, (x1, x2, y, sys_i) in enumerate(zip(x.x1_indices, x.x2_indices, x.y_trans, x.sys_indices)):
+        p = tuple(sorted([x.x_ids[x1], x.x_ids[x2]]))
+        if (p[0] == x.x_ids[x2]):
+            y = (-1 if x.y_neg else 0) if y == 1 else 1
+        pairs.setdefault(p, []).append(
+            (x.dataset_info[x1], y, x.x_sys[sys_i], i))
+    records = []
+    clean_indices = []
+    same_settings_datasets = []
+    for v in pairs.values():
+        nr_confl = nr_invalid = nr_combs = 0
+        invalid = []
+        for (ds_i, y_i, sys_i, i), (ds_j, y_j, sys_j, j) in combinations(v, 2):
+            nr_combs += 1
+            if (y_i != y_j):
+                if (ds_i == ds_j):
+                    print(ds_i, x.x_ids[x.x1_indices[i]], x.x_ids[x.x2_indices[i]],
+                          x.x_ids[x.x1_indices[j]], x.x_ids[x.x2_indices[j]])
+                nr_confl += 1
+                if ((sys_i == sys_j).all()):
+                    nr_invalid += 1
+                    same_settings_datasets.append((ds_i, ds_j))
+                    invalid.append((i, j))
+        if (clean):
+            # gready algorithm to remove indices with most invalid pairs
+            while (len(invalid) > 0):
+                max_i = Counter(np.asarray(invalid).flatten()).most_common()[0][0]
+                clean_indices.append(max_i)
+                invalid = [_ for _ in invalid if max_i not in _]
+        records.append(dict(nr_combs=nr_combs, nr_confl=nr_confl, nr_invalid=nr_invalid))
+    stats = pd.DataFrame.from_records(records)
+    print(f'conflicting pairs percentage: {stats.nr_confl.sum() / stats.nr_combs.sum():.2%}')
+    print(f'conflicting pairs percentage (averaged): {(stats.nr_confl / stats.nr_combs).mean():.2%}')
+    print(f'invalid conflicting pairs percentage: {stats.nr_invalid.sum() / stats.nr_confl.sum():.2%}')
+    print(f'invalid pairs percentage (of total): {stats.nr_invalid.sum() / stats.nr_combs.sum():.2%}')
+    # dss = pd.merge(dss, pd.read_csv(os.path.join('/home/fleming/Documents/Projects/RtPredTrainingData/', 'ph_info.csv'), sep='\t', index_col=0)[REL_ONEHOT_COLUMNS], how='left', left_index=True, right_index=True)
+    # for ds1, ds2 in same_settings_datasets:
+    #     assert all(x[0][0] == x[0][1] or np.isnan(x[0][0]) and np.isnan(x[0][1]) for x in
+    #                zip(dss.loc[[ds1, ds2], ['column.id', 'column.flowrate', 'column.length'] +
+    #                    ['class.pH.A', 'class.pH.B', 'class.solvent'] + ['H']].values.transpose()))
+    return stats, clean_indices, same_settings_datasets
