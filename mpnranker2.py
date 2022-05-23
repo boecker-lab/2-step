@@ -12,7 +12,7 @@ from torch.nn.modules.linear import Linear
 from chemprop.models.mpn import (MPNEncoder, get_atom_fdim, get_bond_fdim)
 from chemprop.args import TrainArgs
 from chemprop.features import mol2graph, BatchMolGraph
-from evaluate import eval_
+from evaluate import eval_, eval_detailed
 from utils import BatchGenerator, Data
 import numpy as np
 from pprint import pprint
@@ -275,6 +275,7 @@ def train(ranker: MPNranker, bg: Union[BatchGenerator, DataLoader], epochs=2,
     loss_sum = iter_count = val_loss_sum = val_iter_count = val_pat = confl_loss_sum = 0
     last_val_step = np.infty
     stop = False
+    val_stats, train_stats = {}, {}
     for epoch in range(epochs):
         if stop:                # CTRL+C
             break
@@ -349,23 +350,79 @@ def train(ranker: MPNranker, bg: Union[BatchGenerator, DataLoader], epochs=2,
             val_writer.flush()
         ranker.eval()
         if accs and writer is not None:
-            train_acc = eval_(bg.dataset.y, ranker.predict(
+            if (bg.dataset.dataset_info is not None):
+                train_accs = []
+                stats_d = {}
+                for ds in set(bg.dataset.dataset_info):
+                    ds_indices = [i for i, dsi in enumerate(bg.dataset.dataset_info) if dsi == ds]
+                    train_acc, stats_i = eval_detailed([bg.dataset.x_ids[i] for i in ds_indices],
+                        bg.dataset.y[ds_indices], ranker.predict(
+                        bg.dataset.x_mols[ds_indices], bg.dataset.x_extra[ds_indices],
+                        bg.dataset.x_sys[ds_indices], batch_size=batch_size), epsilon=epsilon)
+                    if (not np.isnan(train_acc)):
+                        train_accs.append(train_acc)
+                    print(f'{ds}: \t{train_acc=:.2%}')
+                    stats_d[ds] = stats_i
+                train_acc = np.mean(train_accs)
+                new_correct_all, new_incorrect_all, avg_roi_diff_increase_all = [], [], []
+                for ds in stats_d:
+                    if ds in train_stats:
+                        new_correct = len({_[0] for _ in stats_d[ds]} - {_[0] for _ in train_stats[ds]})
+                        new_incorrect = len({_[0] for _ in train_stats[ds]} - {_[0] for _ in stats_d[ds]})
+                        roi_diff_increase = []
+                        stats_d_diff, stats_diff = dict(stats_d[ds]), dict(train_stats[ds])
+                        for pair, d_diff in stats_d_diff.items():
+                            if pair in stats_diff:
+                                roi_diff_increase.append(d_diff - stats_diff[pair])
+                        avg_roi_diff_increase = np.mean(roi_diff_increase)
+                        new_correct_all.append(new_correct)
+                        new_incorrect_all.append(new_incorrect)
+                        avg_roi_diff_increase_all.append(avg_roi_diff_increase)
+                        print(f'{ds} change: +{new_correct} -{new_incorrect} ({avg_roi_diff_increase:.2f} avg. roi diff increase)')
+                print(f'average total change: +{np.mean(new_correct_all):.0f} -{np.mean(new_incorrect_all):.0f}'
+                      f' ({np.mean(avg_roi_diff_increase_all):.2f} avg. roi diff increase)')
+                train_stats = stats_d
+            else:
+                train_acc = np.nan
+            train_acc_all = eval_(bg.dataset.y, ranker.predict(
                 bg.dataset.x_mols, bg.dataset.x_extra, bg.dataset.x_sys, batch_size=batch_size), epsilon=epsilon)
+            writer.add_scalar('acc_all', train_acc_all, iter_count)
             writer.add_scalar('acc', train_acc, iter_count)
             writer.flush()
-            print(f'{train_acc=:.2%}')
+            print(f'{train_acc=:.2%}, {train_acc_all=:.2%}')
             if (val_writer is not None):
                 if (val_g.dataset.dataset_info is not None):
                     val_accs = []
+                    stats_d = {}
                     for ds in set(val_g.dataset.dataset_info):
                         ds_indices = [i for i, dsi in enumerate(val_g.dataset.dataset_info) if dsi == ds]
-                        val_acc = eval_(val_g.dataset.y[ds_indices], ranker.predict(
+                        val_acc, stats_i = eval_detailed([val_g.dataset.x_ids[i] for i in ds_indices],
+                            val_g.dataset.y[ds_indices], ranker.predict(
                             val_g.dataset.x_mols[ds_indices], val_g.dataset.x_extra[ds_indices],
                             val_g.dataset.x_sys[ds_indices], batch_size=batch_size), epsilon=epsilon)
                         if (not np.isnan(val_acc)):
                             val_accs.append(val_acc)
                         print(f'{ds}: \t{val_acc=:.2%}')
+                        stats_d[ds] = stats_i
                     val_acc = np.mean(val_accs)
+                    new_correct_all, new_incorrect_all, avg_roi_diff_increase_all = [], [], []
+                    for ds in stats_d:
+                        if ds in val_stats:
+                            new_correct = len({_[0] for _ in stats_d[ds]} - {_[0] for _ in val_stats[ds]})
+                            new_incorrect = len({_[0] for _ in val_stats[ds]} - {_[0] for _ in stats_d[ds]})
+                            roi_diff_increase = []
+                            stats_d_diff, stats_diff = dict(stats_d[ds]), dict(val_stats[ds])
+                            for pair, d_diff in stats_d_diff.items():
+                                if pair in stats_diff:
+                                    roi_diff_increase.append(d_diff - stats_diff[pair])
+                            avg_roi_diff_increase = np.mean(roi_diff_increase)
+                            new_correct_all.append(new_correct)
+                            new_incorrect_all.append(new_incorrect)
+                            avg_roi_diff_increase_all.append(avg_roi_diff_increase)
+                            print(f'{ds} change: +{new_correct} -{new_incorrect} ({avg_roi_diff_increase:.2f} avg. roi diff increase)')
+                    print(f'average total change: +{np.mean(new_correct_all):.0f} -{np.mean(new_incorrect_all):.0f}'
+                          f' ({np.mean(avg_roi_diff_increase_all):.2f} avg. roi diff increase)')
+                    val_stats = stats_d
                 else:
                     val_acc = eval_(val_g.dataset.y, ranker.predict(val_g.dataset.x_mols, val_g.dataset.x_extra, val_g.dataset.x_sys,
                                                             batch_size=batch_size), epsilon=epsilon)

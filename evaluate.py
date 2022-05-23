@@ -44,7 +44,25 @@ def eval_(y, preds, epsilon=0.5, roi_thr=1e-5):
         if (diff < epsilon and (preds[j] - preds[i] > roi_thr)):
             matches += 1
         total += 1
-    return matches / total if not total == 0 else np.nan
+    toret = matches / total if not total == 0 else np.nan
+    return toret
+
+
+def eval_detailed(mols, y, preds, epsilon=0.5, roi_thr=1e-5):
+    matches = []
+    assert len(y) == len(preds)
+    preds, y, mols = zip(*sorted(zip(preds, y, mols)))
+    total = 0
+    if (any(preds)):
+        for i, j in combinations(range(len(y)), 2):
+            diff = y[i] - y[j]
+            roi_diff = preds[j] - preds[i]
+            if (diff < epsilon and (roi_diff > roi_thr)):
+                matches.append((frozenset([mols[i], mols[j]]), roi_diff))
+            total += 1
+        return len(matches) / total if not total == 0 else np.nan, matches
+    else:
+        return 0.0, []
 
 def eval2(df, epsilon=0.5, classyfire_level=None):
     df_eval = df.dropna(subset=['rt', 'roi'])
