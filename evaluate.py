@@ -394,9 +394,9 @@ if __name__ == '__main__':
         # filter confl pairs to only consider relevant ones
         train_sets = data.df.iloc[data.train_indices].dataset_id.unique().tolist()
         confl_pairs = {k: v for k, v in confl_pairs.items()
-                       if any((x[0] in args.test_sets and x[1] in args.test_sets)
-                              or (x[0] in args.test_sets and x[1] in train_sets)
-                              or (x[1] in args.test_sets and x[0] in train_sets)
+                       if any(all(xi in args.test_sets for xi in x)
+                              or (any(xi in args.test_sets for xi in x) and
+                                  any(xi in train_sets for xi in x))
                               for x in v)}
     else:
         confl_pairs = None
@@ -456,7 +456,7 @@ if __name__ == '__main__':
         Y = np.concatenate((train_y, test_y, val_y))
         if (args.confl_pairs is not None):
             rel_confl = {k for k, v in confl_pairs.items()
-                         if any(x[0] == ds or x[1] == ds for x in v)
+                         if any(ds in x for x in v)
                          and all(s in d.df.smiles.tolist() for s in k)}
             rel_confl = {_ for x in rel_confl for _ in x}
             confl = [smiles in rel_confl for smiles in d.df.smiles]
