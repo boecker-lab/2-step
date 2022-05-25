@@ -87,7 +87,7 @@ class TrainArgs(Tap):
     pair_step: int = 1
     pair_stop: Optional[int] = None
     use_weights: bool = False
-    weight_steep: float = 4
+    weight_steep: float = 20
     weight_mid: float = 0.75
     no_inter_pairs: bool = False # don't use pairs of compounds of different datasets
     no_intra_pairs: bool = False # don't use pairs of compounds of the same dataset
@@ -349,6 +349,7 @@ if __name__ == '__main__':
                             no_intra_pairs=args.no_intra_pairs,
                             max_indices_size=args.max_pair_compounds,
                             weight_mid=args.weight_mid,
+                            weight_steepness=args.weight_steep,
                             y_neg=(args.mpn_loss == 'margin'),
                             conflicting_smiles_pairs=conflicting_smiles_pairs,
                             confl_weight=args.confl_weight)
@@ -364,6 +365,7 @@ if __name__ == '__main__':
                           no_intra_pairs=args.no_intra_pairs,
                           max_indices_size=args.max_pair_compounds,
                           weight_mid=args.weight_mid,
+                          weight_steepness=args.weight_steep,
                           y_neg=(args.mpn_loss == 'margin'),
                           conflicting_smiles_pairs=conflicting_smiles_pairs,
                           confl_weight=args.confl_weight)

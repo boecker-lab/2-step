@@ -54,17 +54,18 @@ def weight_stats(pkl, confl=[]):
     print(pd.DataFrame({'nonconfl': nonconfl_weights}).describe())
     print(pd.DataFrame({'confl': confl_weights}).describe())
 
-def rt_diff_weight_fun(rt_diff, weight):
+def rt_diff_weight_fun(rt_diff, weight=1, a=20, b=0.75):
     return (weight              # upper asymptote
             / (1 +
                np.exp(-(
-                   20)          # slope
-                      * (rt_diff - 0.75))) ** (1))
+                   a)          # slope
+                      * (rt_diff - b))) ** (1))
 
 def pair_weights(smiles1: str, smiles2: str, rt_diff: float,
                  nr_group_pairs: int, nr_group_pairs_max: int,
                  confl_weights_modifier: float, confl_pair_list: Iterable[frozenset]=[],
-                 cutoff:float=1e-4, only_confl=False) -> Optional[float]:
+                 cutoff:float=1e-4, only_confl=False, weight_steepness=20,
+                 weight_mid=0.75) -> Optional[float]:
     # group (~dataset) size balancing modifier
     base_weight = nr_group_pairs_max / nr_group_pairs # roughly between 1 and 500
     # conflicting (-> important) pair modifier
@@ -73,7 +74,7 @@ def pair_weights(smiles1: str, smiles2: str, rt_diff: float,
     elif only_confl:
         base_weight = 0
     # rt diff weight modifier
-    base_weight = rt_diff_weight_fun(rt_diff, base_weight)
+    base_weight = rt_diff_weight_fun(rt_diff, base_weight, a=weight_steepness, b=weight_mid)
     return None if base_weight < cutoff else base_weight
 
 

@@ -30,7 +30,7 @@ class RankDataset(Dataset):
     use_group_weights: bool=True                  # weigh number of samples per group
     cluster: bool=False                           # cluster datasets with same column params for calculating
                                                   # group weights
-    weight_steepness: float=4                     # steepness of the pair_weight_fn
+    weight_steepness: float=20                    # steepness of the pair_weight_fn
     weight_mid: float=0.75                        # mid-factor of the weight_mid
     pair_step: int=1                              # step size for generating pairs
     pair_stop: Optional[int]=None                 # stop number for generating pairs
@@ -191,7 +191,9 @@ class RankDataset(Dataset):
                 weights_mod = pair_weights(self.x_ids[x1_indices[i]], self.x_ids[x2_indices[i]], rt_diff,
                                            pair_nrs[g] if self.use_group_weights else nr_group_pairs_max,
                                            nr_group_pairs_max, weight_modifier, self.conflicting_smiles_pairs,
-                                           only_confl=self.only_confl)
+                                           only_confl=self.only_confl,
+                                           weight_steepness=self.weight_steepness,
+                                           weight_mid=self.weight_mid)
                 weights[i] = (weights_mod * weights[i]) if weights_mod is not None else None
         # NOTE: pair weights can be "None"
         info('done. removing None weights')
