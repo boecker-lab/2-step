@@ -89,6 +89,7 @@ class TrainArgs(Tap):
     use_weights: bool = False
     weight_steep: float = 20
     weight_mid: float = 0.75
+    dynamic_weights: bool = False
     no_inter_pairs: bool = False # don't use pairs of compounds of different datasets
     no_intra_pairs: bool = False # don't use pairs of compounds of the same dataset
     max_pair_compounds: Optional[int] = None
