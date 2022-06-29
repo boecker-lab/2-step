@@ -350,6 +350,7 @@ if __name__ == '__main__':
                             max_indices_size=args.max_pair_compounds,
                             weight_mid=args.weight_mid,
                             weight_steepness=args.weight_steep,
+                            dynamic_weights=args.dynamic_weights,
                             y_neg=(args.mpn_loss == 'margin'),
                             conflicting_smiles_pairs=conflicting_smiles_pairs,
                             confl_weight=args.confl_weight)
@@ -366,6 +367,7 @@ if __name__ == '__main__':
                           max_indices_size=args.max_pair_compounds,
                           weight_mid=args.weight_mid,
                           weight_steepness=args.weight_steep,
+                          dynamic_weights=args.dynamic_weights,
                           y_neg=(args.mpn_loss == 'margin'),
                           conflicting_smiles_pairs=conflicting_smiles_pairs,
                           confl_weight=args.confl_weight)

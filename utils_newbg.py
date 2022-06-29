@@ -11,7 +11,7 @@ from itertools import combinations, product
 from random import sample, shuffle
 from utils import pair_weights
 import pandas as pd
-from collections import Counter
+from collections import Counter, defaultdict
 
 logger = logging.getLogger('rtranknet.utils')
 info = logger.info
@@ -32,6 +32,7 @@ class RankDataset(Dataset):
                                                   # group weights
     weight_steepness: float=20                    # steepness of the pair_weight_fn
     weight_mid: float=0.75                        # mid-factor of the weight_mid
+    dynamic_weights: bool=True                    # adapt epsilon to gradient length
     pair_step: int=1                              # step size for generating pairs
     pair_stop: Optional[int]=None                 # stop number for generating pairs
     dataset_info: Optional[List[str]] = None      # Dataset ID for each datum
@@ -72,12 +73,16 @@ class RankDataset(Dataset):
         pair_nrs = {}
         group_index_start = {}
         group_index_end = {}
+        groups_max_rts = defaultdict(float)
         # confl_pair_report = {}
         if (self.dataset_info is None):
             groups['unk'] = list(range(len(self.y)))
         else:
             for i in range(len(self.y)):
                 groups.setdefault(self.dataset_info[i], []).append(i)
+                groups_max_rts[self.dataset_info[i]] = max(groups_max_rts[self.dataset_info[i]],
+                                                           self.y[i])
+        print(f'{groups_max_rts=}')
         # preprocess confl pair list for O(1) lookup
         # and disregard confl pairs not conflicting for this training set
         confl_pairs_lookup = {k for k, v in self.conflicting_smiles_pairs.items()
@@ -193,7 +198,8 @@ class RankDataset(Dataset):
                                            nr_group_pairs_max, weight_modifier, self.conflicting_smiles_pairs,
                                            only_confl=self.only_confl,
                                            weight_steepness=self.weight_steepness,
-                                           weight_mid=self.weight_mid)
+                                           weight_mid=self.weight_mid,
+                                           max_rt=groups_max_rts[g] if self.dynamic_weights else None)
                 weights[i] = (weights_mod * weights[i]) if weights_mod is not None else None
         # NOTE: pair weights can be "None"
         info('done. removing None weights')

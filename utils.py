@@ -1,6 +1,6 @@
 from argparse import Namespace
 from itertools import combinations, product
-from random import sample, shuffle
+from random import random, sample, shuffle
 import pandas as pd
 import numpy as np
 # import matplotlib.pyplot as plt
@@ -54,7 +54,10 @@ def weight_stats(pkl, confl=[]):
     print(pd.DataFrame({'nonconfl': nonconfl_weights}).describe())
     print(pd.DataFrame({'confl': confl_weights}).describe())
 
-def rt_diff_weight_fun(rt_diff, weight=1, a=20, b=0.75):
+def rt_diff_weight_fun(rt_diff, weight=1, a=20, b=0.75, max_rt=None, max_rt_ratio=0.05,
+                       min_b=0.1, max_b=0.5):
+    if (max_rt is not None):
+        b = min(max(max_rt_ratio * max_rt, min_b), max_b)
     return (weight              # upper asymptote
             / (1 +
                np.exp(-(
@@ -65,7 +68,7 @@ def pair_weights(smiles1: str, smiles2: str, rt_diff: float,
                  nr_group_pairs: int, nr_group_pairs_max: int,
                  confl_weights_modifier: float, confl_pair_list: Iterable[frozenset]=[],
                  cutoff:float=1e-4, only_confl=False, weight_steepness=20,
-                 weight_mid=0.75) -> Optional[float]:
+                 weight_mid=0.75, max_rt=None) -> Optional[float]:
     # group (~dataset) size balancing modifier
     base_weight = nr_group_pairs_max / nr_group_pairs # roughly between 1 and 500
     # conflicting (-> important) pair modifier
@@ -74,7 +77,11 @@ def pair_weights(smiles1: str, smiles2: str, rt_diff: float,
     elif only_confl:
         base_weight = 0
     # rt diff weight modifier
-    base_weight = rt_diff_weight_fun(rt_diff, base_weight, a=weight_steepness, b=weight_mid)
+    base_weight = rt_diff_weight_fun(rt_diff, base_weight, a=weight_steepness, b=weight_mid,
+                                     max_rt=max_rt)
+    # DEBUG
+    # if (random() * 100 < 1):
+    #     print(f'weights:\t{rt_diff=:.2f}\t{max_rt=:.2f}\t->{base_weight:.2f}')
     return None if base_weight < cutoff else base_weight
 
 
