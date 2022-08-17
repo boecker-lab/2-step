@@ -142,9 +142,9 @@ if __name__ == '__main__':
                     continue
                 # for normal [(graphs, extra, sys), (graphs, extra, sys)] ranker
                 rois = {i: m([[[data.get_graphs()[rows[i][0]]],
-                               torch.as_tensor([data.get_x()[0][rows[i][0]]], dtype=torch.float),
-                               torch.as_tensor([data.get_x()[1][rows[i][0]]], dtype=torch.float)]]
-                             )[0].detach().numpy()[0]
+                               torch.as_tensor([data.get_x()[0][rows[i][0]]], dtype=torch.float).to(m.encoder.device),
+                               torch.as_tensor([data.get_x()[1][rows[i][0]]], dtype=torch.float).to(m.encoder.device)]]
+                             )[0].detach().cpu().numpy()[0]
                         for i in rows}
                 # for nonsym [((graphs, extra), (graphs, extra)), sys] ranker
                 # rois = {i: 1- m([([data.get_graphs()[rows[i][0]]],
