@@ -282,12 +282,13 @@ def train(ranker: MPNranker, bg: Union[BatchGenerator, DataLoader], epochs=2,
         loop = tqdm(bg)
         for x, y, weights, is_confl in loop:
             # move tensors/arrays to correct device
-            if (ranker.extra_features_dim > 0):
-                x[0][1] = torch.as_tensor(x[0][1]).float().to(ranker.encoder.device)
-                x[1][1] = torch.as_tensor(x[1][1]).float().to(ranker.encoder.device)
-            if (ranker.sys_features_dim > 0):
-                x[0][2] = torch.as_tensor(x[0][2]).float().to(ranker.encoder.device)
-                x[1][2] = torch.as_tensor(x[1][2]).float().to(ranker.encoder.device)
+            # NOTE: also move extr/sys arrays/tensors if feature dim == 0; might cause bug?
+            # if (ranker.extra_features_dim > 0):
+            x[0][1] = torch.as_tensor(x[0][1]).float().to(ranker.encoder.device)
+            x[1][1] = torch.as_tensor(x[1][1]).float().to(ranker.encoder.device)
+            # if (ranker.sys_features_dim > 0):
+            x[0][2] = torch.as_tensor(x[0][2]).float().to(ranker.encoder.device)
+            x[1][2] = torch.as_tensor(x[1][2]).float().to(ranker.encoder.device)
             weights = torch.as_tensor(weights).to(ranker.encoder.device)
             is_confl = torch.as_tensor(is_confl).to(ranker.encoder.device)
             ranker.zero_grad()
