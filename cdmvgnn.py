@@ -1,5 +1,7 @@
 import sys
-sys.path.append('../CD-MVGNN')
+import os.path
+dir_ = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
+sys.path.append(dir_ + '/CD-MVGNN')
 from dglt.models.zoo.mpnn import DualMPNNPlus, DualMPNN
 from argparse import Namespace
 
