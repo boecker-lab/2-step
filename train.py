@@ -304,12 +304,13 @@ if __name__ == '__main__':
             print(f'removed {len(compounds_to_remove)} compounds occuring '
                   'in test data from training data')
         if (args.exclude_compounds_list is not None):
-            # List of compounds, first line has to be either id, smiles.std, inchi.std, inchikey.std
+            # exclude everything from exclusion list/table where all columns match
+            # e.g., only smiles; or smiles and dataset_id
             to_exclude = pd.read_csv(args.exclude_compounds_list)
-            col = to_exclude.columns[0]
             prev_len = len(data.df)
-            data.df = data.df.loc[~data.df[col].isin(to_exclude[col].tolist())]
-            print(f'removed {prev_len - len(data.df)} compounds by column {col} '
+            data.df = pd.merge(data.df, to_exclude, on=to_exclude.columns.tolist(), how='outer',
+                               indicator=True).query('_merge=="left_only"').drop('_merge', axis=1)
+            print(f'removed {prev_len - len(data.df)} compounds by column(s) {",".join(to_exclude.columns)} '
                   f'from exclusion list (length {len(to_exclude)})')
         if (args.balance and len(args.input) > 1):
             data.balance()
