@@ -341,6 +341,7 @@ if __name__ == '__main__':
         args = EvalArgs().parse_args()
     else:
         args = EvalArgs().parse_args('--model runs/newranker/newranker_ph9 --test_sets 0129 0040 0030 0125 0070 0096 0004 0019 0038 0042 0049 0052 --metadata_void_rt --model_type mpn --epsilon 0.5 --test_stats --confl_pairs /home/fleming/Documents/Uni/RTpred/pairs3.pkl --export_rois'.split())
+        args = EvalArgs().parse_args('--model runs/hsmvstanaka/hsm_vs_tanaka4_both --test_sets 0016 0037 0062 0073 0080 0131 0133 0219 --metadata_void_rt --model_type mpn --epsilon 0.5 --test_stats --confl_pairs /home/fleming/Documents/Uni/RTpred/pairs3.pkl'.split())
 
     if (args.verbose):
         basicConfig(level=INFO)
