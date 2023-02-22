@@ -31,11 +31,7 @@ info = logger.info
 warning = logger.warning
 
 REL_COLUMNS = ['column.length', 'column.id', 'column.particle.size', 'column.temperature',
-               'column.flowrate', 'eluent.A.h2o', 'eluent.A.meoh', 'eluent.A.acn',
-               'eluent.A.formic', 'eluent.A.nh4ac', 'eluent.A.nh4form',
-               'eluent.B.h2o', 'eluent.B.meoh', 'eluent.B.acn', 'eluent.B.formic',
-               'eluent.B.nh4ac', 'eluent.B.nh4form', 'gradient.start.A',
-               'gradient.end.A']
+               'column.flowrate']
 REL_ONEHOT_COLUMNS = ['class.pH.A', 'class.pH.B', 'class.solvent']
 
 
