@@ -16,8 +16,10 @@ if __name__ == '__main__':
     scales = {}
     # 1. add known scaling: 'eluent.', 'gradient.'
     for field in dss.columns:
-        if ((field.startswith('eluent.'))
-            and '.unit' not in field):
+        if field == 'ph':       # manually set pH info
+            scales[field] = {'mean': 7., 'std': 7.}
+        elif ((field.startswith('eluent.'))
+              and '.unit' not in field):
             print(field, 'MANUAL')
             if '.pH' in field:
                 scales[field] = {'mean': 7., 'std': 7.}

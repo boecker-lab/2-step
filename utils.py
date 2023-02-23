@@ -819,6 +819,10 @@ class Data:
                 os.path.dirname(df.file), f'{dataset_id}_metadata.txt'),
                 sep='\t')
             column_information['dataset_id'] = [str(x).rjust(4, '0') for x in column_information['id']]
+            # NOTE: only set when only one constant pH value is found for all parts of the gradient
+            column_information['ph'] = [ph_desc[0] if len(
+                ph_desc:=(r[['eluent.A.pH', 'eluent.B.pH', 'eluent.C.pH', 'eluent.D.pH']].replace(0, np.nan).dropna().drop_duplicates()))
+                                        == 1 else np.nan for i, r in column_information.iterrows()]
             del column_information['id']
             df = df.merge(column_information, on='dataset_id')
         # rows without RT data are useless
