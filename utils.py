@@ -820,19 +820,6 @@ class Data:
                 sep='\t')
             column_information['dataset_id'] = [str(x).rjust(4, '0') for x in column_information['id']]
             del column_information['id']
-            # column_information.set_index('dataset_id', inplace=True, drop=False)
-            if (self.use_newonehot):
-                # include pH info (TODO: should be included in metadata)
-                if (self.ph is None):
-                    # only read in once
-                    self.ph = pd.read_csv(os.path.join(repo_root_folder, 'ph_info.csv'), sep='\t', index_col=0)[REL_ONEHOT_COLUMNS]
-                    # one-hot columns:
-                    for c in REL_ONEHOT_COLUMNS:
-                        self.ph = pd.merge(left=self.ph, right=pd.get_dummies(self.ph[c], prefix=c),
-                                           left_index=True, right_index=True).drop(columns=c)
-                    self.ph.columns = self.ph.columns.str.replace(' ', '') # remove space from col names
-                column_information = column_information.set_index('dataset_id').join(
-                    self.ph, rsuffix='excel')
             df = df.merge(column_information, on='dataset_id')
         # rows without RT data are useless
         df = df[~pd.isna(df.rt)]
