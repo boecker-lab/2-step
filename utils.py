@@ -669,7 +669,7 @@ class Data:
                         else:
                             fallback = pd.DataFrame(hsm.loc[fallback_column]).transpose()
                             fallback.index = [c]
-                        hsm = hsm.append(fallback)
+                        hsm = pd.concat([hsm, fallback], axis=0)
                 elif (c in hsm_dups):
                     warning(f'multiple HSM entries exist for column {c}, the last entry is used')
             means, scales = get_column_scaling(hsm_fields, repo_root_folder=repo_root_folder,
@@ -698,7 +698,7 @@ class Data:
                         else:
                             fallback = pd.DataFrame(tanaka.loc[fallback_column]).transpose()
                             fallback.index = [c]
-                        tanaka = tanaka.append(fallback)
+                        tanaka = pd.concat([tanaka, fallback], axis=0)
                 elif (c in tanaka_dups):
                     warning(f'multiple Tanaka entries exist for column {c}, the last entry is used')
             means, scales = get_column_scaling(tanaka_fields, repo_root_folder=repo_root_folder,
