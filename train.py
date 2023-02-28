@@ -77,7 +77,9 @@ class TrainArgs(Tap):
     sizes_sys: List[int] = [256] # hidden layer sizes for system feature vs. molecule encoding
     encoder_size: int = 256 # MPNencoder size
     mpn_depth: int = 3      # Number of message-passing steps
-    dropout_rate: float = 0.0   # MPN dropout rate
+    dropout_rate_encoder: float = 0.0   # MPN dropout rate
+    dropout_rate_pv: float = 0.0   # system preference encoding dropout rate
+    dropout_rate_rank: float = 0.0   # final ranking layers dropout rate
     # mpn model
     mpn_loss: Literal['margin', 'bce'] = 'margin'
     mpn_margin: float = 0.1
@@ -165,7 +167,7 @@ def prepare_tf_model(args: TrainArgs, input_size: int) -> RankNetNN:
                          hidden_layer_sizes=args.sizes,
                          activation=(['relu'] * len(args.sizes)),
                          solver='adam',
-                         dropout_rate=args.dropout_rate)
+                         dropout_rate=args.dropout_rate_encoder)
 
 def rename_old_writer_logs(prefix):
     suffixes = ['_train', '_val', '_confl']
@@ -214,7 +216,7 @@ if __name__ == '__main__':
     ranker: Union[RankNetNN, MPNranker] = None
     if (args.mpn_encoder.lower() in ['dualmpnnplus', 'dualmpnn']):
         graph_args = get_cdmvgnn_args(
-            encoder_size=args.encoder_size, depth=args.mpn_depth, dropout_rate=args.dropout_rate)
+            encoder_size=args.encoder_size, depth=args.mpn_depth, dropout_rate=args.dropout_rate_encoder)
     else:
         graph_args = None
     # TRAINING
@@ -447,7 +449,9 @@ if __name__ == '__main__':
                                hidden_units=args.sizes, hidden_units_pv=args.sizes_sys,
                                encoder_size=args.encoder_size,
                                depth=args.mpn_depth,
-                               dropout_rate=args.dropout_rate,
+                               dropout_rate_encoder=args.dropout_rate_encoder,
+                               dropout_rate_pv=args.dropout_rate_pv,
+                               dropout_rate_rank=args.dropout_rate_rank,
                                graph_args=graph_args)
         rename_old_writer_logs(f'runs/{run_name}')
         writer = SummaryWriter(f'runs/{run_name}_train')

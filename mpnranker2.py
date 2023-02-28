@@ -29,7 +29,8 @@ warning = logger.warning
 class MPNranker(nn.Module):
     def __init__(self, encoder='dmpnn', extra_features_dim=0, sys_features_dim=0,
                  hidden_units=[16, 8], hidden_units_pv=[16, 2], encoder_size=300,
-                 depth=3, dropout_rate=0.0, graph_args=None):
+                 depth=3, dropout_rate_encoder=0.0, dropout_rate_pv=0.0,
+                 dropout_rate_rank=0.0, graph_args=None):
         super(MPNranker, self).__init__()
         if (encoder == 'dmpnn'):
             args = TrainArgs()
@@ -37,12 +38,12 @@ class MPNranker(nn.Module):
                             'data_path': None,
                             'hidden_size': encoder_size,
                             'depth': depth,
-                            'dropout': dropout_rate})
+                            'dropout': dropout_rate_encoder})
             self.encoder = MPNEncoder(args, get_atom_fdim(), get_bond_fdim())
         elif (encoder.lower() in ['dualmpnnplus', 'dualmpnn']):
             # CD-MVGNN
             self.encoder = get_cdmvgnn_encoder(encoder, encoder_size=encoder_size,
-                                               depth=depth, dropout_rate=dropout_rate,
+                                               depth=depth, dropout_rate=dropout_rate_encoder,
                                                args=graph_args)
             self.graph_args = graph_args
         self.extra_features_dim = extra_features_dim
@@ -52,11 +53,15 @@ class MPNranker(nn.Module):
         self.hidden_pv = nn.ModuleList()
         for i, u in enumerate(hidden_units_pv):
             self.hidden_pv.append(Linear(self.encextra_size if i == 0 else hidden_units_pv[i - 1], u))
+        # pv dropout layer
+        self.dropout_pv = nn.Dropout(dropout_rate_pv)
         # actual ranking layers
         self.hidden = nn.ModuleList()
         for i, u in enumerate(hidden_units):
             self.hidden.append(Linear(encoder_size + extra_features_dim + hidden_units_pv[-1]
                                       if i == 0 else hidden_units[i - 1], u))
+        # ranking dropout layer
+        self.dropout_rank = nn.Dropout(dropout_rate_rank)
         # One ROI value for (graph,extr,sys) sample
         self.ident = Linear(hidden_units[-1], 1)
     def forward(self, batch):
@@ -78,10 +83,14 @@ class MPNranker(nn.Module):
             enc_pv = torch.cat([enc, extra, sysf], 1)
             for h in self.hidden_pv:
                 enc_pv = F.relu(h(enc_pv))
+            # apply dropout to last pv layer
+            enc_pv = self.dropout_pv(enc_pv)
             # now ranking layers: [enc, enc_pv] -> ROI
             enc = torch.cat([enc, extra, enc_pv], 1)
             for h in self.hidden:
                 enc = F.relu(h(enc))
+            # apply dropout to last ranking layer
+            enc = self.dropout_rank(enc)
             # single ROI value
             roi = self.ident(enc)                          # TODO: relu?
             res.append(roi.transpose(0, 1)[0])      # [batch_size]
