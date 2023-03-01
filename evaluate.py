@@ -189,8 +189,7 @@ def visualize_df(df, x_axis='rt'):
     plt.show()
 
 
-def data_stats(d, data, custom_column_fields=None, validation_counts_as_train=False):
-    compound_identifier = 'smiles'
+def data_stats(d, data, custom_column_fields=None, validation_counts_as_train=False, compound_identifier='smiles'):
     train_df = data.df.loc[data.df.split_type.isin(
         ['train'] + (['val'] if validation_counts_as_train else []))]
     train_compounds_all = set(train_df[compound_identifier])
@@ -241,6 +240,7 @@ class EvalArgs(Tap):
     epsilon: float = 0.5 # difference in evaluation measure below which to ignore falsely predicted pairs
     remove_train_compounds: bool = False
     remove_train_compounds_mode: Literal['all', 'column', 'print'] = 'all'
+    compound_identifier: Literal['smiles', 'inchi.std', 'inchikey.std'] = 'smiles' # how to identify compounds for statistics
     plot_diffs: bool = False    # plot for every dataset with outliers marked
     test_stats: bool = False    # overview stats for all datasets
     dataset_stats: bool = False # stats for each dataset
@@ -265,7 +265,7 @@ def load_model(path: str, type_='keras'):
     return model, data, config
 
 
-def classyfire_stats(d: Data, args: EvalArgs, plot=False):
+def classyfire_stats(d: Data, args: EvalArgs, plot=False, compound_identifier='smiles'):
     acc2, results, matches = eval2(d.df, args.epsilon, 'classyfire.class')
     print(f'{ds}: {acc2:.2%} accuracy)')
     groups = results.groupby('classyfire.class')
@@ -279,7 +279,6 @@ def classyfire_stats(d: Data, args: EvalArgs, plot=False):
                                    + [len(d.df)])
     matches_df['class_perc'] = matches_df.num_compounds / len(d.df)
     train_compounds = []
-    compound_identifier = 'inchi.std' if 'inchi.std' in d.df else 'smiles'
     train_compounds_all = len(set(data.df[compound_identifier].tolist()))
     for c in matches_df.index.tolist()[:-1]:
         compounds_perc = len(set(data.df.loc[data.df['classyfire.class'] == c,
@@ -417,14 +416,13 @@ if __name__ == '__main__':
                              isomeric=args.isomeric)
         if (args.remove_train_compounds):
             info('removing train compounds')
-            compound_identifier = 'inchi.std' if 'inchi.std' in d.df and 'inchi.std' in data.df else 'smiles'
-            train_compounds_all = set(data.df[compound_identifier])
+            train_compounds_all = set(data.df[args.compound_identifier])
             this_column = d.df['column.name'].values[0]
-            train_compounds_col = set(data.df.loc[data.df['column.name'] == this_column, compound_identifier])
+            train_compounds_col = set(data.df.loc[data.df['column.name'] == this_column, args.compound_identifier])
             if (args.remove_train_compounds_mode == 'print'):
                 print('compounds overlap to training data: '
-                      + f'{len(set(d.df[compound_identifier]) & train_compounds_all) / len(set(d.df[compound_identifier])) * 100:.0f}% (all), '
-                      + f'{len(set(d.df[compound_identifier]) & train_compounds_col) / len(set(d.df[compound_identifier])) * 100:.0f}% (same column)')
+                      + f'{len(set(d.df[args.compound_identifier]) & train_compounds_all) / len(set(d.df[args.compound_identifier])) * 100:.0f}% (all), '
+                      + f'{len(set(d.df[args.compound_identifier]) & train_compounds_col) / len(set(d.df[args.compound_identifier])) * 100:.0f}% (same column)')
             else:
                 if (args.remove_train_compounds_mode == 'all'):
                     train_compounds = train_compounds_all
@@ -433,7 +431,7 @@ if __name__ == '__main__':
                 else:
                     raise NotImplementedError(args.remove_train_compounds_mode)
                 prev_len = len(d.df)
-                d.df = d.df.loc[~d.df[compound_identifier].isin(train_compounds)]
+                d.df = d.df.loc[~d.df[args.compound_identifier].isin(train_compounds)]
                 if args.verbose:
                     print(f'{ds} evaluation: removed {prev_len - len(d.df)} compounds also appearing '
                           f'in the training data (now {len(d.df)} compounds)')
@@ -490,7 +488,7 @@ if __name__ == '__main__':
         # acc2, results = eval2(d.df, args.epsilon)
         if (args.classyfire):
             info('computing classyfire stats')
-            classyfire_stats(d, args)
+            classyfire_stats(d, args, compound_identifier=args.compound_identifier)
         if (args.dataset_stats):
             info('computing dataset stats')
             dataset_stats(d)
@@ -499,7 +497,7 @@ if __name__ == '__main__':
             pass
         if (args.test_stats):
             info('computing test stats')
-            stats = data_stats(d, data, data.custom_column_fields)
+            stats = data_stats(d, data, data.custom_column_fields, compound_identifier=args.compound_identifier)
             stats.update({'acc': acc, 'id': ds})
             if (confl_pairs is not None):
                 stats.update({'acc_confl': acc_confl, 'acc_nonconfl': acc_nonconfl, 'num_confl': np.array(confl).sum()})
