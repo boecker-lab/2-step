@@ -189,14 +189,16 @@ def visualize_df(df, x_axis='rt'):
     plt.show()
 
 
-def data_stats(d, data, custom_column_fields=None):
-    compound_identifier = 'inchi.std' if 'inchi.std' in d.df and 'inchi.std' in data.df else 'smiles'
-    train_compounds_all = set(data.df[compound_identifier])
-    this_column = d.df['column.name'].values[0]
-    train_compounds_col = set(data.df.loc[data.df['column.name'] == this_column, compound_identifier])
+def data_stats(d, data, custom_column_fields=None, validation_counts_as_train=False):
+    compound_identifier = 'smiles'
+    train_df = data.df.loc[data.df.split_type.isin(
+        ['train'] + (['val'] if validation_counts_as_train else []))]
+    train_compounds_all = set(train_df[compound_identifier])
+    this_column = d.df['column.name'].unique().item()
+    train_compounds_col = set(train_df.loc[train_df['column.name'] == this_column, compound_identifier])
     test_compounds = set(d.df[compound_identifier])
     system_fields = custom_column_fields
-    train_configs = [t[1:] for t in set(data.df[['dataset_id', 'column.name'] + system_fields]
+    train_configs = [t[1:] for t in set(train_df[['dataset_id', 'column.name'] + system_fields]
                                         .itertuples(index=False, name=None))]
     test_config = tuple(d.df[['column.name'] + system_fields].iloc[0].tolist())
     same_config = len([t for t in train_configs if t == test_config])
@@ -528,6 +530,8 @@ if __name__ == '__main__':
             fig.show(renderer='browser')
     if (args.test_stats and len(test_stats) > 0):
         test_stats_df = pd.DataFrame.from_records(test_stats, index='id')
+        pd.set_option('display.max_columns', 100)
+        pd.set_option('display.max_rows', 500)
         print(test_stats_df)
         print(test_stats_df[['acc', 'acc_confl', 'acc_nonconfl']].agg(['mean', 'median']))
         if (args.output is not None):
