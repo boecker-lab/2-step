@@ -2,13 +2,10 @@ from itertools import combinations
 from logging import basicConfig, INFO, info, warning
 import pandas as pd
 import numpy as np
-from PIL import Image
 from rdkit.Chem.Draw import MolToImage
 from rdkit.Chem import MolFromSmiles
-from keras import backend as K
 import argparse
 import os
-import tensorflow as tf
 import pickle
 import json
 import re
@@ -123,6 +120,7 @@ def rt_roi_diffs(data, y, preds, k=3):
 def visualize_df(df, x_axis='rt'):
     import matplotlib.pyplot as plt
     from matplotlib.offsetbox import OffsetImage, AnnotationBbox
+    from PIL import Image
     fig = plt.figure()
     ax = fig.add_subplot(111)
     x, y = ('rt', 'roi') if x_axis == 'rt' else ('roi', 'rt')
@@ -214,6 +212,7 @@ def data_stats(d, data, custom_column_fields=None, validation_counts_as_train=Fa
 
 
 def predict(X, model, batch_size):
+    from keras import backend as K
     preds = []
     ranker_output = K.function([model.layers[0].input], [model.layers[-3].get_output_at(0)])
     for x in np.array_split(X, np.ceil(X.shape[0] / batch_size * 10)):
@@ -250,6 +249,7 @@ class EvalArgs(Tap):
 
 def load_model(path: str, type_='keras'):
     if (type_ == 'keras'):
+        import tensorflow as tf
         model = tf.keras.models.load_model(path)
         data = pickle.load(open(os.path.join(path, 'assets', 'data.pkl'), 'rb'))
         config = json.load(open(os.path.join(path, 'assets', 'config.json')))
