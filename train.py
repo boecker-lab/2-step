@@ -14,7 +14,7 @@ from tap import Tap
 from typing import List, Literal, Optional, Union
 import pandas as pd
 
-from utils import BatchGenerator, Data
+from utils import Data
 from features import features, parse_feature_spec
 from evaluate import eval_, predict, export_predictions
 from utils_newbg import RankDataset, check_integrity
