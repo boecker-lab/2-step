@@ -143,7 +143,7 @@ def preprocess(data: Data, args: TrainArgs):
         data.nan_columns_to_zeros()
     return data.get_split_data((args.test_split, args.val_split))
 
-def prepare_tf_model(args: TrainArgs, input_size: int) -> RankNetNN:
+def prepare_tf_model(args: TrainArgs, input_size: int):
     if (args.device is not None and re.match(r'[cg]pu:\d', args.device.lower())):
         print(f'attempting to use device {args.device}')
         strategy = tf.distribute.OneDeviceStrategy(f'/{args.device.lower()}')

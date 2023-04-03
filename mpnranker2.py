@@ -13,14 +13,11 @@ from chemprop.models.mpn import (MPNEncoder, get_atom_fdim, get_bond_fdim)
 from chemprop.args import TrainArgs
 from chemprop.features import mol2graph, BatchMolGraph
 from evaluate import eval_, eval_detailed
-from utils import BatchGenerator, Data
+from utils import Data
 import numpy as np
 from pprint import pprint
 import logging
-from rdkit.Chem import Draw
-from PIL import ImageDraw
 from functools import reduce
-from cdmvgnn import get_cdmvgnn_encoder
 
 logger = logging.getLogger('rtranknet.mpnranker2')
 info = logger.info
@@ -42,6 +39,7 @@ class MPNranker(nn.Module):
             self.encoder = MPNEncoder(args, get_atom_fdim(), get_bond_fdim())
         elif (encoder.lower() in ['dualmpnnplus', 'dualmpnn']):
             # CD-MVGNN
+            from cdmvgnn import get_cdmvgnn_encoder
             self.encoder = get_cdmvgnn_encoder(encoder, encoder_size=encoder_size,
                                                depth=depth, dropout_rate=dropout_rate_encoder,
                                                args=graph_args)
@@ -256,8 +254,8 @@ def twin_train(twins: RankerTwins, epochs: int,
             if (ep_save):
                 torch.save(twins, f'{save_name}_ep{epoch + 1}.pt')
 
-def train(ranker: MPNranker, bg: Union[BatchGenerator, DataLoader], epochs=2,
-          writer:SummaryWriter=None, val_g: Union[BatchGenerator, DataLoader]=None,
+def train(ranker: MPNranker, bg: DataLoader, epochs=2,
+          writer:SummaryWriter=None, val_g: DataLoader=None,
           epsilon=0.5, val_writer:SummaryWriter=None,
           confl_writer:SummaryWriter=None,
           steps_train_loss=10, steps_val_loss=100,
@@ -265,6 +263,9 @@ def train(ranker: MPNranker, bg: Union[BatchGenerator, DataLoader], epochs=2,
           margin_loss=0.1, early_stopping_patience=None,
           ep_save=False, learning_rate=1e-3, no_encoder_train=False,
           accs=True, confl_images=False):
+    if (confl_images):
+        from rdkit.Chem import Draw
+        from PIL import ImageDraw
     save_name = ('mpnranker' if writer is None else
                  writer.get_logdir().split('/')[-1].replace('_train', ''))
     ranker.to(ranker.encoder.device)
