@@ -1,10 +1,6 @@
 import logging
 import numpy as np
-import tensorflow as tf
-import torch
-from LambdaRankNN import RankNetNN
 from torch.utils.data.dataloader import DataLoader
-from mpnranker2 import MPNranker, train as mpn_train
 from cdmvgnn import get_cdmvgnn_args
 # from tensorboardX import SummaryWriter
 from torch.utils.tensorboard import SummaryWriter
@@ -203,6 +199,22 @@ if __name__ == '__main__':
         ch.setLevel(logging.INFO)
     else:
         rdBase.DisableLog('rdApp.warning')
+    # importing training libraries, setting associated parameters
+    graph_args = None
+    if (args.model_type == 'mpn'):
+        from mpnranker2 import MPNranker, train as mpn_train
+        graphs = True
+        if (args.mpn_encoder.lower() in ['dualmpnnplus', 'dualmpnn']):
+            from cdmvgnn import get_cdmvgnn_args
+            graph_args = get_cdmvgnn_args(
+                encoder_size=args.encoder_size, depth=args.mpn_depth, dropout_rate=args.dropout_rate_encoder)
+        else:
+            import torch
+    else:
+        import tensorflow as tf
+        from LambdaRankNN import RankNetNN
+        graphs = True
+    # caching
     if (args.cache_file is not None):
         features.write_cache = False # flag for reporting changes to cache
         info('reading in cache...')
@@ -212,13 +224,6 @@ if __name__ == '__main__':
             features.cached = {}
             info('cache file does not exist yet')
     info('reading in data and computing features...')
-    graphs = (args.model_type == 'mpn')
-    ranker: Union[RankNetNN, MPNranker] = None
-    if (args.mpn_encoder.lower() in ['dualmpnnplus', 'dualmpnn']):
-        graph_args = get_cdmvgnn_args(
-            encoder_size=args.encoder_size, depth=args.mpn_depth, dropout_rate=args.dropout_rate_encoder)
-    else:
-        graph_args = None
     # TRAINING
     if (len(args.input) == 1 and os.path.exists(input_ := args.input[0])):
         if (input_.endswith('.csv') or input_.endswith('.tsv')):
@@ -238,14 +243,16 @@ if __name__ == '__main__':
                                       fallback_column=args.fallback_column,
                                       fallback_metadata=args.fallback_metadata)
         elif (input_.endswith('.tf')):
-            print('input is trained Tensorflow model')
             # tensorflow model
+            print('input is trained Tensorflow model')
+            import tensorflow as tf
             ranker = tf.keras.models.load_model(input_)
             data = pickle.load(open(os.path.join(input_, 'assets', 'data.pkl'), 'rb'))
             config = json.load(open(os.path.join(input_, 'assets', 'config.json')))
         elif (input_.endswith('.pt')):
-            print('input is trained PyTorch model')
             # pytorch/mpn model
+            print('input is trained PyTorch model')
+            import torch
             # ensure Data/config.json also exist
             assert os.path.exists(data_path := input_.replace('.pt', '_data.pkl'))
             assert os.path.exists(config_path := input_.replace('.pt', '_config.json'))
@@ -413,7 +420,7 @@ if __name__ == '__main__':
         plt.plot(plot_x, [bg.weight_fn(_, args.weight_steep, args.weight_mid) for _ in plot_x])
         plt.show()
     if (not graphs):
-        if (ranker is None):    # otherwise loaded already
+        if ('ranker' not in vars() or ranker is None):    # otherwise loaded already
             ranker = prepare_tf_model(args, train_x.shape[1])
         es = tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience=2,
                                               restore_best_weights=True)
@@ -442,7 +449,7 @@ if __name__ == '__main__':
             test_preds = predict(test_x, ranker.model, args.batch_size)
     else:
         # MPNranker
-        if (ranker is None):    # otherwise loaded already
+        if ('ranker' not in vars() or ranker is None):    # otherwise loaded already
             ranker = MPNranker(encoder=args.mpn_encoder,
                                extra_features_dim=train_x.shape[1],
                                sys_features_dim=train_sys.shape[1],
