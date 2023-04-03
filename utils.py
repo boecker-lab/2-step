@@ -9,7 +9,6 @@ from sklearn.preprocessing import StandardScaler
 import pickle
 import os
 import re
-from classyfire import get_onehot, get_binary
 from dataclasses import dataclass, field
 from typing import Optional, List, Tuple, Union, Iterable, Callable, Literal
 import logging
@@ -251,6 +250,7 @@ class Data:
         return ids.to_list()
 
     def compute_classes(self, classes=None, max_rank=None, all_classes=False):
+        from classyfire import get_onehot, get_binary
         if (classes is None):
             classes = self.df_classes()
         if all_classes:
