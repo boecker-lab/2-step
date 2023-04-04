@@ -71,7 +71,7 @@ class MPNranker(nn.Module):
                 if (isinstance(graphs[0], str)):
                     enc = torch.cat([self.encoder([[g]]) for g in graphs], 0)  # [batch_size x encoder size]
                 else:
-                    enc = torch.cat([self.encoder(g) for g in graphs], 0)  # [batch_size x encoder size]
+                    enc = torch.cat([self.encoder([g]) for g in graphs], 0)  # [batch_size x encoder size]
             else:
                 # just assume cd-mvgnn model
                 # NOTE: has two outputs: for bonds and atom
@@ -126,7 +126,7 @@ class MPNranker(nn.Module):
                     if (isinstance(graphs[0], str)):
                         features.extend([self.encoder([[g]]) for g in graphs[start:end]])
                     else:
-                        features.extend([self.encoder(g) for g in graphs[start:end]])
+                        features.extend([self.encoder([g]) for g in graphs[start:end]])
         if (ret_features):
             return np.concatenate(preds), np.concatenate(features)
         return np.concatenate(preds)
