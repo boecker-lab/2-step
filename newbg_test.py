@@ -260,15 +260,19 @@ def test_new_ranker():
     (ranker((x[0], x[2])) < ranker((x[1], x[2]))) == (ranker(x) < 0.5)
 
 def test_new_ranker_single():
+    root_folder = '/home/fleming/Documents/Projects/RtPredTrainingData_mostcurrent/'
     # data
     data = Data(use_system_information=True,
                 metadata_void_rt=True,
                 custom_features=['MolLogP'],
                 use_hsm=True,
                 custom_column_fields='column.flowrate column.length column.id'.split(),
-                graph_mode=True)
+                graph_mode=True,
+                smiles_for_graphs=True,
+                repo_root_folder=root_folder)
+    dss = ['0001']
     for did in dss:
-        data.add_dataset_id(did, isomeric=True)
+        data.add_dataset_id(did, isomeric=True, repo_root_folder=root_folder)
     ((train_graphs, train_x, train_sys, train_y),
      (val_graphs, val_x, val_sys, val_y),
      (test_graphs, test_x, test_sys, test_y)) = preprocess(data, TrainArgs().parse_args(
@@ -276,10 +280,7 @@ def test_new_ranker_single():
     traindata = RankDataset(x_mols=train_graphs, x_extra=train_x, x_sys=train_sys,
                             x_ids=data.df.iloc[data.train_indices].smiles.tolist(),
                             y=train_y, dataset_info=data.df.dataset_id.iloc[data.train_indices].tolist(),
-                            void_info=data.void_info, y_neg=True,
-                            conflicting_smiles_pairs=list(pickle.load(
-                                open('../../Uni/RTpred/pairs_0068_0138.pkl', 'rb'))),
-                            only_confl=False)
+                            void_info=data.void_info, y_neg=True)
     trainloader = DataLoader(traindata, 32, shuffle=True)
 
     # trainloader = test_newbg()

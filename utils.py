@@ -162,6 +162,7 @@ class Data:
     hsm_fields: List[str] = field(default_factory=lambda: ['H', 'S*', 'A', 'B', 'C (pH 2.8)', 'C (pH 7.0)'])
     tanaka_fields: List[str] = field(default_factory=lambda: ['kPB', 'αCH2', 'αT/O', 'αC/P', 'αB/P', 'αB/P.1'])
     graph_mode: bool = False
+    smiles_for_graphs: bool = False
     void_info: dict = field(default_factory=dict)
     fallback_column: str = 'Waters ACQUITY UPLC BEH C18' # can be 'average'
     fallback_metadata: str = '0045'                       # can be 'average'
@@ -191,22 +192,25 @@ class Data:
 
 
     def compute_graphs(self):
-        info('computing graphs')
-        t0 = time()
-        smiles_unique = set(self.df.smiles)
-        if (self.encoder == 'dmpnn'):
-            from chemprop.features import mol2graph
-            graphs_unique = {s: mol2graph([s]) for s in smiles_unique}
-        elif (self.encoder.lower() in ['dualmpnnplus', 'dualmpnn']):
-            import sys
-            sys.path.append('../CD-MVGNN')
-            from dglt.data.featurization.mol2graph import mol2graph
-            graph_dict = {}
-            graphs_unique = {s: mol2graph([s], graph_dict, self.graph_args)
-                             for s in smiles_unique}
-        self.graphs = np.array([graphs_unique[s] for s in self.df.smiles])
-        info(f'computing graphs done ({str(timedelta(seconds=time() - t0))} elapsed)')
-        # self.graphs = np.array([mol2graph([s]) for s in self.df.smiles])
+        if (self.smiles_for_graphs):
+            self.graphs = self.df.smiles.values
+        else:
+            info('computing graphs')
+            t0 = time()
+            smiles_unique = set(self.df.smiles)
+            if (self.encoder == 'dmpnn'):
+                from chemprop.features import mol2graph
+                graphs_unique = {s: mol2graph([s]) for s in smiles_unique}
+            elif (self.encoder.lower() in ['dualmpnnplus', 'dualmpnn']):
+                import sys
+                sys.path.append('../CD-MVGNN')
+                from dglt.data.featurization.mol2graph import mol2graph
+                graph_dict = {}
+                graphs_unique = {s: mol2graph([s], graph_dict, self.graph_args)
+                                 for s in smiles_unique}
+            self.graphs = np.array([graphs_unique[s] for s in self.df.smiles])
+            info(f'computing graphs done ({str(timedelta(seconds=time() - t0))} elapsed)')
+            # self.graphs = np.array([mol2graph([s]) for s in self.df.smiles])
 
     def compute_features(self,
                          filter_features=None,

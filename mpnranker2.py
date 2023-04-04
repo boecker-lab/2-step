@@ -9,7 +9,7 @@ import pandas as pd
 from typing import List, Union, Tuple
 from tqdm import tqdm
 from torch.nn.modules.linear import Linear
-from chemprop.models.mpn import (MPNEncoder, get_atom_fdim, get_bond_fdim)
+from chemprop.models.mpn import MPN
 from chemprop.args import TrainArgs
 from chemprop.features import mol2graph, BatchMolGraph
 from evaluate import eval_, eval_detailed
@@ -36,7 +36,7 @@ class MPNranker(nn.Module):
                             'hidden_size': encoder_size,
                             'depth': depth,
                             'dropout': dropout_rate_encoder})
-            self.encoder = MPNEncoder(args, get_atom_fdim(), get_bond_fdim())
+            self.encoder = MPN(args)
         elif (encoder.lower() in ['dualmpnnplus', 'dualmpnn']):
             # CD-MVGNN
             from cdmvgnn import get_cdmvgnn_encoder
@@ -67,10 +67,11 @@ class MPNranker(nn.Module):
         res = []
         for graphs, extra, sysf in batch:       # normally 1 or 2
             # encode molecules
-            if (isinstance(graphs[0], str)):
-                graphs = [mol2graph([_]) for _ in graphs]
-            if (isinstance(self.encoder, MPNEncoder)):
-                enc = torch.cat([self.encoder(g) for g in graphs], 0)  # [batch_size x encoder size]
+            if (isinstance(self.encoder, MPN)):
+                if (isinstance(graphs[0], str)):
+                    enc = torch.cat([self.encoder([[g]]) for g in graphs], 0)  # [batch_size x encoder size]
+                else:
+                    enc = torch.cat([self.encoder(g) for g in graphs], 0)  # [batch_size x encoder size]
             else:
                 # just assume cd-mvgnn model
                 # NOTE: has two outputs: for bonds and atom
@@ -99,7 +100,7 @@ class MPNranker(nn.Module):
 
     def predict(self, graphs, extra, sysf, batch_size=8192,
                 prog_bar=False, ret_features=False):
-        if (isinstance(self.encoder, MPNEncoder)):
+        if (isinstance(self.encoder, MPN)):
             self.eval()
         else:
             # TODO: necessary because dualmpnn(plus) has different `forward` outputs
@@ -122,7 +123,10 @@ class MPNranker(nn.Module):
                          sysf[start:end])
                 preds.append(self((batch, ))[0].cpu().detach().numpy())
                 if (ret_features):
-                    features.extend([self.encoder(g) for g in graphs[start:end]])
+                    if (isinstance(graphs[0], str)):
+                        features.extend([self.encoder([[g]]) for g in graphs[start:end]])
+                    else:
+                        features.extend([self.encoder(g) for g in graphs[start:end]])
         if (ret_features):
             return np.concatenate(preds), np.concatenate(features)
         return np.concatenate(preds)

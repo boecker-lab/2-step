@@ -80,6 +80,7 @@ class TrainArgs(Tap):
     mpn_loss: Literal['margin', 'bce'] = 'margin'
     mpn_margin: float = 0.1
     mpn_encoder: Literal['dmpnn', 'dualmpnnplus', 'dualmpnn'] = 'dmpnn'
+    smiles_for_graphs: bool = False # always use SMILES internally, compute graphs only on demand
     # pairs
     epsilon: float = 0.5 # difference in evaluation measure below which to ignore falsely predicted pairs
     pair_step: int = 1
@@ -230,7 +231,7 @@ if __name__ == '__main__':
             print('input from CSV/TSV file')
             # csv file
             data = Data.from_raw_file(input_, void_rt=args.void_rt,
-                                      graph_mode=graphs,
+                                      graph_mode=graphs, smiles_for_graphs=args.smiles_for_graphs,
                                       use_compound_classes=args.comp_classes, use_system_information=args.sysinfo,
                                       metadata_void_rt=args.metadata_void_rt,
                                       classes_l_thr=args.classes_l_thr, classes_u_thr=args.classes_u_thr,
@@ -282,7 +283,7 @@ if __name__ == '__main__':
                     repo_root_folder=args.repo_root_folder,
                     custom_column_fields=args.custom_column_fields,
                     hsm_fields=args.hsm_fields, tanaka_fields=args.tanaka_fields,
-                    graph_mode=graphs,
+                    graph_mode=graphs, smiles_for_graphs=args.smiles_for_graphs,
                     fallback_column=args.fallback_column,
                     fallback_metadata=args.fallback_metadata,
                     encoder=args.mpn_encoder, graph_args=graph_args)
