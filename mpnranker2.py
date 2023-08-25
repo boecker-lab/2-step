@@ -3,6 +3,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
+from torch.optim.lr_scheduler import ExponentialLR
 from torch.utils.data.dataloader import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 import pandas as pd
@@ -265,7 +266,8 @@ def train(ranker: MPNranker, bg: DataLoader, epochs=2,
           steps_train_loss=10, steps_val_loss=100,
           batch_size=8192, sigmoid_loss=False,
           margin_loss=0.1, early_stopping_patience=None,
-          ep_save=False, learning_rate=1e-3, no_encoder_train=False,
+          ep_save=False, learning_rate=1e-3, gradient_clip=5,
+          no_encoder_train=False,
           accs=True, confl_images=False):
     if (confl_images):
         from rdkit.Chem import Draw
@@ -278,6 +280,8 @@ def train(ranker: MPNranker, bg: DataLoader, epochs=2,
         for p in ranker.encoder.parameters():
             p.requires_grad = False
     optimizer = optim.Adam(ranker.parameters(), lr=learning_rate)
+    scheduler = ExponentialLR(optimizer, gamma=0.8,
+                              verbose=True)
     # loss_fun = (nn.BCELoss(reduction='none') if sigmoid_loss
     #             else nn.MarginRankingLoss(margin_loss, reduction='none'))
     # loss_fun = nn.BCEWithLogitsLoss(reduction='none')
@@ -310,6 +314,8 @@ def train(ranker: MPNranker, bg: DataLoader, epochs=2,
             loss_sum += loss[0].item()
             iter_count += 1
             loss[0].backward()
+            if (gradient_clip is not None and gradient_clip > 0):
+                nn.utils.clip_grad_norm_(ranker.parameters(), gradient_clip)
             optimizer.step()
             if (is_confl.sum() > 0):
                 confl_loss_sum += loss[1][is_confl].mean().item()
@@ -447,4 +453,5 @@ def train(ranker: MPNranker, bg: DataLoader, epochs=2,
 
         if (ep_save):
             torch.save(ranker, f'{save_name}_ep{epoch + 1}.pt')
+        scheduler.step()
         ranker.train()
