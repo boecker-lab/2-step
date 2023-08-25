@@ -43,10 +43,12 @@ def get_column_t0(ds, repo_root_folder):
 
 
 def get_outliers(ds, repo_root_folder, regressor=RandomForestRegressor(), iqr_mod=1.5, print_errors=True,
-                 print_filterered_perc=True, boxplot=False, only_errors=False, void_factor=2):
+                 print_filterered_perc=True, boxplot=False, only_errors=False, void_factor=2,
+                 extra_data=False):
+    extra_data_ret = {}
+    t0 = get_column_t0(ds, repo_root_folder=repo_root_folder)
     X, y = get_ds_data(ds, repo_root_folder=repo_root_folder,
-                       t0=get_column_t0(ds, repo_root_folder=repo_root_folder),
-                       void_factor=void_factor)
+                       t0=t0, void_factor=void_factor)
     if (only_errors):
         X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2)
         regressor.fit(X_train, y_train)
@@ -67,7 +69,11 @@ def get_outliers(ds, repo_root_folder, regressor=RandomForestRegressor(), iqr_mo
         outlier_indices = y.loc[(y - y_pred).abs() > fence_high].index.tolist()
         if (print_filterered_perc):
             print(f'filtered: {len(outlier_indices) / len(y):.0%}')
-    return outlier_indices, errors
+        if (extra_data):
+            extra_data_ret['predictions'] = pd.DataFrame({'rt_true': y, 'rt_pred': y_pred})
+            extra_data_ret['void_thr'] = void_factor * t0
+            extra_data_ret['error_thr'] = fence_high
+    return outlier_indices, errors, extra_data_ret
 
 if __name__ == '__main__':
     args = QSARArgs().parse_args()
