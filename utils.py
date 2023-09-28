@@ -413,6 +413,19 @@ class Data:
             means, scales = get_column_scaling(['ph'], repo_root_folder=repo_root_folder,
                                            scale_dict=self.sys_scales)
             fields.append((self.df[['ph']].astype(float).values - means) / scales)
+        # NOTE: gradient (or other compound-specific system features) HAVE TO BE LAST!
+        self.x_info_global_num = np.concatenate(fields, axis=1).shape[1]
+        print(f'{self.x_info_global_num=}')
+        if (use_gradient):
+            # NOTE: not scaled!
+            if self.solvent_order is not None:
+                solvent_cols = self.solvent_order
+            else:
+                solvent_cols = [c for c in self.df.columns if c.startswith('gradient_conc_')]
+            fields.append(self.df[solvent_cols])
+            # TODO: save solvents order!
+            self.solvent_order = solvent_cols
+        np.savetxt('/tmp/sys_array.txt', np.concatenate(fields, axis=1), fmt='%.2f')
         self.x_info = np.concatenate(fields, axis=1)
         self.custom_column_fields = names
 
@@ -496,6 +509,19 @@ class Data:
                                         == 1 else np.nan for i, r in column_information.iterrows()]
             del column_information['id']
             df = df.merge(column_information, on='dataset_id')
+            # gradient
+            gradient_information = pd.read_csv(os.path.join(
+                os.path.dirname(primary_path), f'{dataset_id}_gradient.tsv'),
+                sep='\t')
+            for part in range(4):
+                part_char = chr(65 + part) # A-D
+                df[f'gradient_{part_char}_conc'] = np.interp(df.rt, gradient_information['t [min]'], gradient_information[f'{part_char} [%]'])
+            for solvent in [c for c in df.columns if c.startswith('eluent.A.') and not (c.endswith('.unit') or c.endswith('.pH'))]:
+                solvent_name = solvent.split('.')[-1]
+                df[f'gradient_conc_{solvent_name}'] = np.sum([
+                    (df[f'gradient_{part_char}_conc'] / 100) * (df[f'eluent.{part_char}.{solvent_name}'] / 100) # NOTE: assumes values 0-100
+                    for part_char in 'ABCD'], axis=0)
+            df['gradient_flowrate'] = np.interp(df.rt, gradient_information['t [min]'], gradient_information['flow rate [ml/min]'])
         # rows without RT data are useless
         df = df[~pd.isna(df.rt)]
         # so are compounds (smiles) with multiple rts

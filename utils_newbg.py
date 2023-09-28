@@ -25,6 +25,7 @@ class RankDataset(Dataset):
     x_sys: Union[np.ndarray, List[List[float]]]   # system features
     x_ids: List[str]                              # ID (e.g., smiles) for each sample
     y: Union[np.ndarray, List[float]]             # retention times
+    x_sys_global_num: Optional[int] = None        # which (exclusive max slice index) of the x_sys features are global for the whole dataset
     use_pair_weights: bool=True                   # use pair weights (epsilon)
     epsilon: float=0.5                                  # soft threshold for retention time difference
     use_group_weights: bool=True                  # weigh number of samples per group
@@ -58,15 +59,18 @@ class RankDataset(Dataset):
         assert not (self.no_inter_pairs and self.no_intra_pairs), (
             'no_inter_pairs and no_intra_pairs can\'t be both set')
         # transform single compounds(+info) into pairs for ranking
-        (self.x1_indices, self.x2_indices, self.y_trans,
-         self.weights, self.sys_indices, self.is_confl) = self._transform_pairwise()
+        transformed = self._transform_pairwise()
+        self.x1_indices = transformed['x1_indices']
+        self.x2_indices = transformed['x2_indices']
+        self.y_trans = transformed['y_trans']
+        self.weights = transformed['weights']
+        self.is_confl = transformed['is_confl']
 
     def _transform_pairwise(self):
         x1_indices = []
         x2_indices = []
         y_trans = []
         weights = []
-        sys_indices = []
         is_confl = []
         # group by dataset
         groups = {}
@@ -121,8 +125,6 @@ class RankDataset(Dataset):
                     y_trans.append(yi)
                     # weights
                     weights.append(w)
-                    # sysinfo
-                    sys_indices.append(pos_idx)
                     # is conflicting pair?
                     is_confl.append(frozenset((pos_idx, neg_idx)) in confl_indices)
                     pair_nr += 1
@@ -159,8 +161,6 @@ class RankDataset(Dataset):
                     x2_indices.append(neg_idx)
                     y_trans.append(yi)
                     weights.append(1.0) # absolute rt difference of pairs of two different datasets can't be compared
-                    # NOTE: sysinfo does not work for inter pairs, therefore append None to get runtime error
-                    sys_indices.append(None)
                     is_confl.append(None)
                     pair_nr += 1
                 pair_nrs[(group1, group2)] = pair_nr
@@ -170,7 +170,7 @@ class RankDataset(Dataset):
         info(f'{inter_pair_nr=}, {intra_pair_nr=}')
         # cluster groups by system params
         if (self.cluster):
-            cluster_sys = {g: self.x_sys[sys_indices[group_index_start[g]]] for g in pair_nrs
+            cluster_sys = {g: self.x_sys[x1_indices[group_index_start[g]]][:self.x_sys_global_num] for g in pair_nrs
                            if group_index_end[g] != group_index_start[g]} # empty group
             clusters = {}
             for g, sysf in cluster_sys.items():
@@ -208,7 +208,6 @@ class RankDataset(Dataset):
         x2_indices_new = []
         y_trans_new = []
         weights_new = []
-        sys_indices_new = []
         is_confl_new = []
         removed_counter = 0
         for i in range (len(y_trans)):
@@ -218,13 +217,15 @@ class RankDataset(Dataset):
                 y_trans_new.append(y_trans[i])
                 weights_new.append(weights[i])
                 is_confl_new.append(is_confl[i])
-                sys_indices_new.append(sys_indices[i])
             else:
                 removed_counter += 1
         info(f'removed {removed_counter} (of {len(y_trans)}) pairs for having "None" weights')
         info('done generating pairs')
-        return np.asarray(x1_indices_new), np.asarray(x2_indices_new), np.asarray(
-            y_trans_new), np.asarray(weights_new), np.asarray(sys_indices_new), np.asarray(is_confl_new)
+        return dict(x1_indices= np.asarray(x1_indices_new),
+                    x2_indices=np.asarray(x2_indices_new),
+                    y_trans=np.asarray(y_trans_new),
+                    weights=np.asarray(weights_new),
+                    is_confl=np.asarray(is_confl_new))
 
 
     @staticmethod
@@ -310,12 +311,11 @@ class RankDataset(Dataset):
     def remove_indices(self, indices):
         assert all(len(_) == len(self.x1_indices) for _ in [
             self.x1_indices, self.x2_indices, self.y_trans, self.weights,
-            self.sys_indices, self.is_confl])
+            self.is_confl])
         x1_indices_new = []
         x2_indices_new = []
         y_trans_new = []
         weights_new = []
-        sys_indices_new = []
         is_confl_new = []
         indices = set(indices)
         for i in range(len(self.x1_indices)):
@@ -324,34 +324,35 @@ class RankDataset(Dataset):
                 x2_indices_new.append(self.x2_indices[i])
                 y_trans_new.append(self.y_trans[i])
                 weights_new.append(self.weights[i])
-                sys_indices_new.append(self.sys_indices[i])
                 is_confl_new.append(self.is_confl[i])
-        (self.x1_indices, self.x2_indices, self.y_trans,
-         self.weights, self.sys_indices, self.is_confl) = (
-             np.asarray(x1_indices_new), np.asarray(x2_indices_new), np.asarray(y_trans_new), np.asarray(weights_new), np.asarray(sys_indices_new), np.asarray(is_confl_new))
-
-
+        self.x1_indices = np.asarray(x1_indices_new)
+        self.x2_indices = np.asarray(x2_indices_new)
+        self.y_trans = np.asarray(y_trans_new)
+        self.weights = np.asarray(weights_new)
+        self.is_confl = np.asarray(is_confl_new)
 
     def __len__(self):
         return self.y_trans.shape[0]
 
     def __getitem__(self, index):
-        # for now, only pairs from one system are returned; thus x1_sys == x2_sys
+        # x1_sys == x2_sys for the first `x_info_global_num` features
         # returns ((graph, extra, sys) x 2, y, weight)
         return (((self.x_mols[self.x1_indices[index]], self.x_extra[self.x1_indices[index]],
-                  self.x_sys[self.sys_indices[index]]),
+                  self.x_sys[self.x1_indices[index]]),
                  (self.x_mols[self.x2_indices[index]], self.x_extra[self.x2_indices[index]],
-                  self.x_sys[self.sys_indices[index]])),
+                  self.x_sys[self.x2_indices[index]])),
                 self.y_trans[index], self.weights[index], self.is_confl[index])
 
 def check_integrity(x: RankDataset, clean=False):
     pairs = {}
-    for i, (x1, x2, y, sys_i) in enumerate(zip(x.x1_indices, x.x2_indices, x.y_trans, x.sys_indices)):
+    for i, (x1, x2, y) in enumerate(zip(x.x1_indices, x.x2_indices, x.y_trans)):
         p = tuple(sorted([x.x_ids[x1], x.x_ids[x2]]))
         if (p[0] == x.x_ids[x2]):
             y = (-1 if x.y_neg else 0) if y == 1 else 1
         pairs.setdefault(p, []).append(
-            (x.dataset_info[x1], y, x.x_sys[sys_i], i))
+            (x.dataset_info[x1], y, x.x_sys[x1][:x.x_sys_global_num], i))
+        # NOTE: only taking the global sys features makes most sense, although due to different
+        # gradient positions, pairs cleaned in this manner *technically can be possible*.
     records = []
     clean_indices = []
     same_settings_datasets = []

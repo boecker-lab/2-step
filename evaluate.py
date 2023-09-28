@@ -381,6 +381,8 @@ if __name__ == '__main__':
                  'use_usp_codes': data.use_usp_codes,
                  'custom_features': data.descriptors,
                  'use_hsm': data.use_hsm,
+                 'use_ph': data.use_ph,
+                 'use_gradient': data.use_gradient,
                  'use_newonehot': data.use_newonehot,
                  'repo_root_folder': args.repo_root_folder,
                  'custom_column_fields': data.custom_column_fields,
@@ -397,6 +399,8 @@ if __name__ == '__main__':
         data_args['tanaka_fields'] = data.tanaka_fields
     if (hasattr(data, 'sys_scales')):
         data_args['sys_scales'] = data.sys_scales
+    if (hasattr(data, 'solvent_order')):
+        data_args['solvent_order'] = data.solvent_order
     info('model preprocessing done')
     if (args.confl_pairs):
         info('loading conflicting pairs')

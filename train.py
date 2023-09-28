@@ -62,6 +62,8 @@ class TrainArgs(Tap):
     fallback_column: str = 'Waters ACQUITY UPLC BEH C18' # column data to use when needed and no data available; can also be 'average'
     fallback_metadata: str = '0045' # repository metadata to use when needed and no data available; can also be 'average'
     usp_codes: bool = False     # use column usp codes as onehot system features (only for `--sysinfo`)
+    use_ph: bool = False        # use pH estimations of mobilephase if available
+    use_gradient: bool = False  # use mobile phase solvent concentrations at specific gradient positions
     debug_onehot_sys: bool = False # onehot dataset encoding
     onehot_test_sets: List[str] = [] # test set IDs to include in onehot encoding
     add_descs: bool = False     # use additional stored descriptors (e.g, qm8)
@@ -280,7 +282,8 @@ if __name__ == '__main__':
                     classes_l_thr=args.classes_l_thr, classes_u_thr=args.classes_u_thr,
                     use_usp_codes=args.usp_codes, custom_features=args.features,
                     use_hsm=args.columns_use_hsm, use_tanaka=args.columns_use_tanaka,
-                    use_newonehot=args.columns_use_newonehot,
+                    use_newonehot=args.columns_use_newonehot, use_ph=args.use_ph,
+                    use_gradient=args.use_gradient,
                     repo_root_folder=args.repo_root_folder,
                     custom_column_fields=args.custom_column_fields,
                     hsm_fields=args.hsm_fields, tanaka_fields=args.tanaka_fields,
@@ -353,7 +356,8 @@ if __name__ == '__main__':
     #                                               if args.conflicting_smiles_pairs is not None else []))
     traindata = RankDataset(x_mols=train_graphs, x_extra=train_x, x_sys=train_sys,
                             x_ids=data.df.iloc[data.train_indices].smiles.tolist(),
-                            y=train_y, dataset_info=data.df.dataset_id.iloc[data.train_indices].tolist(),
+                            y=train_y, x_sys_global_num=data.x_info_global_num,
+                            dataset_info=data.df.dataset_id.iloc[data.train_indices].tolist(),
                             void_info=data.void_info,
                             pair_step=args.pair_step,
                             pair_stop=args.pair_stop, use_pair_weights=args.use_weights,
@@ -370,7 +374,8 @@ if __name__ == '__main__':
                             confl_weight=args.confl_weight)
     valdata = RankDataset(x_mols=val_graphs, x_extra=val_x, x_sys=val_sys,
                           x_ids=data.df.iloc[data.val_indices].smiles.tolist(),
-                          y=val_y, dataset_info=data.df.dataset_id.iloc[data.val_indices].tolist(),
+                          y=val_y, x_sys_global_num=data.x_info_global_num,
+                          dataset_info=data.df.dataset_id.iloc[data.val_indices].tolist(),
                           void_info=data.void_info,
                           pair_step=args.pair_step,
                           pair_stop=args.pair_stop, use_pair_weights=args.use_weights,
