@@ -1,6 +1,7 @@
 import logging
 from features import features, parse_feature_spec
-from utils import Data, BatchGenerator
+from utils import Data
+# from utils import BatchGenerator
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
@@ -82,7 +83,8 @@ def test_void_est():
 def test_data():
     for graphs in [True, False]:
         data_g = Data(use_compound_classes=False, use_system_information=True,
-                      use_hsm=True, custom_column_fields=['column.length', 'column.id'],
+                      use_hsm=True, use_tanaka=True,
+                      custom_column_fields=['column.length', 'column.id'],
                       graph_mode=graphs)
         dids = ["0016", "0045", "0071", "0072", "0073", "0074", "0075", "0076"]
         for did in dids:

@@ -146,8 +146,8 @@ def reduce_features(values, r_squared_thr=0.96, std_thr=0.01, verbose=True):
 class Data:
     df: Optional[pd.DataFrame] = None
     use_compound_classes: bool = False
-    use_system_information: bool = False
-    metadata_void_rt: bool = False
+    use_system_information: bool = True
+    metadata_void_rt: bool = True
     cache_file: str = 'cached_descs.pkl'
     classes_l_thr: float = 0.005
     classes_u_thr: float = 0.025
@@ -155,13 +155,17 @@ class Data:
     custom_features: List[str] = field(default_factory=list)
     use_hsm: bool = False
     use_tanaka: bool = False
-    use_newonehot: bool = False
+    use_newonehot: bool = False # NOTE: deprecated
+    use_ph: bool = False
+    use_gradient: bool = False
     repo_root_folder: str = '/home/fleming/Documents/Projects/RtPredTrainingData_mostcurrent'
     custom_column_fields: Optional[list] = None
     columns_remove_na: bool = True
     hsm_fields: List[str] = field(default_factory=lambda: ['H', 'S*', 'A', 'B', 'C (pH 2.8)', 'C (pH 7.0)'])
     tanaka_fields: List[str] = field(default_factory=lambda: ['kPB', 'αCH2', 'αT/O', 'αC/P', 'αB/P', 'αB/P.1'])
-    graph_mode: bool = False
+    solvent_order: Optional[List[str]] = None
+    tanaka_match_particlesize: bool = False
+    graph_mode: bool = True
     smiles_for_graphs: bool = False
     void_info: dict = field(default_factory=dict)
     fallback_column: str = 'Waters ACQUITY UPLC BEH C18' # can be 'average'
@@ -267,13 +271,16 @@ class Data:
                                        for oids in classes])
 
     def compute_system_information(self, onehot_ids=False, other_dataset_ids=None,
-                                   use_usp_codes=False, use_hsm=False, use_tanaka=False, use_newonehot=False,
+                                   use_usp_codes=False, use_hsm=False, use_tanaka=False, use_newonehot=False, use_ph=False,
+                                   use_gradient=False,
                                    repo_root_folder='/home/fleming/Documents/Projects/RtPredTrainingData_mostcurrent',
                                    custom_column_fields=None, remove_na=True, drop_hsm_dups=False,
                                    fallback_column='Waters ACQUITY UPLC BEH C18', hsm_fallback=True,
                                    col_fields_fallback=True, fallback_metadata='0045',
                                    hsm_fields=['H', 'S*', 'A', 'B', 'C (pH 2.8)', 'C (pH 7.0)'],
-                                   tanaka_fields=['kPB', 'αCH2', 'αT/O', 'αC/P', 'αB/P', 'αB/P.1']):
+                                   tanaka_fields=['kPB', 'αCH2', 'αT/O', 'αC/P', 'αB/P', 'αB/P.1'],
+                                   tanaka_match_ps=False):
+        # NOTE: global system features, then compound-specific features (e.g., based on position in gradient)
         global REL_COLUMNS
         if (onehot_ids):
             if (other_dataset_ids is None):
@@ -402,7 +409,10 @@ class Data:
             print('using onehot fields', ', '.join(onehot_fields))
             fields.append(self.df[onehot_fields].astype(float).values)
             # NOTE: not scaled!
-        # np.savetxt('/tmp/sys_array.txt', np.concatenate(fields, axis=1), fmt='%.2f')
+        if (use_ph):
+            means, scales = get_column_scaling(['ph'], repo_root_folder=repo_root_folder,
+                                           scale_dict=self.sys_scales)
+            fields.append((self.df[['ph']].astype(float).values - means) / scales)
         self.x_info = np.concatenate(fields, axis=1)
         self.custom_column_fields = names
 
@@ -420,13 +430,15 @@ class Data:
         if (self.use_system_information and self.x_info is None):
             self.compute_system_information(use_usp_codes=self.use_usp_codes,
                                             use_hsm=self.use_hsm, use_tanaka=self.use_tanaka,
-                                            use_newonehot=self.use_newonehot,
+                                            use_newonehot=self.use_newonehot, use_ph=self.use_ph,
+                                            use_gradient=self.use_gradient,
                                             repo_root_folder=self.repo_root_folder,
                                             custom_column_fields=self.custom_column_fields,
                                             remove_na=self.columns_remove_na,
                                             hsm_fields=self.hsm_fields, tanaka_fields=self.tanaka_fields,
                                             fallback_column=self.fallback_column,
-                                            fallback_metadata=self.fallback_metadata)
+                                            fallback_metadata=self.fallback_metadata,
+                                            tanaka_match_ps=self.tanaka_match_particlesize)
         xs = np.concatenate(list(filter(lambda x: x is not None, (self.x_features, self.x_classes))),
                             axis=1)
         self.classes_indices = ([xs.shape[1] - self.x_classes.shape[1], xs.shape[1] - 1]
