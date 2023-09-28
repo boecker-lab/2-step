@@ -267,6 +267,7 @@ class RankDataset(Dataset):
 
     @staticmethod
     def get_pair(y, i, j, void_i=0, void_j=0, y_neg=False):
+        # pos: eluting second, neg: eluting first; (pos, neg) := 1  <->  (neg, pos) := 0(-1)
         pos_idx, neg_idx = (i, j) if y[i] > y[j] else (j, i)
         # void
         if (y[i] < void_i and y[j] < void_j):
