@@ -233,7 +233,7 @@ class EvalArgs(Tap):
     model_type: Literal['ranknet', 'mpn'] = 'mpn'
     batch_size: int = 256
     isomeric: bool = False
-    repo_root_folder: str = '/home/fleming/Documents/Projects/RtPredTrainingData/' # location of the dataset github repository
+    repo_root_folder: str = '/home/fleming/Documents/Projects/RtPredTrainingData_mostcurrent/' # location of the dataset github repository
     add_desc_file: str = '/home/fleming/Documents/Projects/rtranknet/data/qm_merged.csv' # csv with additional features with smiles as identifier
     output: Optional[str] = None # write output to json file
     verbose: bool = False

@@ -12,7 +12,7 @@ import subprocess
 class QSARArgs(Tap):
     out_prefix: str
     iqr_mod: float = 1.5
-    repo_root_folder: str = '/home/fleming/Documents/Projects/RtPredTrainingData/'
+    repo_root_folder: str = '/home/fleming/Documents/Projects/RtPredTrainingData_mostcurrent/'
     void_factor: float = 2
 
 

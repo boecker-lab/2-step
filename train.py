@@ -1,7 +1,6 @@
 import logging
 import numpy as np
 from torch.utils.data.dataloader import DataLoader
-from cdmvgnn import get_cdmvgnn_args
 # from tensorboardX import SummaryWriter
 from torch.utils.tensorboard import SummaryWriter
 from rdkit import rdBase
@@ -97,7 +96,7 @@ class TrainArgs(Tap):
     check_data: bool = False                       # check how many pairs are conflicting/unpredictable
     clean_data: bool = False                       # remove unpredictable pairs
     # data locations
-    repo_root_folder: str = '/home/fleming/Documents/Projects/RtPredTrainingData/'
+    repo_root_folder: str = '/home/fleming/Documents/Projects/RtPredTrainingData_mostcurrent/'
     add_desc_file: str = '/home/fleming/Documents/Projects/rtranknet/data/qm_merged.csv'
     cache_file: str = 'cached_descs.pkl'
     # output control

@@ -68,7 +68,7 @@ def test_data_csv():
 def test_void_est():
     from glob import glob
     from utils import naive_void_est
-    rtdata = glob('/home/fleming/Documents/Projects/RtPredTrainingData/processed_data/*/*_rtdata_canonical_success.txt')
+    rtdata = glob('/home/fleming/Documents/Projects/RtPredTrainingData_mostcurrent/processed_data/*/*_rtdata_canonical_success.tsv')
     nrows = len(rtdata) // 2
     fig, axes = plt.subplots(nrows, 2, figsize=(12, 22))
     for f, ax in zip(rtdata, axes.ravel()):

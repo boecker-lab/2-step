@@ -79,7 +79,7 @@ def pair_weights(smiles1: str, smiles2: str, rt_diff: float,
 #     plt.show()
 
 
-def get_column_scaling(cols, repo_root_folder='/home/fleming/Documents/Projects/RtPredTrainingData/',
+def get_column_scaling(cols, repo_root_folder='/home/fleming/Documents/Projects/RtPredTrainingData_mostcurrent/',
                        scale_dict={}):
     if (any(c not in scale_dict for c in cols)):
         # load stored info
@@ -156,7 +156,7 @@ class Data:
     use_hsm: bool = False
     use_tanaka: bool = False
     use_newonehot: bool = False
-    repo_root_folder: str = '/home/fleming/Documents/Projects/RtPredTrainingData'
+    repo_root_folder: str = '/home/fleming/Documents/Projects/RtPredTrainingData_mostcurrent'
     custom_column_fields: Optional[list] = None
     columns_remove_na: bool = True
     hsm_fields: List[str] = field(default_factory=lambda: ['H', 'S*', 'A', 'B', 'C (pH 2.8)', 'C (pH 7.0)'])
@@ -268,7 +268,7 @@ class Data:
 
     def compute_system_information(self, onehot_ids=False, other_dataset_ids=None,
                                    use_usp_codes=False, use_hsm=False, use_tanaka=False, use_newonehot=False,
-                                   repo_root_folder='/home/fleming/Documents/Projects/RtPredTrainingData',
+                                   repo_root_folder='/home/fleming/Documents/Projects/RtPredTrainingData_mostcurrent',
                                    custom_column_fields=None, remove_na=True, drop_hsm_dups=False,
                                    fallback_column='Waters ACQUITY UPLC BEH C18', hsm_fallback=True,
                                    col_fields_fallback=True, fallback_metadata='0045',
@@ -286,8 +286,8 @@ class Data:
         fields = []
         names = []
         if (use_hsm):
-            hsm = pd.read_csv(os.path.join(repo_root_folder, 'resources/hsm_database/hsm_database.txt'), sep='\t')
-            hsm_cf = 'name_new'
+            hsm = pd.read_csv(os.path.join(repo_root_folder, 'resources/hsm_database/hsm_database.tsv'), sep='\t')
+            hsm_cf = 'name_normalized'
             hsm_counts = hsm.value_counts(hsm_cf)
             hsm_dups = hsm_counts.loc[hsm_counts > 1].index.tolist()
             hsm.drop_duplicates([hsm_cf], keep=False if drop_hsm_dups else 'last', inplace=True)
@@ -315,8 +315,8 @@ class Data:
                                                scale_dict=self.sys_scales)
             fields.append((hsm.loc[self.df['column.name'], hsm_fields].astype(float).values - means) / scales)
         if (use_tanaka):
-            tanaka = pd.read_csv(os.path.join(repo_root_folder, 'resources/tanaka_database/tanaka_database.txt'), sep='\t')
-            tanaka_cf = 'name_new'
+            tanaka = pd.read_csv(os.path.join(repo_root_folder, 'resources/tanaka_database/tanaka_database.tsv'), sep='\t')
+            tanaka_cf = 'name_normalized'
             tanaka_counts = tanaka.value_counts(tanaka_cf)
             tanaka_dups = tanaka_counts.loc[tanaka_counts > 1].index.tolist()
             tanaka.drop_duplicates([tanaka_cf], keep=False if drop_hsm_dups else 'last', inplace=True)
@@ -351,7 +351,7 @@ class Data:
                     pass
                 else:
                     column_information = pd.read_csv(os.path.join(
-                    repo_root_folder, 'processed_data', fallback_metadata, f'{fallback_metadata}_metadata.txt'),
+                    repo_root_folder, 'processed_data', fallback_metadata, f'{fallback_metadata}_metadata.tsv'),
                                                  sep='\t')
                     overwritten_columns = [c for c, all_nans in self.df.loc[
                         self.df[field_names].isna() .any(axis=1), field_names].isna().all().items()
@@ -419,23 +419,24 @@ class Data:
             self.compute_graphs()
         return self.graphs
 
-    def add_dataset_id(self, dataset_id,
-                       repo_root_folder='/home/fleming/Documents/Projects/RtPredTrainingData/',
+    def add_dataset_id(self, dataset_id, repo_root_folder=None,
                        void_rt=0.0, isomeric=True, split_type='train'):
+        repo_root_folder = repo_root_folder or self.repo_root_folder
         global REL_ONEHOT_COLUMNS
         paths = [os.path.join(repo_root_folder, 'processed_data', dataset_id,
-                              f'{dataset_id}_rtdata_canonical_success.txt'),
+                              f'{dataset_id}_rtdata_canonical_success.tsv'),
                  os.path.join(repo_root_folder, 'processed_data', dataset_id,
-                              f'{dataset_id}_rtdata_isomeric_success.txt'),
+                              f'{dataset_id}_rtdata_isomeric_success.tsv'),
                  os.path.join(repo_root_folder, 'raw_data', dataset_id,
-                              f'{dataset_id}_rtdata.txt')]
+                              f'{dataset_id}_rtdata.tsv')]
+        primary_path = None
         if (not os.path.exists(paths[0])):
             if (os.path.exists(paths[2])):
                 warning(f'processed rtdata does not exist for dataset {dataset_id}, '
                         'using raw data')
                 df = pd.read_csv(paths[2], sep='\t')
                 df.set_index('id', inplace=True, drop=False)
-                df.file = paths[2]
+                primary_path = paths[2]
                 df['smiles'] = df['pubchem.smiles.canonical']
             else:
                 raise Exception(f'no data found for dataset {dataset_id}, searched {paths=}')
@@ -450,12 +451,12 @@ class Data:
                     df_iso = pd.read_csv(paths[1], sep='\t')
                     df_iso.set_index('id', inplace=True, drop=False)
                     df.update(df_iso)
-            df.file = paths[0]
+            primary_path = paths[0]
             df['smiles'] = df['smiles.std']
         df['dataset_id'] = df.id.str.split('_', expand=True)[0]
         if self.use_system_information or self.metadata_void_rt:
             column_information = pd.read_csv(os.path.join(
-                os.path.dirname(df.file), f'{dataset_id}_metadata.txt'),
+                os.path.dirname(primary_path), f'{dataset_id}_metadata.tsv'),
                 sep='\t')
             column_information['dataset_id'] = [str(x).rjust(4, '0') for x in column_information['id']]
             # NOTE: only set when only one constant pH value is found for all parts of the gradient
