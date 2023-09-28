@@ -67,6 +67,7 @@ class TrainArgs(Tap):
     classes_l_thr: float = 0.005
     classes_u_thr: float = 0.25
     columns_use_newonehot: bool = False
+    tanaka_match_particlesize: bool = False # only allow tanaka parameters with the matching particle size
     # model general
     sizes: List[int] = [128, 16] # hidden layer sizes for ranking: [mol, sysxmol] -> ROI
     sizes_sys: List[int] = [256] # hidden layer sizes for system feature vs. molecule encoding
@@ -282,6 +283,7 @@ if __name__ == '__main__':
                     repo_root_folder=args.repo_root_folder,
                     custom_column_fields=args.custom_column_fields,
                     hsm_fields=args.hsm_fields, tanaka_fields=args.tanaka_fields,
+                    tanaka_match_particlesize=args.tanaka_match_particlesize,
                     graph_mode=graphs, smiles_for_graphs=args.smiles_for_graphs,
                     fallback_column=args.fallback_column,
                     fallback_metadata=args.fallback_metadata,

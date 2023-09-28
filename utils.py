@@ -300,15 +300,17 @@ class Data:
                             f'no HSM data for {", ".join([str(c) for c in set(self.df["column.name"]) if c not in hsm[hsm_cf].tolist()])}')
                     else:
                         if (fallback_column == 'average'):
-                            fallback = pd.Series(name=c, dtype='float64')
+                            fallback = pd.Series(self.df.drop_duplicates(subset=['dataset_id']).merge(
+                                hsm, left_on='column.name', right_index=True)[hsm_fields].mean(),
+                                                 name=c)
                             warning(f'using average HSM values for column {c}')
                         elif (fallback_column == 'zeros'):
-                            fallback = pd.Series(name=c, dtype='float64')
+                            fallback = pd.Series({f: 0 for f in hsm_fields},
+                                                 name=c, dtype='float64')
                             warning(f'using zeros HSM values for column {c}')
                         else:
-                            fallback = pd.DataFrame(hsm.loc[fallback_column]).transpose()
-                            fallback.index = [c]
-                        hsm = pd.concat([hsm, fallback], axis=0)
+                            fallback = pd.Series(hsm.loc[fallback_column], name=c)
+                        hsm = pd.concat([hsm, pd.DataFrame(fallback).transpose()], axis=0)
                 elif (c in hsm_dups):
                     warning(f'multiple HSM entries exist for column {c}, the last entry is used')
             means, scales = get_column_scaling(hsm_fields, repo_root_folder=repo_root_folder,
@@ -319,30 +321,47 @@ class Data:
             tanaka_cf = 'name_normalized'
             tanaka_counts = tanaka.value_counts(tanaka_cf)
             tanaka_dups = tanaka_counts.loc[tanaka_counts > 1].index.tolist()
-            tanaka.drop_duplicates([tanaka_cf], keep=False if drop_hsm_dups else 'last', inplace=True)
-            tanaka.set_index(tanaka_cf, drop=False, verify_integrity=True, inplace=True)
+            # tanaka.drop_duplicates([tanaka_cf], keep=False if drop_hsm_dups else 'last', inplace=True)
+            # tanaka.set_index(tanaka_cf, drop=False, verify_integrity=True, inplace=True)
             self.df.loc[pd.isna(self.df['column.name']), 'column.name'] = 'unknown' # instead of NA
+            # NOTE: particle size: drop the 'spp' / only use float at beginning
+            tanaka['particle.size'] = [float(match[0]) if (match:=re.match(r'[\d\.]+', str(ps))) is not None
+                                       else np.nan
+                                       for ps in tanaka['particle size [µm]']]
             for c in self.df['column.name'].unique():
+                # TODO: rewrite when tanaka db is updated with estimates
                 if (c not in tanaka[tanaka_cf].tolist()):
                     if (not hsm_fallback):
                         raise Exception(
                             f'no Tanaka data for {", ".join([str(c) for c in set(self.df["column.name"]) if c not in tanaka[tanaka_cf].tolist()])}')
                     else:
                         if (fallback_column == 'average'):
-                            fallback = pd.Series(name=c, dtype='float64')
+                            fallback = pd.Series(self.df.drop_duplicates(subset=['dataset_id']).merge(
+                                tanaka, left_on='column.name', right_index=True)[tanaka_fields].mean(),
+                                                 name=c)
                             warning(f'using average Tanaka values for column {c}')
                         elif (fallback_column == 'zeros'):
-                            fallback = pd.Series(name=c, dtype='float64')
+                            fallback = pd.Series({f: 0 for f in tanaka_fields},
+                                                 name=c, dtype='float64')
                             warning(f'using zeros Tanaka values for column {c}')
                         else:
-                            fallback = pd.DataFrame(tanaka.loc[fallback_column]).transpose()
-                            fallback.index = [c]
-                        tanaka = pd.concat([tanaka, fallback], axis=0)
+                            fallback = pd.Series(tanaka.loc[fallback_column], name=c)
+                        tanaka = pd.concat([tanaka, pd.DataFrame(fallback).transpose()], axis=0)
                 elif (c in tanaka_dups):
                     warning(f'multiple Tanaka entries exist for column {c}, the last entry is used')
             means, scales = get_column_scaling(tanaka_fields, repo_root_folder=repo_root_folder,
                                                scale_dict=self.sys_scales)
-            fields.append((tanaka.loc[self.df['column.name'], tanaka_fields].astype(float).values - means) / scales)
+            if (tanaka_match_ps):
+                tanaka.reset_index()
+                fields.append((self.df[['column.name', 'column.particle.size']].merge(
+                    tanaka, how='left',
+                    left_on=['column.name', 'column.particle.size'],
+                    right_on=['name_normalized', 'particle.size'])[tanaka_fields].astype(float).values - means) / scales)
+            else:
+                fields.append((tanaka.drop_duplicates([tanaka_cf], keep=False if drop_hsm_dups else 'last'
+                                                      ).set_index(tanaka_cf, drop=False, verify_integrity=True
+                                                                  ).loc[self.df['column.name'], tanaka_fields
+                                                                        ].astype(float).values - means) / scales)
         field_names = custom_column_fields if custom_column_fields is not None else REL_COLUMNS
         na_columns = [col for col in field_names if self.df[col].isna().any()]
         if (len(na_columns) > 0):
