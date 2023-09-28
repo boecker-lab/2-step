@@ -87,6 +87,14 @@ def eval2(df, epsilon=0.5, classyfire_level=None):
             {'matches': {c: np.sum(matches[c]) for c in classes},
              'matches_perc': {c: np.sum(matches[c]) / total[c] for c in classes}})
 
+def lcs_metric(data):
+    # TODO: can also be used with just indices instead of SMILES
+    smiles_chars = {s: chr(ord('A') + i) for i, s in enumerate(data.smiles.tolist())}
+    _, order_true = zip(*sorted(zip(data.rt, data.smiles)))
+    _, order_pred = zip(*sorted(zip(data.roi, data.smiles)))
+    return pylcs.lcs_sequence_length(''.join([smiles_chars[s] for s in order_true]),
+                                     ''.join([smiles_chars[s] for s in order_pred]))
+
 def rt_roi_diffs(data, y, preds, k=3):
     """for all pairs x, y:
     is |rt_x - rt_y| very different from |roi_x - roi_y|?
