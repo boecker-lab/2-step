@@ -87,13 +87,24 @@ def eval2(df, epsilon=0.5, classyfire_level=None):
             {'matches': {c: np.sum(matches[c]) for c in classes},
              'matches_perc': {c: np.sum(matches[c]) / total[c] for c in classes}})
 
-def lcs_metric(data):
-    # TODO: can also be used with just indices instead of SMILES
-    smiles_chars = {s: chr(ord('A') + i) for i, s in enumerate(data.smiles.tolist())}
+def lcs(seq1, seq2):
+    m = len(seq1)
+    n = len(seq2)
+    LCS = np.full((m + 1, n + 1), np.nan)
+    for i in range(m + 1):
+        for j in range(n + 1):
+            if i == 0 or j == 0 :
+                LCS[i, j] = 0
+            elif seq1[i-1] == seq2[j-1]:
+                LCS[i, j] = LCS[i-1, j-1]+1
+            else:
+                LCS[i, j] = max(LCS[i-1, j], LCS[i, j-1])
+    return LCS[m][n]
+
+def lcs_results(data):
     _, order_true = zip(*sorted(zip(data.rt, data.smiles)))
     _, order_pred = zip(*sorted(zip(data.roi, data.smiles)))
-    return pylcs.lcs_sequence_length(''.join([smiles_chars[s] for s in order_true]),
-                                     ''.join([smiles_chars[s] for s in order_pred]))
+    return lcs(order_true, order_pred)
 
 def rt_roi_diffs(data, y, preds, k=3):
     """for all pairs x, y:
@@ -497,6 +508,7 @@ if __name__ == '__main__':
             acc_nonconfl = eval_(Y[~np.array(confl)], preds[~np.array(confl)], args.epsilon) if any(confl) else acc
         d.df['roi'] = preds[np.arange(len(d.df.rt))[ # restore correct order
             np.argsort(np.concatenate([d.train_indices, d.test_indices, d.val_indices]))]]
+        lcs_dist = len(d.df) - lcs_results(d.df)
         # acc2, results = eval2(d.df, args.epsilon)
         if (args.classyfire):
             info('computing classyfire stats')
@@ -510,14 +522,14 @@ if __name__ == '__main__':
         if (args.test_stats):
             info('computing test stats')
             stats = data_stats(d, data, data.custom_column_fields, compound_identifier=args.compound_identifier)
-            stats.update({'acc': acc, 'id': ds})
+            stats.update({'acc': acc, 'id': ds, 'lcs_dist': lcs_dist})
             if (confl_pairs is not None):
                 stats.update({'acc_confl': acc_confl, 'acc_nonconfl': acc_nonconfl, 'num_confl': np.array(confl).sum()})
             else:
                 stats.update({'acc_confl': np.nan, 'acc_nonconfl': np.nan, 'num_confl': np.nan})
             test_stats.append(stats)
         else:
-            print(f'{ds}: {acc:.3f} \t (#data: {len(Y)})')
+            print(f'{ds}: {acc:.3f}, LCS_dist {lcs_dist:.0f} \t (#data: {len(Y)})')
         if (args.diffs):
             info('computing outlier stats')
             df = rt_roi_diffs(d, Y, preds)
