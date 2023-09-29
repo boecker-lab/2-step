@@ -24,12 +24,12 @@ info = logger.info
 class TrainArgs(Tap):
     input: List[str]            # Either CSV or dataset ids
     model_type: Literal['ranknet', 'mpn'] = 'mpn'
-    feature_type: Literal['None', 'rdkall', 'rdk2d', 'rdk3d'] = 'rdkall' # type of features to use
+    feature_type: Literal['None', 'rdkall', 'rdk2d', 'rdk3d'] = 'None' # type of features to use
     # training
-    batch_size: int = 256
+    batch_size: int = 64
     epochs: int = 5
     early_stopping_patience: Optional[int] = None # stop training when val loss doesn't improve for this number of times
-    test_split: float = 0.2
+    test_split: float = 0                         # not needed when testing on exclusive test datasets afterwards
     val_split: float = 0.05
     device: Optional[str] = None  # either `mirrored` or specific device name like gpu:1 or None (auto)
     remove_test_compounds: List[str] = [] # remove compounds occuring in the specified (test) datasets
@@ -37,19 +37,19 @@ class TrainArgs(Tap):
     learning_rate: float = 5e-4
     no_encoder_train: bool = False # don't train the encoder(embedding) layers
     # data
-    isomeric: bool = False      # use isomeric data (if available)
+    no_isomeric: bool = False # do not use isomeric data (if available)
     # drop_doublets: bool = False      # do not use doublets for training
     balance: bool = False       # balance data by dataset
     no_group_weights: bool = False # don't scale weights by number of dataset pairs
     cluster: bool = False          # cluster datasets with same column params for calculating group weights
     void_rt: float = 0.0        # void time threshold; used for ALL datasets
-    metadata_void_rt: bool = False # use t0 value from repo metadata (times 3)
+    no_metadata_void_rt: bool = False # do not use t0 value from repo metadata (times 3)
     validation_datasets: List[str] = [] # datasets to use for validation (instead of split of training data)
     test_datasets: List[str] = [] # datasets to use for test (instead of split of training data)
     # features
-    features: List[str] = []                                     # custom features
-    standardize: bool = False                                    # standardize features
-    reduce_features: bool = False                                    # standardize features
+    features: List[str] = ['MolLogP']                                     # custom features
+    no_standardize: bool = False                                    # do not standardize features
+    reduce_features: bool = False                                    # reduce features
     num_features: Optional[int] = None
     # additional features
     comp_classes: bool = False  # use classyfire compound classes as add. features
@@ -86,13 +86,13 @@ class TrainArgs(Tap):
     smiles_for_graphs: bool = False # always use SMILES internally, compute graphs only on demand
     # pairs
     epsilon: float = 0.5 # difference in evaluation measure below which to ignore falsely predicted pairs
-    pair_step: int = 1
-    pair_stop: Optional[int] = None
-    use_weights: bool = False
+    pair_step: int = 3
+    pair_stop: Optional[int] = 128
+    use_weights: bool = True    # weight pairs by rt difference
     weight_steep: float = 20
     weight_mid: float = 0.75
-    dynamic_weights: bool = False
-    no_inter_pairs: bool = False # don't use pairs of compounds of different datasets
+    dynamic_weights: bool = False # adapt epsilon/weights to gradient length
+    inter_pairs: bool = False # use pairs of compounds of different datasets (DEPRECATED)
     no_intra_pairs: bool = False # don't use pairs of compounds of the same dataset
     max_pair_compounds: Optional[int] = None
     conflicting_smiles_pairs: Optional[str] = None # pickle file with conflicting pairs (smiles)
@@ -137,7 +137,7 @@ def preprocess(data: Data, args: TrainArgs):
     if (data.graph_mode):
         data.compute_graphs()
     data.split_data((args.test_split, args.val_split))
-    if (args.standardize):
+    if (not args.no_standardize):
         data.standardize()
     if (args.reduce_features):
         data.reduce_f()
@@ -236,7 +236,7 @@ if __name__ == '__main__':
             data = Data.from_raw_file(input_, void_rt=args.void_rt,
                                       graph_mode=graphs, smiles_for_graphs=args.smiles_for_graphs,
                                       use_compound_classes=args.comp_classes, use_system_information=args.sysinfo,
-                                      metadata_void_rt=args.metadata_void_rt,
+                                      metadata_void_rt=(not args.no_metadata_void_rt),
                                       classes_l_thr=args.classes_l_thr, classes_u_thr=args.classes_u_thr,
                                       repo_root_folder=args.repo_root_folder,
                                       use_usp_codes=args.usp_codes, custom_features=args.features,
@@ -278,7 +278,7 @@ if __name__ == '__main__':
         print('input from repository dataset IDs')
         # dataset IDs (recommended)
         data = Data(use_compound_classes=args.comp_classes, use_system_information=args.sysinfo,
-                    metadata_void_rt=args.metadata_void_rt,
+                    metadata_void_rt=(not args.no_metadata_void_rt),
                     classes_l_thr=args.classes_l_thr, classes_u_thr=args.classes_u_thr,
                     use_usp_codes=args.usp_codes, custom_features=args.features,
                     use_hsm=args.columns_use_hsm, use_tanaka=args.columns_use_tanaka,
@@ -296,24 +296,24 @@ if __name__ == '__main__':
             data.add_dataset_id(did,
                                 repo_root_folder=args.repo_root_folder,
                                 void_rt=args.void_rt,
-                                isomeric=args.isomeric)
+                                isomeric=(not args.no_isomeric))
         for did in args.validation_datasets:
             data.add_dataset_id(did,
                                 repo_root_folder=args.repo_root_folder,
                                 void_rt=args.void_rt,
-                                isomeric=args.isomeric,
+                                isomeric=(not args.no_isomeric),
                                 split_type='val')
         for did in args.test_datasets:
             data.add_dataset_id(did,
                                 repo_root_folder=args.repo_root_folder,
                                 void_rt=args.void_rt,
-                                isomeric=args.isomeric,
+                                isomeric=(not args.no_isomeric),
                                 split_type='test')
         if (args.remove_test_compounds is not None and len(args.remove_test_compounds) > 0):
             d_temp = Data()
             for t in args.remove_test_compounds:
                 d_temp.add_dataset_id(t, repo_root_folder=args.repo_root_folder,
-                                      isomeric=args.isomeric)
+                                      isomeric=(not args.no_isomeric))
             compounds_to_remove = set(d_temp.df['inchi.std'].tolist())
             data.df = data.df.loc[~data.df['inchi.std'].isin(compounds_to_remove)]
             print(f'removed {len(compounds_to_remove)} compounds occuring '
@@ -363,7 +363,7 @@ if __name__ == '__main__':
                             pair_stop=args.pair_stop, use_pair_weights=args.use_weights,
                             use_group_weights=(not args.no_group_weights),
                             cluster=args.cluster,
-                            no_inter_pairs=args.no_inter_pairs,
+                            no_inter_pairs=(not args.inter_pairs),
                             no_intra_pairs=args.no_intra_pairs,
                             max_indices_size=args.max_pair_compounds,
                             weight_mid=args.weight_mid,
@@ -381,7 +381,7 @@ if __name__ == '__main__':
                           pair_stop=args.pair_stop, use_pair_weights=args.use_weights,
                           use_group_weights=(not args.no_group_weights),
                           cluster=args.cluster,
-                          no_inter_pairs=args.no_inter_pairs,
+                          no_inter_pairs=(not args.inter_pairs),
                           no_intra_pairs=args.no_intra_pairs,
                           max_indices_size=args.max_pair_compounds,
                           weight_mid=args.weight_mid,

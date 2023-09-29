@@ -22,6 +22,10 @@ logger = logging.getLogger('rtranknet.utils')
 info = logger.info
 warning = logger.warning
 
+# ignore pandas performance warnings (https://stackoverflow.com/questions/68292862/performancewarning-dataframe-is-highly-fragmented-this-is-usually-the-result-o)
+from warnings import simplefilter
+simplefilter(action='ignore', category=pd.errors.PerformanceWarning)
+
 REL_COLUMNS = ['column.length', 'column.id', 'column.particle.size', 'column.temperature',
                'column.flowrate']
 REL_ONEHOT_COLUMNS = ['class.pH.A', 'class.pH.B', 'class.solvent']
