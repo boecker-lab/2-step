@@ -232,14 +232,14 @@ class EvalArgs(Tap):
     test_sets: List[str] # either CSV or dataset IDs to evaluate on
     model_type: Literal['ranknet', 'mpn'] = 'mpn'
     batch_size: int = 256
-    isomeric: bool = False
+    no_isomeric: bool = False
     repo_root_folder: str = '/home/fleming/Documents/Projects/RtPredTrainingData_mostcurrent/' # location of the dataset github repository
     add_desc_file: str = '/home/fleming/Documents/Projects/rtranknet/data/qm_merged.csv' # csv with additional features with smiles as identifier
     output: Optional[str] = None # write output to json file
     verbose: bool = False
     no_progbar: bool = False # no progress-bar
     void_rt: float = 0.0
-    metadata_void_rt: bool = False # use t0 value from repo metadata (times 2)
+    no_metadata_void_rt: bool = False # don't use t0 value from repo metadata (times 2)
     cache_file: str = 'cached_descs.pkl'
     export_rois: bool = False
     export_embeddings: bool = False
@@ -375,7 +375,7 @@ if __name__ == '__main__':
     test_stats = []
     data_args = {'use_compound_classes': data.use_compound_classes,
                  'use_system_information': data.use_system_information,
-                 'metadata_void_rt': args.metadata_void_rt,
+                 'metadata_void_rt': (not args.no_metadata_void_rt),
                  'classes_l_thr': data.classes_l_thr,
                  'classes_u_thr': data.classes_u_thr,
                  'use_usp_codes': data.use_usp_codes,
@@ -425,7 +425,7 @@ if __name__ == '__main__':
             d.add_dataset_id(ds,
                              repo_root_folder=args.repo_root_folder,
                              void_rt=args.void_rt,
-                             isomeric=args.isomeric)
+                             isomeric=(not args.no_isomeric))
         if (args.remove_train_compounds):
             info('removing train compounds')
             train_compounds_all = set(data.df[args.compound_identifier])
@@ -501,7 +501,7 @@ if __name__ == '__main__':
         if (args.classyfire):
             info('computing classyfire stats')
             classyfire_stats(d, args, compound_identifier=args.compound_identifier)
-        if (args.dataset_stats):
+        if (args.dataset_stats): # NOTE: DEPRECATED?
             info('computing dataset stats')
             dataset_stats(d)
             compound_stats(d, args)
