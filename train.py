@@ -38,7 +38,6 @@ class TrainArgs(Tap):
     no_encoder_train: bool = False # don't train the encoder(embedding) layers
     # data
     no_isomeric: bool = False # do not use isomeric data (if available)
-    # drop_doublets: bool = False      # do not use doublets for training
     balance: bool = False       # balance data by dataset
     no_group_weights: bool = False # don't scale weights by number of dataset pairs
     cluster: bool = False          # cluster datasets with same column params for calculating group weights

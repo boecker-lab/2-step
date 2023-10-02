@@ -58,6 +58,8 @@ class RankDataset(Dataset):
             assert len(self.y) == len(self.dataset_info)
         assert not (self.no_inter_pairs and self.no_intra_pairs), (
             'no_inter_pairs and no_intra_pairs can\'t be both set')
+        # preprocess doublets
+        self.preprocess_doublets()
         # transform single compounds(+info) into pairs for ranking
         transformed = self._transform_pairwise()
         self.x1_indices = transformed['x1_indices']
@@ -115,7 +117,32 @@ class RankDataset(Dataset):
                 if (logger.level <= logging.INFO):
                     from tqdm import tqdm
                     it = tqdm(it)
+                doublets_filtered = 0
                 for i, j, w in it:
+                    # filter out invalid pairs due to doublets
+                    if (hasattr(self, 'doublet_rt_ranges') and
+                        ((group, self.x_ids[i]) in self.doublet_rt_ranges or
+                         (group, self.x_ids[j]) in self.doublet_rt_ranges)):
+                        min_i = (self.doublet_rt_ranges[(group, self.x_ids[i])][0]
+                                 if (group, self.x_ids[i]) in self.doublet_rt_ranges
+                                 else self.y[i])
+                        max_i = (self.doublet_rt_ranges[(group, self.x_ids[i])][1]
+                                 if (group, self.x_ids[i]) in self.doublet_rt_ranges
+                                 else self.y[i])
+                        min_j = (self.doublet_rt_ranges[(group, self.x_ids[j])][0]
+                                 if (group, self.x_ids[j]) in self.doublet_rt_ranges
+                                 else self.y[j])
+                        max_j = (self.doublet_rt_ranges[(group, self.x_ids[j])][1]
+                                 if (group, self.x_ids[j]) in self.doublet_rt_ranges
+                                 else self.y[j])
+                        if (((max_i >= min_j) and (max_i <= max_j))
+                            or ((min_i >= min_j) and (min_i <= max_j))
+                            or ((min_i >= min_j) and (max_i <= max_j))
+                            or ((max_i >= max_j) and (min_i <= min_j))):
+                            # print(f'filtered doublet pair ({self.x_ids[i]}, {self.x_ids[j]}); ranges '
+                            #       f'{(min_i, max_i)}, {(min_j, max_j)}')
+                            doublets_filtered += 1
+                            continue
                     res = self.get_pair(self.y, i, j, group_void_rt or 0, group_void_rt or 0, self.y_neg)
                     if (res is None):
                         continue
@@ -131,6 +158,7 @@ class RankDataset(Dataset):
                 pair_nrs[group] = pair_nr
                 intra_pair_nr += pair_nr
                 group_index_end[group] = len(weights)
+                info(f'filtered out {doublets_filtered} invalid pairs due to doublets for group {group}')
             info(f'done ({str(timedelta(seconds=time() - t0))} elapsed)')
         # between groups
         if (not self.no_inter_pairs):
@@ -279,6 +307,27 @@ class RankDataset(Dataset):
             return pos_idx, neg_idx, 1
         else:
             return neg_idx, pos_idx, (-1 if y_neg else 0)
+
+
+    def preprocess_doublets(self):
+        doublet_rt_ranges = {}  # {(ds, id_): (1.2, 2.1)}
+        for i in range(len(self.y)):
+            rt = self.y[i]
+            id_ = self.x_ids[i]
+            ds = self.dataset_info[i]
+            if ((ds, id_) not in doublet_rt_ranges):
+                doublet_rt_ranges[(ds, id_)] = (rt, rt)
+            doublet_rt_ranges[(ds, id_)] = (min(rt, *doublet_rt_ranges[(ds, id_)]),
+                                            max(rt, *doublet_rt_ranges[(ds, id_)]))
+        self.doublet_rt_ranges = {k: v for k, v in doublet_rt_ranges.items()
+                                  if v[0] != v[1]}
+        # stats on doublets: how many per dataset? mean/median rt difference per doublet
+        data = pd.DataFrame.from_records([{'dataset': k[0], 'rt_diff': v[1] - v[0]}
+                                          for k, v in self.doublet_rt_ranges.items()])
+        if len(data) > 0:
+            stats = data.groupby('dataset').rt_diff.agg(['count', 'mean', 'median'])
+            print('doublet stats:\n' + stats.to_string())
+
 
 
     def get_comparable_pairs(self, indices_i, indices_j, rts, ids,

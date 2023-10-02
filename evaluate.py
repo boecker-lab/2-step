@@ -410,7 +410,8 @@ if __name__ == '__main__':
                  'encoder': (config['args']['mpn_encoder'] if 'mpn_encoder' in config['args']
                              else 'dmpnn'),
                  'graph_args': (model.graph_args if hasattr(model, 'graph_args')
-                                else None)}
+                                else None),
+                 'remove_doublets': True}
     if (hasattr(data, 'use_tanaka')):
         data_args['use_tanaka'] = data.use_tanaka
     if (hasattr(data, 'tanaka_fields')):

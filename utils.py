@@ -177,6 +177,7 @@ class Data:
     encoder: Literal['dmpnn', 'dualmpnnplus', 'dualmpnn'] = 'dmpnn'
     graph_args: Optional[Namespace] = None
     sys_scales: dict = field(default_factory=dict)
+    remove_doublets: bool = False # invalid doublet *pairs* will be excluded regardless; only useful for evaluating
 
     def __post_init__(self):
         self.x_features = None
@@ -533,8 +534,11 @@ class Data:
         old_len0 = len(df)
         df = df.drop_duplicates(['smiles', 'rt'])
         old_len1 = len(df)
-        df = df.drop_duplicates('smiles', keep=False)
-        print(f'{dataset_id}: removing doublets and duplicates, {old_len0}→{old_len1}→{len(df)}')
+        if (self.remove_doublets):
+            df = df.drop_duplicates('smiles', keep=False)
+            print(f'{dataset_id}: removing doublets and duplicates, {old_len0}→{old_len1}→{len(df)}')
+        else:
+            print(f'{dataset_id}: removing duplicates, {old_len0}→{old_len1}')
         if (self.metadata_void_rt and 'column.t0' in df.columns):
             void_rt = df['column.t0'].iloc[0] * 2 # NOTE: 2 or 3?
         self.void_info[df.dataset_id.iloc[0]] = void_rt
