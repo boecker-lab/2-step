@@ -160,7 +160,7 @@ def data_eval(ranker: MPNranker, data: Data, batch_size=8192,
     preds = data_predict(ranker, data, batch_size)
     accs = {}
     for ds, (y_pred, y) in preds.items():
-        accs[ds] = eval_(y, y_pred, epsilon=epsilon)
+        accs[ds] = eval_(y, y_pred, epsilon=epsilon, void_rt=data.void_info[ds])
     total_num = sum(len(v[0]) for v in preds.values())
     return (sum(accs[ds] * len(preds[ds][0]) for ds in accs) / total_num,
             sum(accs.values()) / len(accs), accs)
@@ -379,7 +379,8 @@ def train(ranker: MPNranker, bg: DataLoader, epochs=2,
                     train_acc, stats_i = eval_detailed([bg.dataset.x_ids[i] for i in ds_indices],
                         bg.dataset.y[ds_indices], ranker.predict(
                         bg.dataset.x_mols[ds_indices], bg.dataset.x_extra[ds_indices],
-                        bg.dataset.x_sys[ds_indices], batch_size=batch_size), epsilon=epsilon)
+                            bg.dataset.x_sys[ds_indices], batch_size=batch_size), epsilon=epsilon,
+                                                       void_rt=bg.dataset.void_info[ds])
                     if (not np.isnan(train_acc)):
                         train_accs.append(train_acc)
                     print(f'{ds}: \t{train_acc=:.2%}')
@@ -420,7 +421,8 @@ def train(ranker: MPNranker, bg: DataLoader, epochs=2,
                         val_acc, stats_i = eval_detailed([val_g.dataset.x_ids[i] for i in ds_indices],
                             val_g.dataset.y[ds_indices], ranker.predict(
                             val_g.dataset.x_mols[ds_indices], val_g.dataset.x_extra[ds_indices],
-                            val_g.dataset.x_sys[ds_indices], batch_size=batch_size), epsilon=epsilon)
+                                val_g.dataset.x_sys[ds_indices], batch_size=batch_size), epsilon=epsilon,
+                                                         void_rt=val_g.dataset.void_info[ds])
                         if (not np.isnan(val_acc)):
                             val_accs.append(val_acc)
                         print(f'{ds}: \t{val_acc=:.2%}')

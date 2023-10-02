@@ -28,7 +28,7 @@ class NpEncoder(json.JSONEncoder):
             return obj.tolist()
         return super(NpEncoder, self).default(obj)
 
-def eval_(y, preds, epsilon=0.5, roi_thr=1e-5):
+def eval_(y, preds, epsilon=0.5, void_rt=0.0, roi_thr=1e-5):
     assert len(y) == len(preds)
     if (not any(preds)):
         return 0.0
@@ -36,6 +36,9 @@ def eval_(y, preds, epsilon=0.5, roi_thr=1e-5):
     matches = 0
     total = 0
     for i, j in combinations(range(len(y)), 2):
+        if y[i] <= void_rt and y[j] <= void_rt:
+            # ignore pairs with both compounds eluting in void volume
+            continue
         diff = y[i] - y[j]
         #if (diff < epsilon and preds[i] < preds[j]):
         if (diff < epsilon and (preds[j] - preds[i] > roi_thr)):
@@ -45,13 +48,16 @@ def eval_(y, preds, epsilon=0.5, roi_thr=1e-5):
     return toret
 
 
-def eval_detailed(mols, y, preds, epsilon=0.5, roi_thr=1e-5):
+def eval_detailed(mols, y, preds, epsilon=0.5, void_rt=0.0, roi_thr=1e-5):
     matches = []
     assert len(y) == len(preds)
     preds, y, mols = zip(*sorted(zip(preds, y, mols)))
     total = 0
     if (any(preds)):
         for i, j in combinations(range(len(y)), 2):
+            if y[i] <= void_rt and y[j] <= void_rt:
+                # ignore pairs with both compounds eluting in void volume
+                continue
             diff = y[i] - y[j]
             roi_diff = preds[j] - preds[i]
             if (diff < epsilon and (roi_diff > roi_thr)):
@@ -251,6 +257,7 @@ class EvalArgs(Tap):
     no_progbar: bool = False # no progress-bar
     void_rt: float = 0.0
     no_metadata_void_rt: bool = False # don't use t0 value from repo metadata (times 2)
+    include_void_compounds: bool = False # don't remove compounds eluting in void volume for LCS dist
     cache_file: str = 'cached_descs.pkl'
     export_rois: bool = False
     export_embeddings: bool = False
@@ -502,13 +509,18 @@ if __name__ == '__main__':
         else:
             preds = predict(X, model, args.batch_size)
         info('done predicting. evaluation...')
-        acc = eval_(Y, preds, args.epsilon)
+        print(ds, d.void_info[ds])
+        acc = eval_(Y, preds, args.epsilon, void_rt=d.void_info[ds])
         if (confl_pairs is not None):
-            acc_confl = eval_(Y[confl], preds[confl], args.epsilon) if any(confl) else np.nan
-            acc_nonconfl = eval_(Y[~np.array(confl)], preds[~np.array(confl)], args.epsilon) if any(confl) else acc
+            acc_confl = eval_(Y[confl], preds[confl], args.epsilon, void_rt=d.void_info[ds]) if any(confl) else np.nan
+            acc_nonconfl = eval_(Y[~np.array(confl)], preds[~np.array(confl)], args.epsilon, void_rt=d.void_info[ds]) if any(confl) else acc
         d.df['roi'] = preds[np.arange(len(d.df.rt))[ # restore correct order
             np.argsort(np.concatenate([d.train_indices, d.test_indices, d.val_indices]))]]
-        lcs_dist = len(d.df) - lcs_results(d.df)
+        if (not args.include_void_compounds):
+            df_lcs = d.df.loc[d.df.rt > d.void_info[ds]]
+        else:
+            df_lcs = d.df
+        lcs_dist = len(df_lcs) - lcs_results(df_lcs)
         # acc2, results = eval2(d.df, args.epsilon)
         if (args.classyfire):
             info('computing classyfire stats')
