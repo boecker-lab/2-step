@@ -168,7 +168,8 @@ class Data:
     hsm_fields: List[str] = field(default_factory=lambda: ['H', 'S*', 'A', 'B', 'C (pH 2.8)', 'C (pH 7.0)'])
     tanaka_fields: List[str] = field(default_factory=lambda: ['kPB', 'αCH2', 'αT/O', 'αC/P', 'αB/P', 'αB/P.1'])
     solvent_order: Optional[List[str]] = None
-    tanaka_match_particlesize: bool = False
+    tanaka_match: Literal['best_match', 'exact'] = 'best_match'
+    tanaka_ignore_spp_particle_size: bool = True
     graph_mode: bool = True
     smiles_for_graphs: bool = False
     void_info: dict = field(default_factory=dict)
@@ -275,16 +276,60 @@ class Data:
             self.x_classes = np.array([get_binary(oids, l_thr=self.classes_l_thr, u_thr=self.classes_u_thr)
                                        for oids in classes])
 
+    def get_tanaka_params(self, ds, how='exact', ignore_spp_particle_size=True, verbose=False):
+        assert how in ['exact',     # column and particle size have to match
+                       'best_match', # if parameters with the particular particle size are available, take them, otherwise also with different particle size
+                       ]
+        if not hasattr(self, 'tanaka_db') or self.tanaka_db is None:
+            self.tanaka_db = pd.read_csv(os.path.join(self.repo_root_folder, 'resources/tanaka_database/tanaka_database.tsv'), sep='\t')
+        # match name
+        matches = self.tanaka_db.loc[self.tanaka_db.name_normalized == ds['column.name']].copy()
+        # match particle size
+        if (ignore_spp_particle_size):
+            self.tanaka_db['particle size [µm]'] = [float(str(ps).replace('spp', '').strip())
+                                                    for ps in self.tanaka_db['particle size [µm]']]
+        particle_size_matched = False
+        if how == 'exact' or ds['column.particle.size'] in matches['particle size [µm]'].tolist():
+            matches = matches.loc[matches['particle size [µm]'] == ds['column.particle.size']]
+            particle_size_matched = True
+        if (len(matches) == 0):
+            return pd.Series([np.nan] * len(self.tanaka_fields) + ['not_found'], index=self.tanaka_fields + ['tanaka_how'])
+        elif (len(matches) == 1):
+            info = 'best_match_exact' if how == 'best_match' and particle_size_matched else how
+            return pd.concat([matches.iloc[0][self.tanaka_fields], pd.Series({'tanaka_how': info})])
+        else:
+            if (how == 'exact'):
+                # strange, maybe pore size difference?
+                if verbose:
+                    print(ds.id, 'multiple matches found (exact!), taking mean', matches[self.tanaka_fields])
+                return pd.concat([matches[self.tanaka_fields].mean(), pd.Series({'tanaka_how': 'exact_match_mean'})])
+            else:
+                info = 'best_match_exact_mean' if particle_size_matched else 'best_match_mean'
+                if verbose:
+                    print(ds.id, 'multiple matches found (best_match), taking mean', matches[self.tanaka_fields])
+                return pd.concat([matches[self.tanaka_fields].mean(), pd.Series({'tanaka_how': info})])
+
+
+    def get_hsm_params(self, ds, verbose=False):
+        if not hasattr(self, 'hsm_db') or self.hsm_db is None:
+            self.hsm_db = pd.read_csv(os.path.join(self.repo_root_folder, 'resources/hsm_database/hsm_database.tsv'), sep='\t')
+        # match name
+        matches = self.hsm_db.loc[self.hsm_db.name_normalized == ds['column.name']].copy()
+        if (len(matches) == 0):
+            return pd.Series([np.nan] * len(self.hsm_fields) + ['not_found'], index=self.hsm_fields + ['hsm_how'])
+        elif (len(matches) == 1):
+            return pd.concat([matches.iloc[0][self.hsm_fields], pd.Series({'hsm_how': 'exact_match'})])
+        else:
+            if verbose:
+                print(ds.id, 'multiple matches found, taking mean', matches[self.hsm_fields])
+            return pd.concat([matches[self.hsm_fields].mean(), pd.Series({'hsm_how': 'multi_matches_mean'})])
+
+
     def compute_system_information(self, onehot_ids=False, other_dataset_ids=None,
                                    use_usp_codes=False, use_hsm=False, use_tanaka=False, use_newonehot=False, use_ph=False,
-                                   use_gradient=False,
-                                   repo_root_folder='/home/fleming/Documents/Projects/RtPredTrainingData_mostcurrent',
-                                   custom_column_fields=None, remove_na=True, drop_hsm_dups=False,
-                                   fallback_column='Waters ACQUITY UPLC BEH C18', hsm_fallback=True,
-                                   col_fields_fallback=True, fallback_metadata='0045',
-                                   hsm_fields=['H', 'S*', 'A', 'B', 'C (pH 2.8)', 'C (pH 7.0)'],
-                                   tanaka_fields=['kPB', 'αCH2', 'αT/O', 'αC/P', 'αB/P', 'αB/P.1'],
-                                   tanaka_match_ps=False):
+                                   use_gradient=False, custom_column_fields=None, remove_na=True,
+                                   tanaka_match='best_match', tanaka_ignore_spp_particle_size=True,
+                                   col_fields_fallback=True, fallback_metadata='0045'):
         # NOTE: global system features, then compound-specific features (e.g., based on position in gradient)
         global REL_COLUMNS
         if (onehot_ids):
@@ -298,82 +343,28 @@ class Data:
         fields = []
         names = []
         if (use_hsm):
-            hsm = pd.read_csv(os.path.join(repo_root_folder, 'resources/hsm_database/hsm_database.tsv'), sep='\t')
-            hsm_cf = 'name_normalized'
-            hsm_counts = hsm.value_counts(hsm_cf)
-            hsm_dups = hsm_counts.loc[hsm_counts > 1].index.tolist()
-            hsm.drop_duplicates([hsm_cf], keep=False if drop_hsm_dups else 'last', inplace=True)
-            hsm.set_index(hsm_cf, drop=False, verify_integrity=True, inplace=True)
-            self.df.loc[pd.isna(self.df['column.name']), 'column.name'] = 'unknown' # instead of NA
-            for c in self.df['column.name'].unique():
-                if (c not in hsm[hsm_cf].tolist()):
-                    if (not hsm_fallback):
-                        raise Exception(
-                            f'no HSM data for {", ".join([str(c) for c in set(self.df["column.name"]) if c not in hsm[hsm_cf].tolist()])}')
-                    else:
-                        if (fallback_column == 'average'):
-                            fallback = pd.Series(self.df.drop_duplicates(subset=['dataset_id']).merge(
-                                hsm, left_on='column.name', right_index=True)[hsm_fields].mean(),
-                                                 name=c)
-                            warning(f'using average HSM values for column {c}')
-                        elif (fallback_column == 'zeros'):
-                            fallback = pd.Series({f: 0 for f in hsm_fields},
-                                                 name=c, dtype='float64')
-                            warning(f'using zeros HSM values for column {c}')
-                        else:
-                            fallback = pd.Series(hsm.loc[fallback_column], name=c)
-                        hsm = pd.concat([hsm, pd.DataFrame(fallback).transpose()], axis=0)
-                elif (c in hsm_dups):
-                    warning(f'multiple HSM entries exist for column {c}, the last entry is used')
-            means, scales = get_column_scaling(hsm_fields, repo_root_folder=repo_root_folder,
+            to_get = self.df[['column.name', 'column.particle.size']].drop_duplicates().reset_index(drop=True).copy()
+            hsm = to_get.join(pd.DataFrame.from_records([{'id': i} | dict(self.get_hsm_params(r))
+                                                         for i, r in to_get.iterrows()]).set_index('id'))
+            means, scales = get_column_scaling(self.hsm_fields, repo_root_folder=self.repo_root_folder,
                                                scale_dict=self.sys_scales)
-            fields.append((hsm.loc[self.df['column.name'], hsm_fields].astype(float).values - means) / scales)
+            data_with_hsm = pd.merge(self.df, hsm, how='left', on=['column.name', 'column.particle.size'])
+            print('HSM parameters matching:\n' + data_with_hsm.drop_duplicates('dataset_id')['hsm_how'].value_counts().to_string())
+            # store the "hsm_how" in data, but not the redundant hsm values
+            self.df = data_with_hsm[[c for c in data_with_hsm.columns.tolist() if c not in self.hsm_fields]]
+            fields.append((data_with_hsm[self.hsm_fields].astype(float).values - means) / scales)
         if (use_tanaka):
-            tanaka = pd.read_csv(os.path.join(repo_root_folder, 'resources/tanaka_database/tanaka_database.tsv'), sep='\t')
-            tanaka_cf = 'name_normalized'
-            tanaka_counts = tanaka.value_counts(tanaka_cf)
-            tanaka_dups = tanaka_counts.loc[tanaka_counts > 1].index.tolist()
-            # tanaka.drop_duplicates([tanaka_cf], keep=False if drop_hsm_dups else 'last', inplace=True)
-            # tanaka.set_index(tanaka_cf, drop=False, verify_integrity=True, inplace=True)
-            self.df.loc[pd.isna(self.df['column.name']), 'column.name'] = 'unknown' # instead of NA
-            # NOTE: particle size: drop the 'spp' / only use float at beginning
-            tanaka['particle.size'] = [float(match[0]) if (match:=re.match(r'[\d\.]+', str(ps))) is not None
-                                       else np.nan
-                                       for ps in tanaka['particle size [µm]']]
-            for c in self.df['column.name'].unique():
-                # TODO: rewrite when tanaka db is updated with estimates
-                if (c not in tanaka[tanaka_cf].tolist()):
-                    if (not hsm_fallback):
-                        raise Exception(
-                            f'no Tanaka data for {", ".join([str(c) for c in set(self.df["column.name"]) if c not in tanaka[tanaka_cf].tolist()])}')
-                    else:
-                        if (fallback_column == 'average'):
-                            fallback = pd.Series(self.df.drop_duplicates(subset=['dataset_id']).merge(
-                                tanaka, left_on='column.name', right_index=True)[tanaka_fields].mean(),
-                                                 name=c)
-                            warning(f'using average Tanaka values for column {c}')
-                        elif (fallback_column == 'zeros'):
-                            fallback = pd.Series({f: 0 for f in tanaka_fields},
-                                                 name=c, dtype='float64')
-                            warning(f'using zeros Tanaka values for column {c}')
-                        else:
-                            fallback = pd.Series(tanaka.loc[fallback_column], name=c)
-                        tanaka = pd.concat([tanaka, pd.DataFrame(fallback).transpose()], axis=0)
-                elif (c in tanaka_dups):
-                    warning(f'multiple Tanaka entries exist for column {c}, the last entry is used')
-            means, scales = get_column_scaling(tanaka_fields, repo_root_folder=repo_root_folder,
+            to_get = self.df[['column.name', 'column.particle.size']].drop_duplicates().reset_index(drop=True).copy()
+            tanaka = to_get.join(pd.DataFrame.from_records([{'id': i} | dict(self.get_tanaka_params(
+                r, how=tanaka_match, ignore_spp_particle_size=tanaka_ignore_spp_particle_size))
+                                                            for i, r in to_get.iterrows()]).set_index('id'))
+            means, scales = get_column_scaling(self.tanaka_fields, repo_root_folder=self.repo_root_folder,
                                                scale_dict=self.sys_scales)
-            if (tanaka_match_ps):
-                tanaka.reset_index()
-                fields.append((self.df[['column.name', 'column.particle.size']].merge(
-                    tanaka, how='left',
-                    left_on=['column.name', 'column.particle.size'],
-                    right_on=['name_normalized', 'particle.size'])[tanaka_fields].astype(float).values - means) / scales)
-            else:
-                fields.append((tanaka.drop_duplicates([tanaka_cf], keep=False if drop_hsm_dups else 'last'
-                                                      ).set_index(tanaka_cf, drop=False, verify_integrity=True
-                                                                  ).loc[self.df['column.name'], tanaka_fields
-                                                                        ].astype(float).values - means) / scales)
+            data_with_tanaka = pd.merge(self.df, tanaka, how='left', on=['column.name', 'column.particle.size'])
+            print('Tanaka parameters matching:\n' + data_with_tanaka.drop_duplicates('dataset_id')['tanaka_how'].value_counts().to_string())
+            # store the "tanaka_how" in data, but not the redundant tanaka values
+            self.df = data_with_tanaka[[c for c in data_with_tanaka.columns.tolist() if c not in self.tanaka_fields]]
+            fields.append((data_with_tanaka[self.tanaka_fields].astype(float).values - means) / scales)
         field_names = custom_column_fields if custom_column_fields is not None else REL_COLUMNS
         na_columns = [col for col in field_names if self.df[col].isna().any()]
         if (len(na_columns) > 0):
@@ -382,7 +373,7 @@ class Data:
                     pass
                 else:
                     column_information = pd.read_csv(os.path.join(
-                    repo_root_folder, 'processed_data', fallback_metadata, f'{fallback_metadata}_metadata.tsv'),
+                    self.repo_root_folder, 'processed_data', fallback_metadata, f'{fallback_metadata}_metadata.tsv'),
                                                  sep='\t')
                     overwritten_columns = [c for c, all_nans in self.df.loc[
                         self.df[field_names].isna() .any(axis=1), field_names].isna().all().items()
@@ -397,7 +388,7 @@ class Data:
             else:
                 print('WARNING: system data contains NA values, the option to remove these columns was disabled though! '
                       + ', '.join(na_columns))
-        means, scales = get_column_scaling(field_names, repo_root_folder=repo_root_folder,
+        means, scales = get_column_scaling(field_names, repo_root_folder=self.repo_root_folder,
                                            scale_dict=self.sys_scales)
         fields.append((self.df[field_names].astype(float).values - means) / scales)
         names.extend(field_names)
@@ -415,7 +406,7 @@ class Data:
             fields.append(self.df[onehot_fields].astype(float).values)
             # NOTE: not scaled!
         if (use_ph):
-            means, scales = get_column_scaling(['ph'], repo_root_folder=repo_root_folder,
+            means, scales = get_column_scaling(['ph'], repo_root_folder=self.repo_root_folder,
                                            scale_dict=self.sys_scales)
             fields.append((self.df[['ph']].astype(float).values - means) / scales)
         # NOTE: gradient (or other compound-specific system features) HAVE TO BE LAST!
@@ -430,7 +421,7 @@ class Data:
             fields.append(self.df[solvent_cols])
             # TODO: save solvents order!
             self.solvent_order = solvent_cols
-        np.savetxt('/tmp/sys_array.txt', np.concatenate(fields, axis=1), fmt='%.2f')
+        # np.savetxt('/tmp/sys_array.txt', np.concatenate(fields, axis=1), fmt='%.2f')
         self.x_info = np.concatenate(fields, axis=1)
         self.custom_column_fields = names
 
@@ -450,13 +441,11 @@ class Data:
                                             use_hsm=self.use_hsm, use_tanaka=self.use_tanaka,
                                             use_newonehot=self.use_newonehot, use_ph=self.use_ph,
                                             use_gradient=self.use_gradient,
-                                            repo_root_folder=self.repo_root_folder,
                                             custom_column_fields=self.custom_column_fields,
                                             remove_na=self.columns_remove_na,
-                                            hsm_fields=self.hsm_fields, tanaka_fields=self.tanaka_fields,
-                                            fallback_column=self.fallback_column,
                                             fallback_metadata=self.fallback_metadata,
-                                            tanaka_match_ps=self.tanaka_match_particlesize)
+                                            tanaka_match=self.tanaka_match,
+                                            tanaka_ignore_spp_particle_size=self.tanaka_ignore_spp_particle_size)
         xs = np.concatenate(list(filter(lambda x: x is not None, (self.x_features, self.x_classes))),
                             axis=1)
         self.classes_indices = ([xs.shape[1] - self.x_classes.shape[1], xs.shape[1] - 1]
