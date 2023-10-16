@@ -427,10 +427,11 @@ def check_integrity(x: RankDataset, clean=False):
                 invalid = [_ for _ in invalid if max_i not in _]
         records.append(dict(nr_combs=nr_combs, nr_confl=nr_confl, nr_invalid=nr_invalid))
     stats = pd.DataFrame.from_records(records)
-    print(f'conflicting pairs percentage: {stats.nr_confl.sum() / stats.nr_combs.sum():.2%}')
-    print(f'conflicting pairs percentage (averaged): {(stats.nr_confl / stats.nr_combs).mean():.2%}')
-    print(f'invalid conflicting pairs percentage: {stats.nr_invalid.sum() / stats.nr_confl.sum():.2%}')
-    print(f'invalid pairs percentage (of total): {stats.nr_invalid.sum() / stats.nr_combs.sum():.2%}')
+    if (len(stats) != 0):
+        print(f'conflicting pairs percentage: {stats.nr_confl.sum() / stats.nr_combs.sum():.2%}')
+        print(f'conflicting pairs percentage (averaged): {(stats.nr_confl / stats.nr_combs).mean():.2%}')
+        print(f'invalid conflicting pairs percentage: {stats.nr_invalid.sum() / stats.nr_confl.sum():.2%}')
+        print(f'invalid pairs percentage (of total): {stats.nr_invalid.sum() / stats.nr_combs.sum():.2%}')
     # dss = pd.merge(dss, pd.read_csv(os.path.join('/home/fleming/Documents/Projects/RtPredTrainingData_mostcurrent/', 'ph_info.csv'), sep='\t', index_col=0)[REL_ONEHOT_COLUMNS], how='left', left_index=True, right_index=True)
     # for ds1, ds2 in same_settings_datasets:
     #     assert all(x[0][0] == x[0][1] or np.isnan(x[0][0]) and np.isnan(x[0][1]) for x in
