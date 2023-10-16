@@ -18,6 +18,11 @@ import torch
 from utils import REL_COLUMNS, Data, export_predictions
 from features import features, parse_feature_spec
 
+BENCHMARK_DATASETS = ['0003', '0010', '0018', '0055', '0054', '0019', '0002']
+
+def get_authors(ds, repo_root_dir='/home/fleming/Documents/Projects/RtPredTrainingData_mostcurrent/'):
+    return str(pd.read_csv(repo_root_dir + f'/processed_data/{ds}/{ds}_info.tsv', sep='\t')['authors'].item())
+
 class NpEncoder(json.JSONEncoder):
     def default(self, obj):
         if isinstance(obj, np.integer):
@@ -213,6 +218,7 @@ def visualize_df(df, x_axis='rt'):
 
 
 def data_stats(d, data, custom_column_fields=None, validation_counts_as_train=False, compound_identifier='smiles'):
+    ds = d.df.dataset_id.unique().item()
     train_df = data.df.loc[data.df.split_type.isin(
         ['train'] + (['val'] if validation_counts_as_train else []))]
     train_compounds_all = set(train_df[compound_identifier])
@@ -220,18 +226,28 @@ def data_stats(d, data, custom_column_fields=None, validation_counts_as_train=Fa
     train_compounds_col = set(train_df.loc[train_df['column.name'] == this_column, compound_identifier])
     test_compounds = set(d.df[compound_identifier])
     system_fields = custom_column_fields
+    # TODO: now something like pH should be included
     train_configs = [t[1:] for t in set(train_df[['dataset_id', 'column.name'] + system_fields]
                                         .itertuples(index=False, name=None))]
     test_config = tuple(d.df[['column.name'] + system_fields].iloc[0].tolist())
     same_config = len([t for t in train_configs if t == test_config])
     same_column = len([t for t in train_configs if t[0] == test_config[0]])
-    return {'num_data': len(test_compounds),
+    stats = {'num_data': len(test_compounds),
             'compound_overlap_all': (len(test_compounds & train_compounds_all)
                                            / len(test_compounds)),
             'compound_overlap_column': (len(test_compounds & train_compounds_col)
                                               / len(test_compounds)),
             'column_occurences': same_column,
             'config_occurences': same_config}
+    flags = {
+        'our_datasets': 'harrieder' in get_authors(ds, d.repo_root_folder).lower(),
+        'benchmark_dataset': ds in BENCHMARK_DATASETS,
+        'structure_disjoint': stats['compound_overlap_all'] == 0,
+        'setup_disjoint': stats['config_occurences'] == 0,
+        'column_disjoint': stats['column_occurences'] == 0
+    }
+    stats['flags'] = flags
+    return stats
 
 
 
