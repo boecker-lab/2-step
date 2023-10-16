@@ -25,6 +25,15 @@ BENCHMARK_DATASETS = {'0003': 'IPB_Halle',
                       '0054': 'LIFE_old',
                       '0019': 'Eawag_XBridgeC18',
                       '0002': 'FEM_long'}
+# MAEs taken from https://doi.org/10.1016/j.jchromb.2023.123624
+BENCHMARK_MAE = {'0003': 0.44,
+                 '0010': 1.65,
+                 '0018': 1.48,
+                 '0055': 0.35,
+                 '0054': 0.23,
+                 '0019': 0.94,
+                 '0002': 2.15}
+
 
 
 parser = ArgumentParser()
@@ -69,7 +78,7 @@ class LADModel:
             except:
                 print('not enough data points for OLS model')
 
-def make_title(ds, acc=None, lcs_dist=None, flags=None):
+def make_title(ds, acc=None, lcs_dist=None, flags=None, display_ref_mae=True):
     title = ds
     if ds in BENCHMARK_DATASETS:
         title += f' "{BENCHMARK_DATASETS[ds]}"'
@@ -84,6 +93,8 @@ def make_title(ds, acc=None, lcs_dist=None, flags=None):
         for desc, symbol in SYMBOLS.items():
             if desc in flags and flags[desc]:
                 title += symbol
+    if display_ref_mae and ds in BENCHMARK_MAE:
+        title += f'\nreference MAE: {BENCHMARK_MAE[ds]:.2f}'
     return title
 
 def sort_flags(flags):
