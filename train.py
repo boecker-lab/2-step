@@ -33,6 +33,7 @@ class TrainArgs(Tap):
     val_split: float = 0.05
     device: Optional[str] = None  # either `mirrored` or specific device name like gpu:1 or None (auto)
     remove_test_compounds: List[str] = [] # remove compounds occuring in the specified (test) datasets
+    remove_test_compounds_mode: Literal['exact', '2d'] = '2d' # remove exact structures or those with same canonical SMILES
     exclude_compounds_list: Optional[str] = None # list of compounds to exclude from training
     learning_rate: float = 5e-4
     no_encoder_train: bool = False # don't train the encoder(embedding) layers
@@ -333,9 +334,9 @@ if __name__ == '__main__':
             d_temp = Data()
             for t in args.remove_test_compounds:
                 d_temp.add_dataset_id(t, repo_root_folder=args.repo_root_folder,
-                                      isomeric=(not args.no_isomeric))
-            compounds_to_remove = set(d_temp.df['inchi.std'].tolist())
-            data.df = data.df.loc[~data.df['inchi.std'].isin(compounds_to_remove)]
+                                      isomeric=(args.remove_test_compounds_mode == 'exact'))
+            compounds_to_remove = set(d_temp.df['smiles'].tolist())
+            data.df = data.df.loc[~data.df['smiles'].isin(compounds_to_remove)]
             print(f'removed {len(compounds_to_remove)} compounds occuring '
                   'in test data from training data')
         if (args.exclude_compounds_list is not None):
