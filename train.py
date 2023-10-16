@@ -334,10 +334,17 @@ if __name__ == '__main__':
             d_temp = Data()
             for t in args.remove_test_compounds:
                 d_temp.add_dataset_id(t, repo_root_folder=args.repo_root_folder,
-                                      isomeric=(args.remove_test_compounds_mode == 'exact'))
-            compounds_to_remove = set(d_temp.df['smiles'].tolist())
-            data.df = data.df.loc[~data.df['smiles'].isin(compounds_to_remove)]
-            print(f'removed {len(compounds_to_remove)} compounds occuring '
+                                      isomeric=(not args.no_isomeric))
+            if (args.remove_test_compounds_mode == '2d'):
+                data.df['inchikey1'] = data.df['inchikey.std'].apply(lambda i: i.split('-')[0])
+                d_temp.df['inchikey1'] = d_temp.df['inchikey.std'].apply(lambda i: i.split('-')[0])
+                compounds_id_remove = 'inchikey1'
+            else:
+                compounds_id_remove = 'smiles'
+            compounds_to_remove = set(d_temp.df[compounds_id_remove].tolist())
+            len_orig = data.df[compounds_id_remove].nunique()
+            data.df = data.df.loc[~data.df[compounds_id_remove].isin(compounds_to_remove)]
+            print(f'removed {len(compounds_to_remove)} (actually {len_orig - data.df[compounds_id_remove].nunique()}) compounds occuring '
                   'in test data from training data')
         if (args.exclude_compounds_list is not None):
             # exclude everything from exclusion list/table where all columns match
