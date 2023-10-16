@@ -85,7 +85,7 @@ class TrainArgs(Tap):
     mpn_encoder: Literal['dmpnn', 'dualmpnnplus', 'dualmpnn'] = 'dmpnn'
     smiles_for_graphs: bool = False # always use SMILES internally, compute graphs only on demand
     # pairs
-    epsilon: float = 0.5 # difference in evaluation measure below which to ignore falsely predicted pairs
+    epsilon: str | float = '30s' # difference in evaluation measure below which to ignore falsely predicted pairs
     pair_step: int = 3
     pair_stop: Optional[int] = 128
     use_weights: bool = True    # weight pairs by rt difference
@@ -111,6 +111,25 @@ class TrainArgs(Tap):
     plot_weights: bool = False
     save_data: bool = False
     ep_save: bool = False       # save after each epoch (only for mpn models)
+
+    def process_args(self):
+        # process epsilon unit
+        self.epsilon = str(self.epsilon)
+        if (match_ := re.match(r'[\d\.]+ *(min|s)', self.epsilon)):
+            unit = match_.groups()[0]
+            if unit == 's':
+                self.epsilon = float(self.epsilon.replace('s', '').strip()) / 60
+            elif unit == 'min':
+                self.epsilon = float(self.epsilon.replace('min', '').strip())
+            else:
+                raise ValueError(f'wrong unit for epsilon ({self.epsilon}): {unit}')
+        elif (re.match(r'[\d\.]+', self.epsilon)):
+            self.epsilon = float(self.epsilon.strip())
+        else:
+            raise ValueError(f'wrong format for epsilon ({self.epsilon})')
+
+    def configure(self) -> None:
+        self.add_argument('--epsilon', type=str)
 
 def generic_run_name():
     from datetime import datetime
