@@ -504,18 +504,19 @@ class Data:
             del column_information['id']
             df = df.merge(column_information, on='dataset_id')
             # gradient
-            gradient_information = pd.read_csv(os.path.join(
-                os.path.dirname(primary_path), f'{dataset_id}_gradient.tsv'),
-                sep='\t')
-            for part in range(4):
-                part_char = chr(65 + part) # A-D
-                df[f'gradient_{part_char}_conc'] = np.interp(df.rt, gradient_information['t [min]'], gradient_information[f'{part_char} [%]'])
-            for solvent in [c for c in df.columns if c.startswith('eluent.A.') and not (c.endswith('.unit') or c.endswith('.pH'))]:
-                solvent_name = solvent.split('.')[-1]
-                df[f'gradient_conc_{solvent_name}'] = np.sum([
-                    (df[f'gradient_{part_char}_conc'] / 100) * (df[f'eluent.{part_char}.{solvent_name}'] / 100) # NOTE: assumes values 0-100
-                    for part_char in 'ABCD'], axis=0)
-            df['gradient_flowrate'] = np.interp(df.rt, gradient_information['t [min]'], gradient_information['flow rate [ml/min]'])
+            if (self.use_gradient):
+                gradient_information = pd.read_csv(os.path.join(
+                    os.path.dirname(primary_path), f'{dataset_id}_gradient.tsv'),
+                    sep='\t')
+                for part in range(4):
+                    part_char = chr(65 + part) # A-D
+                    df[f'gradient_{part_char}_conc'] = np.interp(df.rt, gradient_information['t [min]'], gradient_information[f'{part_char} [%]'])
+                for solvent in [c for c in df.columns if c.startswith('eluent.A.') and not (c.endswith('.unit') or c.endswith('.pH'))]:
+                    solvent_name = solvent.split('.')[-1]
+                    df[f'gradient_conc_{solvent_name}'] = np.sum([
+                        (df[f'gradient_{part_char}_conc'] / 100) * (df[f'eluent.{part_char}.{solvent_name}'] / 100) # NOTE: assumes values 0-100
+                        for part_char in 'ABCD'], axis=0)
+                df['gradient_flowrate'] = np.interp(df.rt, gradient_information['t [min]'], gradient_information['flow rate [ml/min]'])
         # rows without RT data are useless
         df = df[~pd.isna(df.rt)]
         # so are compounds (smiles) with multiple rts
