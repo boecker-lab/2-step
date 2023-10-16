@@ -423,7 +423,7 @@ if __name__ == '__main__':
         if (args.clean_data):
             valdata.remove_indices(clean_val)
             print(f'cleaning up {len(clean_val)} of {len(valdata.y_trans)} total '
-                  f'({len(clean_val)/len(valdata.y_trans):.0%}) pairs for being invalid')
+                  f'({np.divide(len(clean_val), len(valdata.y_trans)):.0%}) pairs for being invalid')
     # NOTE: DEBUG dump traindata for examination
     # pickle.dump(traindata, open('td.pkl', 'wb'))
     # exit(0)
