@@ -9,7 +9,7 @@ from collections import defaultdict
 import numpy as np
 import matplotlib.pyplot as plt
 import sys
-from pulp import LpMinimize, LpProblem, LpVariable, lpSum
+from pulp import LpMinimize, LpProblem, LpVariable, lpSum, getSolver
 from argparse import ArgumentParser
 import json
 
@@ -61,7 +61,7 @@ class LADModel:
             model += u[i] >= y[i] - a * x[i] ** 2 - b * x[i] - c
             model += u[i] >= - (y[i] - a * x[i] ** 2 - b * x[i] - c)
         model += lpSum(u)
-        status = model.solve()
+        status = model.solve(getSolver('PULP_CBC_CMD', msg=False))
         assert status == 1, 'solution not optimal'
         self.get_y = lambda x: a.varValue * x ** 2 + b.varValue * x + c.varValue
         if (ols_after):
