@@ -86,7 +86,7 @@ class TrainArgs(Tap):
     mpn_encoder: Literal['dmpnn', 'dualmpnnplus', 'dualmpnn'] = 'dmpnn'
     smiles_for_graphs: bool = False # always use SMILES internally, compute graphs only on demand
     # pairs
-    epsilon: str | float = '30s' # difference in evaluation measure below which to ignore falsely predicted pairs
+    epsilon: Union[str, float] = '30s' # difference in evaluation measure below which to ignore falsely predicted pairs
     pair_step: int = 3
     pair_stop: Optional[int] = 128
     use_weights: bool = True    # weight pairs by rt difference

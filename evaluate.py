@@ -278,7 +278,7 @@ class EvalArgs(Tap):
     export_rois: bool = False
     export_embeddings: bool = False
     device: Optional[str] = None # can be `mirrored`, a specific device name like `gpu:1` or `None` which automatically selects an option
-    epsilon: str | float = '30s' # difference in evaluation measure below which to ignore falsely predicted pairs
+    epsilon: Union[str, float] = '30s' # difference in evaluation measure below which to ignore falsely predicted pairs
     remove_train_compounds: bool = False
     remove_train_compounds_mode: Literal['all', 'column', 'print'] = 'all'
     compound_identifier: Literal['smiles', 'inchi.std', 'inchikey.std'] = 'smiles' # how to identify compounds for statistics
