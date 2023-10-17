@@ -278,7 +278,7 @@ class EvalArgs(Tap):
     export_rois: bool = False
     export_embeddings: bool = False
     device: Optional[str] = None # can be `mirrored`, a specific device name like `gpu:1` or `None` which automatically selects an option
-    epsilon: float = 0.5 # difference in evaluation measure below which to ignore falsely predicted pairs
+    epsilon: str | float = '30s' # difference in evaluation measure below which to ignore falsely predicted pairs
     remove_train_compounds: bool = False
     remove_train_compounds_mode: Literal['all', 'column', 'print'] = 'all'
     compound_identifier: Literal['smiles', 'inchi.std', 'inchikey.std'] = 'smiles' # how to identify compounds for statistics
@@ -288,6 +288,26 @@ class EvalArgs(Tap):
     diffs: bool = False         # compute outliers
     classyfire: bool = False    # compound class stats
     confl_pairs: Optional[str] = None # pickle file with conflicting pairs (smiles)
+
+    def process_args(self):
+        # process epsilon unit
+        self.epsilon = str(self.epsilon)
+        if (match_ := re.match(r'[\d\.]+ *(min|s)', self.epsilon)):
+            unit = match_.groups()[0]
+            if unit == 's':
+                self.epsilon = float(self.epsilon.replace('s', '').strip()) / 60
+            elif unit == 'min':
+                self.epsilon = float(self.epsilon.replace('min', '').strip())
+            else:
+                raise ValueError(f'wrong unit for epsilon ({self.epsilon}): {unit}')
+        elif (re.match(r'[\d\.]+', self.epsilon)):
+            self.epsilon = float(self.epsilon.strip())
+        else:
+            raise ValueError(f'wrong format for epsilon ({self.epsilon})')
+
+    def configure(self) -> None:
+        self.add_argument('--epsilon', type=str)
+
 
 def load_model(path: str, type_='keras'):
     if (type_ == 'keras'):
