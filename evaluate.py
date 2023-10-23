@@ -275,6 +275,7 @@ class EvalArgs(Tap):
     no_metadata_void_rt: bool = False # don't use t0 value from repo metadata (times 2)
     remove_void_compounds: bool = False      # remove void compounds completely
     include_void_compounds_lcs: bool = False # don't remove compounds eluting in void volume for LCS dist
+    void_factor: float = 2              # factor for 'column.t0' value to use as void threshold
     cache_file: str = 'cached_descs.pkl'
     export_rois: bool = False
     export_embeddings: bool = False
@@ -432,6 +433,7 @@ if __name__ == '__main__':
                  'use_system_information': data.use_system_information,
                  'metadata_void_rt': (not args.no_metadata_void_rt),
                  'remove_void_compounds': args.remove_void_compounds,
+                 'void_factor': args.void_factor,
                  'classes_l_thr': data.classes_l_thr,
                  'classes_u_thr': data.classes_u_thr,
                  'use_usp_codes': data.use_usp_codes,

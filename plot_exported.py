@@ -44,6 +44,7 @@ parser.add_argument('--accs_file', default=None)
 parser.add_argument('--errorlabels', action='store_true')
 parser.add_argument('--dont_show', action='store_true')
 parser.add_argument('--repo_root', default='/home/fleming/Documents/Projects/RtPredTrainingData_mostcurrent/')
+parser.add_argument('--void_factor', default=2, type=float)
 
 class LADModel:
     def __init__(self, data, void=0, ols_after=False):
@@ -123,7 +124,7 @@ if __name__ == '__main__':
         df['roi2'] = df.roi ** 2 # for LAD model
         data[id_] = df
         # models['all_points'][ds] = LADModel(data[ds])
-        void_t = dss['column.t0'].loc[id_] * 2
+        void_t = dss['column.t0'].loc[id_] * args.void_factor
         models['LAD'][id_] = LADModel(data[id_], void=void_t)
         models['LAD+OLS'][id_] = LADModel(data[id_], void=void_t, ols_after=True)
     ds_list = list(data)
@@ -160,7 +161,7 @@ if __name__ == '__main__':
         for type_ in models:
             c = next(colors)['color']
             y = models[type_][ds].get_y(x)
-            data_rel = data[ds].loc[data[ds].rt > dss['column.t0'].loc[ds] * 2]
+            data_rel = data[ds].loc[data[ds].rt >= dss['column.t0'].loc[ds] * args.void_factor]
             error = (models[type_][ds].get_y(data_rel.roi) - data_rel.rt).abs()
             errors.append({'model_type': type_, 'ds': ds, 'MAE': error.mean(), 'MedAE': error.median()})
             ax.plot(x, y, color=c,
@@ -173,7 +174,7 @@ if __name__ == '__main__':
         ax.set_xlabel('ROI')
         ax.set_ylabel('rt (min)')
         # ax.axhline(dss['column.t0'].loc[ds], linestyle='dotted', color='red')
-        ax.axhline(dss['column.t0'].loc[ds] * 2, linestyle='dotted', color='red', label='void cutoff')
+        ax.axhline(dss['column.t0'].loc[ds] * args.void_factor, linestyle='dotted', color='red', label='void cutoff')
         # ax.axhline(dss['column.t0'].loc[ds] * 3, linestyle='dotted', color='green')
         ax.legend()
     plt.tight_layout()

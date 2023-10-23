@@ -153,6 +153,7 @@ class Data:
     use_system_information: bool = True
     metadata_void_rt: bool = True
     remove_void_compounds: bool = False
+    void_factor: float = 2
     cache_file: str = 'cached_descs.pkl'
     classes_l_thr: float = 0.005
     classes_u_thr: float = 0.025
@@ -531,7 +532,7 @@ class Data:
         else:
             print(f'{dataset_id}: removing duplicates, {old_len0}→{old_len1}')
         if (self.metadata_void_rt and 'column.t0' in df.columns):
-            void_rt = df['column.t0'].iloc[0] * 2 # NOTE: 2 or 3?
+            void_rt = df['column.t0'].iloc[0] * self.void_factor # NOTE: 2 or 3?
         self.void_info[df.dataset_id.iloc[0]] = void_rt
         if (self.remove_void_compounds):
             df = df.loc[df.rt >= void_rt]
@@ -563,7 +564,7 @@ class Data:
         else:
             df = pd.read_csv(f, sep='\t')
             if (metadata_void_rt and 'column.t0' in df.columns):
-                void_rt = df['column.t0'].iloc[0] * 2
+                void_rt = df['column.t0'].iloc[0] * void_factor
             if ('smiles.std' in df.columns):
                 df['smiles'] = df['smiles.std']
         print(f'read raw file {f} with columns {df.columns.tolist()} ({void_rt=})')
