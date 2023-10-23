@@ -62,6 +62,7 @@ class LADModel:
             model += u[i] >= - (y[i] - a * x[i] ** 2 - b * x[i] - c)
         model += lpSum(u)
         status = model.solve(getSolver('PULP_CBC_CMD', msg=False))
+        # status = model.solve()
         assert status == 1, 'solution not optimal'
         self.get_y = lambda x: a.varValue * x ** 2 + b.varValue * x + c.varValue
         if (ols_after):
@@ -103,7 +104,8 @@ def sort_flags(flags):
     # return most important symbol (min) in flags
     flag_order = {SYMBOLS[k]: i for i, k in enumerate([
         'benchmark_dataset', 'column_disjoint', 'setup_disjoint', 'structure_disjoint', 'our_dataset'])}
-    return min([flag_order[f] for f in flags])
+    res = min([flag_order[f] for f in flags])
+    return res
 
 if __name__ == '__main__':
     args = parser.parse_args()
@@ -116,6 +118,7 @@ if __name__ == '__main__':
     # load data + make LAD models
     for ds in args.tsvs:
         id_ = ds.split('.')[-2].split('_')[-1]
+        print(f'{id_}: ROI->RT modeling')
         df = pd.read_csv(ds, sep='\t', names=['smiles', 'rt', 'roi'], header=None)
         df['roi2'] = df.roi ** 2 # for LAD model
         data[id_] = df
@@ -145,7 +148,7 @@ if __name__ == '__main__':
                              figsize=figsize)
     #fig.set_dpi(150)
     errors = []
-    for ds, ax in zip(sorted(ds_list, key=lambda x: (sort_flags(titles[x].split()[-1]), int(x))),
+    for ds, ax in zip(sorted(ds_list, key=lambda x: (sort_flags(titles[x].split('\n')[0].split()[-1]), int(x))),
                       axes.ravel()):
         colors = plt.rcParams["axes.prop_cycle"]()
         x = np.arange(data[ds].roi.min(), data[ds].roi.max(), 0.001)
