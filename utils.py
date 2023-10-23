@@ -152,6 +152,7 @@ class Data:
     use_compound_classes: bool = False
     use_system_information: bool = True
     metadata_void_rt: bool = True
+    remove_void_compounds: bool = False
     cache_file: str = 'cached_descs.pkl'
     classes_l_thr: float = 0.005
     classes_u_thr: float = 0.025
@@ -532,6 +533,8 @@ class Data:
         if (self.metadata_void_rt and 'column.t0' in df.columns):
             void_rt = df['column.t0'].iloc[0] * 2 # NOTE: 2 or 3?
         self.void_info[df.dataset_id.iloc[0]] = void_rt
+        if (self.remove_void_compounds):
+            df = df.loc[df.rt >= void_rt]
         # flag dataset as train/val/test
         df['split_type'] = split_type
         if (self.df is None):
@@ -542,7 +545,10 @@ class Data:
 
     @staticmethod
     def from_raw_file(f, void_rt=0.0, graph_mode=False,
-                      metadata_void_rt=False, **extra_data_args):
+                      metadata_void_rt=False, remove_void_compounds=False,
+                      **extra_data_args):
+        # TODO: has not been used in a loong time, make sure everything from `add_dataset_id` is here, too
+        # TODO: void compounds removal is not implemented here, for instance
         # get header
         pot_header = open(f).readlines()[0].strip().split('\t')
         if ('rt' not in pot_header):
@@ -572,6 +578,8 @@ class Data:
             df['column.t0'] = void_rt
         void_info = {t[0]: t[1] for t in set(
             df[['dataset_id', 'column.t0']].itertuples(index=False))}
+        if (remove_void_compounds):
+            raise NotImplementedError('remove_void_compounds')
         return Data(df=df, graph_mode=graph_mode,
                     void_info=void_info,
                     **extra_data_args)

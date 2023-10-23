@@ -46,6 +46,7 @@ class TrainArgs(Tap):
     cluster: bool = False          # cluster datasets with same column params for calculating group weights
     void_rt: float = 0.0        # void time threshold; used for ALL datasets
     no_metadata_void_rt: bool = False # do not use t0 value from repo metadata (times 3)
+    remove_void_compounds: bool = False # throw out all compounds eluting in the void volume
     validation_datasets: List[str] = [] # datasets to use for validation (instead of split of training data)
     test_datasets: List[str] = [] # datasets to use for test (instead of split of training data)
     # features
@@ -256,6 +257,7 @@ if __name__ == '__main__':
             print('input from CSV/TSV file')
             # csv file
             data = Data.from_raw_file(input_, void_rt=args.void_rt,
+                                      remove_void_compounds=args.remove_void_compounds,
                                       graph_mode=graphs, smiles_for_graphs=args.smiles_for_graphs,
                                       use_compound_classes=args.comp_classes, use_system_information=args.sysinfo,
                                       metadata_void_rt=(not args.no_metadata_void_rt),
@@ -301,6 +303,7 @@ if __name__ == '__main__':
         # dataset IDs (recommended)
         data = Data(use_compound_classes=args.comp_classes, use_system_information=args.sysinfo,
                     metadata_void_rt=(not args.no_metadata_void_rt),
+                    remove_void_compounds=args.remove_void_compounds,
                     classes_l_thr=args.classes_l_thr, classes_u_thr=args.classes_u_thr,
                     use_usp_codes=args.usp_codes, custom_features=args.features,
                     use_hsm=args.columns_use_hsm, use_tanaka=args.columns_use_tanaka,

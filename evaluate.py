@@ -273,7 +273,8 @@ class EvalArgs(Tap):
     no_progbar: bool = False # no progress-bar
     void_rt: float = 0.0
     no_metadata_void_rt: bool = False # don't use t0 value from repo metadata (times 2)
-    include_void_compounds: bool = False # don't remove compounds eluting in void volume for LCS dist
+    remove_void_compounds: bool = False      # remove void compounds completely
+    include_void_compounds_lcs: bool = False # don't remove compounds eluting in void volume for LCS dist
     cache_file: str = 'cached_descs.pkl'
     export_rois: bool = False
     export_embeddings: bool = False
@@ -430,6 +431,7 @@ if __name__ == '__main__':
     data_args = {'use_compound_classes': data.use_compound_classes,
                  'use_system_information': data.use_system_information,
                  'metadata_void_rt': (not args.no_metadata_void_rt),
+                 'remove_void_compounds': args.remove_void_compounds,
                  'classes_l_thr': data.classes_l_thr,
                  'classes_u_thr': data.classes_u_thr,
                  'use_usp_codes': data.use_usp_codes,
@@ -553,7 +555,7 @@ if __name__ == '__main__':
             acc_nonconfl = eval_(Y[~np.array(confl)], preds[~np.array(confl)], args.epsilon, void_rt=d.void_info[ds]) if any(confl) else acc
         d.df['roi'] = preds[np.arange(len(d.df.rt))[ # restore correct order
             np.argsort(np.concatenate([d.train_indices, d.test_indices, d.val_indices]))]]
-        if (not args.include_void_compounds):
+        if (not args.include_void_compounds_lcs):
             df_lcs = d.df.loc[d.df.rt > d.void_info[ds]]
         else:
             df_lcs = d.df
