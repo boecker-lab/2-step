@@ -593,7 +593,8 @@ if __name__ == '__main__':
             # TODO: don't overwrite
             if (not re.match(r'\d{4}', ds)):
                 ds = os.path.basename(ds)
-            export_predictions(d, preds, f'runs/{config["name"]}_{ds}.tsv')
+            model_spec = os.path.basename(args.model) # preserve epoch specification if present
+            export_predictions(d, preds, f'runs/{model_spec}_{ds}.tsv')
         if (False and args.classyfire):
             fig = px.treemap(d.df.dropna(subset=['classyfire.kingdom', 'classyfire.superclass', 'classyfire.class']),
                              path=['classyfire.kingdom', 'classyfire.superclass', 'classyfire.class'],
