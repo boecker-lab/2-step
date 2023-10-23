@@ -12,6 +12,7 @@ import contextlib
 from tap import Tap
 from typing import List, Literal, Optional, Union
 import pandas as pd
+from collections import defaultdict
 
 from utils import Data
 from features import features, parse_feature_spec
@@ -34,6 +35,7 @@ class TrainArgs(Tap):
     device: Optional[str] = None  # either `mirrored` or specific device name like gpu:1 or None (auto)
     remove_test_compounds: List[str] = [] # remove compounds occuring in the specified (test) datasets
     remove_test_compounds_mode: Literal['exact', '2d'] = '2d' # remove exact structures or those with same canonical SMILES
+    remove_test_compounds_rarest: bool = False # only remove rarest 50% of test compounds
     exclude_compounds_list: Optional[str] = None # list of compounds to exclude from training
     learning_rate: float = 5e-4
     no_encoder_train: bool = False # don't train the encoder(embedding) layers
@@ -341,7 +343,14 @@ if __name__ == '__main__':
                 compounds_id_remove = 'inchikey1'
             else:
                 compounds_id_remove = 'smiles'
-            compounds_to_remove = set(d_temp.df[compounds_id_remove].tolist())
+            if (args.remove_test_compounds_rarest):
+                # compound occurences
+                occs = defaultdict(int)
+                for c in d_temp.df[compounds_id_remove].unique():
+                    occs[c] = data.df.loc[data.df[compounds_id_remove] == c, 'dataset_id'].nunique()
+                compounds_to_remove = list(sorted(d_temp.df[compounds_id_remove].tolist(), key=lambda x: occs[x]))[:int(len(d_temp.df) / 2)]
+            else:
+                compounds_to_remove = set(d_temp.df[compounds_id_remove].tolist())
             len_orig = data.df[compounds_id_remove].nunique()
             data.df = data.df.loc[~data.df[compounds_id_remove].isin(compounds_to_remove)]
             print(f'removed {len(compounds_to_remove)} (actually {len_orig - data.df[compounds_id_remove].nunique()}) compounds occuring '
