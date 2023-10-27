@@ -235,6 +235,7 @@ if __name__ == '__main__':
         import torch
         if (args.gpu):
             torch.set_default_device('cuda')
+        print('torch device:', torch.tensor([1.2, 3.4]).device)
         graphs = True
     else:
         import tensorflow as tf
