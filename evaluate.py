@@ -263,6 +263,7 @@ class EvalArgs(Tap):
     model: str # model to load
     test_sets: List[str] # either CSV or dataset IDs to evaluate on
     model_type: Literal['ranknet', 'mpn'] = 'mpn'
+    gpu: bool = False
     batch_size: int = 256
     no_isomeric: bool = False
     repo_root_folder: str = '/home/fleming/Documents/Projects/RtPredTrainingData_mostcurrent/' # location of the dataset github repository
@@ -409,6 +410,8 @@ if __name__ == '__main__':
 
     if (args.verbose):
         basicConfig(level=INFO)
+    if (args.model_type == 'mpn' and args.gpu):
+        torch.set_default_device('cuda')
 
     # load model
     info('load model...')
