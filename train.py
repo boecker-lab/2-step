@@ -27,6 +27,7 @@ class TrainArgs(Tap):
     model_type: Literal['ranknet', 'mpn'] = 'mpn'
     feature_type: Literal['None', 'rdkall', 'rdk2d', 'rdk3d'] = 'None' # type of features to use
     # training
+    gpu: bool = False
     batch_size: int = 64
     epochs: int = 5
     early_stopping_patience: Optional[int] = None # stop training when val loss doesn't improve for this number of times
@@ -231,6 +232,9 @@ if __name__ == '__main__':
     # importing training libraries, setting associated parameters
     if (args.model_type == 'mpn'):
         from mpnranker2 import MPNranker, train as mpn_train
+        import torch
+        if (args.gpu):
+            torch.set_default_device('cuda')
         graphs = True
     else:
         import tensorflow as tf
