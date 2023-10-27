@@ -1,6 +1,5 @@
 from dataclasses import dataclass, field
-from typing import Dict, Iterable, List, Optional, Union
-from chemprop.features.featurization import BatchMolGraph
+from typing import Dict, Iterable, List, Optional, Union, Any
 from torch.utils.data import Dataset
 import numpy as np
 import logging
@@ -20,7 +19,7 @@ warning = logger.warning
 
 @dataclass
 class RankDataset(Dataset):
-    x_mols: List[Union[BatchMolGraph, str]]       # smiles or mol graphs
+    x_mols: List[Union[Any, str]]       # mol graphs or SMILES
     x_extra: Union[np.ndarray, List[List[float]]] # extra compound features, e.g., logp
     x_sys: Union[np.ndarray, List[List[float]]]   # system features
     x_ids: List[str]                              # ID (e.g., smiles) for each sample

@@ -6,17 +6,11 @@ import torch.nn.functional as F
 from torch.optim.lr_scheduler import ExponentialLR
 from torch.utils.data.dataloader import DataLoader
 from torch.utils.tensorboard import SummaryWriter
-import pandas as pd
-from typing import List, Union, Tuple
 from tqdm import tqdm
 from torch.nn.modules.linear import Linear
-from chemprop.models.mpn import MPN
-from chemprop.args import TrainArgs
-from chemprop.features import mol2graph, BatchMolGraph
 from evaluate import eval_, eval_detailed
 from utils import Data
 import numpy as np
-from pprint import pprint
 import logging
 from functools import reduce
 
@@ -28,23 +22,20 @@ class MPNranker(nn.Module):
     def __init__(self, encoder='dmpnn', extra_features_dim=0, sys_features_dim=0,
                  hidden_units=[16, 8], hidden_units_pv=[16, 2], encoder_size=300,
                  depth=3, dropout_rate_encoder=0.0, dropout_rate_pv=0.0,
-                 dropout_rate_rank=0.0, graph_args=None):
+                 dropout_rate_rank=0.0):
         super(MPNranker, self).__init__()
         if (encoder == 'dmpnn'):
-            args = TrainArgs()
-            args.from_dict({'dataset_type': 'classification',
-                            'data_path': None,
-                            'hidden_size': encoder_size,
-                            'depth': depth,
-                            'dropout': dropout_rate_encoder})
-            self.encoder = MPN(args)
+            from dmpnn import dmpnn
+            self.encoder = dmpnn(encoder_size=encoder_size, depth=depth, dropout_rate=dropout_rate_encoder)
         elif (encoder.lower() in ['dualmpnnplus', 'dualmpnn']):
-            # CD-MVGNN
-            from cdmvgnn import get_cdmvgnn_encoder
-            self.encoder = get_cdmvgnn_encoder(encoder, encoder_size=encoder_size,
-                                               depth=depth, dropout_rate=dropout_rate_encoder,
-                                               args=graph_args)
-            self.graph_args = graph_args
+            from cdmvgnn import cdmvgnn
+            self.encoder = cdmvgnn(encoder, encoder_size=encoder_size,
+                                   depth=depth, dropout_rate=dropout_rate_encoder)
+        elif (encoder == 'deepgcnrt'):
+            from deepgcnrt import deepgcnrt
+            self.encoder = deepgcnrt(num_layers=depth, hid_dim=encoder_size, dropout=dropout_rate_encoder)
+        else:
+            raise NotImplementedError(f'{encoder} encoder')
         self.extra_features_dim = extra_features_dim
         self.sys_features_dim = sys_features_dim
         self.encextra_size = encoder_size + extra_features_dim + sys_features_dim
@@ -68,17 +59,21 @@ class MPNranker(nn.Module):
         res = []
         for graphs, extra, sysf in batch:       # normally 1 or 2
             # encode molecules
-            if (isinstance(self.encoder, MPN)):
-                if (isinstance(graphs[0], str)):
+            if (self.encoder.name == 'dmpnn'):
+                if (isinstance(graphs[0], str)):                              # NOTE: deprecated
                     enc = torch.cat([self.encoder([[g]]) for g in graphs], 0)  # [batch_size x encoder size]
                 else:
                     enc = torch.cat([self.encoder([g]) for g in graphs], 0)  # [batch_size x encoder size]
-            else:
+            elif (self.encoder.name.lower() in ['dualmpnnplus', 'dualmpnn']):
                 # just assume cd-mvgnn model
                 # NOTE: has two outputs: for bonds and atom
                 # TODO: just ADD for now
                 enc = torch.cat([reduce(torch.Tensor.add_,
                                         self.encoder(g.get_components(), None)) for g in graphs], 0)
+            elif (self.encoder.name == 'deepgcnrt'):
+                enc = torch.cat([self.encoder(g) for g in graphs], 0)
+            else:
+                raise NotImplementedError(f'{encoder} encoder')
             # encode system x molecule relationships
             enc_pv = torch.cat([enc, extra, sysf], 1)
             for h in self.hidden_pv:
@@ -101,12 +96,14 @@ class MPNranker(nn.Module):
 
     def predict(self, graphs, extra, sysf, batch_size=8192,
                 prog_bar=False, ret_features=False):
-        if (isinstance(self.encoder, MPN)):
+        if (self.encoder.name in ['dmpnn', 'deepgcnrt']):
             self.eval()
-        else:
+        elif (self.encoder.name.lower() in ['dualmpnnplus', 'dualmpnn']):
             # TODO: necessary because dualmpnn(plus) has different `forward` outputs
             # depending on training/eval
             self.train()
+        else:
+            raise NotImplementedError(f'{encoder} encoder')
         preds = []
         features = []
         if (not isinstance(extra, torch.Tensor)):

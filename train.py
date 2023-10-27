@@ -87,7 +87,7 @@ class TrainArgs(Tap):
     # mpn model
     mpn_loss: Literal['margin', 'bce'] = 'margin'
     mpn_margin: float = 0.1
-    mpn_encoder: Literal['dmpnn', 'dualmpnnplus', 'dualmpnn'] = 'dmpnn'
+    mpn_encoder: Literal['dmpnn', 'dualmpnnplus', 'dualmpnn', 'deepgcnrt'] = 'dmpnn'
     smiles_for_graphs: bool = False # always use SMILES internally, compute graphs only on demand
     # pairs
     epsilon: Union[str, float] = '30s' # difference in evaluation measure below which to ignore falsely predicted pairs
@@ -228,16 +228,9 @@ if __name__ == '__main__':
     else:
         rdBase.DisableLog('rdApp.warning')
     # importing training libraries, setting associated parameters
-    graph_args = None
     if (args.model_type == 'mpn'):
         from mpnranker2 import MPNranker, train as mpn_train
         graphs = True
-        if (args.mpn_encoder.lower() in ['dualmpnnplus', 'dualmpnn']):
-            from cdmvgnn import get_cdmvgnn_args
-            graph_args = get_cdmvgnn_args(
-                encoder_size=args.encoder_size, depth=args.mpn_depth, dropout_rate=args.dropout_rate_encoder)
-        else:
-            import torch
     else:
         import tensorflow as tf
         from LambdaRankNN import RankNetNN
@@ -320,7 +313,7 @@ if __name__ == '__main__':
                     graph_mode=graphs, smiles_for_graphs=args.smiles_for_graphs,
                     fallback_column=args.fallback_column,
                     fallback_metadata=args.fallback_metadata,
-                    encoder=args.mpn_encoder, graph_args=graph_args)
+                    encoder=args.mpn_encoder)
         for did in args.input:
             data.add_dataset_id(did,
                                 repo_root_folder=args.repo_root_folder,
@@ -509,8 +502,7 @@ if __name__ == '__main__':
                                depth=args.mpn_depth,
                                dropout_rate_encoder=args.dropout_rate_encoder,
                                dropout_rate_pv=args.dropout_rate_pv,
-                               dropout_rate_rank=args.dropout_rate_rank,
-                               graph_args=graph_args)
+                               dropout_rate_rank=args.dropout_rate_rank)
         rename_old_writer_logs(f'runs/{run_name}')
         writer = SummaryWriter(f'runs/{run_name}_train')
         val_writer = SummaryWriter(f'runs/{run_name}_val') if len(valdata) > 0 else None
@@ -534,6 +526,7 @@ if __name__ == '__main__':
         except KeyboardInterrupt:
             print('caught interrupt; stopping training')
         if (args.save_data):
+            import torch        # TODO: just torch everywhere
             torch.save(ranker, run_name + '.pt')
         train_preds = ranker.predict(train_graphs, train_x, train_sys, batch_size=8192,
                                      # TODO: batch size can be much greater than that for training

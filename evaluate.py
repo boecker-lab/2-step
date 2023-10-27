@@ -4,7 +4,6 @@ import pandas as pd
 import numpy as np
 from rdkit.Chem.Draw import MolToImage
 from rdkit.Chem import MolFromSmiles
-import argparse
 import os
 import pickle
 import json
@@ -449,8 +448,6 @@ if __name__ == '__main__':
                  'graph_mode': args.model_type == 'mpn',
                  'encoder': (config['args']['mpn_encoder'] if 'mpn_encoder' in config['args']
                              else 'dmpnn'),
-                 'graph_args': (model.graph_args if hasattr(model, 'graph_args')
-                                else None),
                  'remove_doublets': True}
     if (hasattr(data, 'use_tanaka')):
         data_args['use_tanaka'] = data.use_tanaka

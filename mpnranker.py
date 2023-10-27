@@ -10,7 +10,7 @@ from tqdm import tqdm
 from torch.nn.modules.linear import Linear
 from chemprop.models.mpn import (MPNEncoder, get_atom_fdim, get_bond_fdim)
 from chemprop.args import TrainArgs
-from chemprop.features import mol2graph, BatchMolGraph
+from chemprop.features import mol2graph
 from evaluate import eval_
 from utils import BatchGenerator
 import numpy as np

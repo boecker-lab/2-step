@@ -37,8 +37,8 @@ def get_cdmvgnn_args(encoder_size=300, depth=3, dropout_rate=0.0):
     return args
 
 
-def get_cdmvgnn_encoder(encoder='DualMPNNPlus', encoder_size=300, depth=3, dropout_rate=0.0,
-                        args=None):
+def cdmvgnn(encoder='DualMPNNPlus', encoder_size=300, depth=3, dropout_rate=0.0,
+            args=None):
     if (args is None):
         args = get_cdmvgnn_args(encoder_size=encoder_size, depth=depth, dropout_rate=dropout_rate)
     if (encoder.lower() == 'dualmpnnplus'):
@@ -49,4 +49,5 @@ def get_cdmvgnn_encoder(encoder='DualMPNNPlus', encoder_size=300, depth=3, dropo
         raise NotImplementedError(encoder)
     # TODO: for now
     model.device = model.encoders.encoder.W_node.weight.device
+    model.name = encoder
     return model

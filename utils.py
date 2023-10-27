@@ -178,7 +178,6 @@ class Data:
     fallback_column: str = 'Waters ACQUITY UPLC BEH C18' # can be 'average'
     fallback_metadata: str = '0045'                       # can be 'average'
     encoder: Literal['dmpnn', 'dualmpnnplus', 'dualmpnn'] = 'dmpnn'
-    graph_args: Optional[Namespace] = None
     sys_scales: dict = field(default_factory=dict)
     remove_doublets: bool = False # invalid doublet *pairs* will be excluded regardless; only useful for evaluating
 
@@ -207,22 +206,19 @@ class Data:
         if (self.smiles_for_graphs):
             self.graphs = self.df.smiles.values
         else:
-            info('computing graphs')
+            info(f'computing graphs, {self.encoder} mode')
             t0 = time()
-            smiles_unique = set(self.df.smiles)
             if (self.encoder == 'dmpnn'):
-                from chemprop.features import mol2graph
-                graphs_unique = {s: mol2graph([s]) for s in smiles_unique}
+                from dmpnn_graph import dmpnn_graph as mol2graph
             elif (self.encoder.lower() in ['dualmpnnplus', 'dualmpnn']):
-                import sys
-                sys.path.append('../CD-MVGNN')
-                from dglt.data.featurization.mol2graph import mol2graph
-                graph_dict = {}
-                graphs_unique = {s: mol2graph([s], graph_dict, self.graph_args)
-                                 for s in smiles_unique}
+                from cdmvgnn_graph import cdmvgnn_graph as mol2graph
+            elif (self.encoder == 'deepgcnrt'):
+                from deepgcnrt_graph import deepgcnrt_graph as mol2graph
+            else:
+                raise NotImplementedError(f'{self.encoder} encoder')
+            graphs_unique = {s: mol2graph(s) for s in self.df.smiles.unique()}
             self.graphs = np.array([graphs_unique[s] for s in self.df.smiles])
             info(f'computing graphs done ({str(timedelta(seconds=time() - t0))} elapsed)')
-            # self.graphs = np.array([mol2graph([s]) for s in self.df.smiles])
 
     def compute_features(self,
                          filter_features=None,
