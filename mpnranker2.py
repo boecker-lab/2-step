@@ -263,8 +263,8 @@ def train(ranker: MPNranker, bg: DataLoader, epochs=2,
           steps_train_loss=10, steps_val_loss=100,
           batch_size=8192, sigmoid_loss=False,
           margin_loss=0.1, early_stopping_patience=None,
-          ep_save=False, learning_rate=1e-3, gradient_clip=5,
-          no_encoder_train=False,
+          ep_save=False, learning_rate=1e-3, adaptive_lr=False,
+          gradient_clip=5, no_encoder_train=False,
           accs=True, confl_images=False):
     if (confl_images):
         from rdkit.Chem import Draw
@@ -277,8 +277,9 @@ def train(ranker: MPNranker, bg: DataLoader, epochs=2,
         for p in ranker.encoder.parameters():
             p.requires_grad = False
     optimizer = optim.Adam(ranker.parameters(), lr=learning_rate)
-    scheduler = ExponentialLR(optimizer, gamma=0.8,
-                              verbose=True)
+    if (adaptive_lr):
+        scheduler = ExponentialLR(optimizer, gamma=0.8,
+                                  verbose=True)
     # loss_fun = (nn.BCELoss(reduction='none') if sigmoid_loss
     #             else nn.MarginRankingLoss(margin_loss, reduction='none'))
     # loss_fun = nn.BCEWithLogitsLoss(reduction='none')
@@ -452,5 +453,6 @@ def train(ranker: MPNranker, bg: DataLoader, epochs=2,
 
         if (ep_save):
             torch.save(ranker, f'{save_name}_ep{epoch + 1}.pt')
-        scheduler.step()
+        if (adaptive_lr):
+            scheduler.step()
         ranker.train()

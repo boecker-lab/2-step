@@ -38,6 +38,7 @@ class TrainArgs(Tap):
     remove_test_compounds_rarest: bool = False # only remove rarest 50% of test compounds
     exclude_compounds_list: Optional[str] = None # list of compounds to exclude from training
     learning_rate: float = 5e-4
+    adaptive_learning_rate: bool = False
     no_encoder_train: bool = False # don't train the encoder(embedding) layers
     # data
     no_isomeric: bool = False # do not use isomeric data (if available)
@@ -521,8 +522,9 @@ if __name__ == '__main__':
                       batch_size=args.batch_size, epsilon=args.epsilon,
                       sigmoid_loss=(args.mpn_loss == 'bce'), margin_loss=args.mpn_margin,
                       early_stopping_patience=args.early_stopping_patience,
-                      learning_rate=args.learning_rate, no_encoder_train=args.no_encoder_train,
-                      ep_save=args.ep_save)
+                      learning_rate=args.learning_rate,
+                      adaptive_lr=args.adaptive_learning_rate,
+                      no_encoder_train=args.no_encoder_train, ep_save=args.ep_save)
         except KeyboardInterrupt:
             print('caught interrupt; stopping training')
         if (args.save_data):
