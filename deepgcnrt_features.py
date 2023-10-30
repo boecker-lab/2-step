@@ -16,7 +16,7 @@ atom_features = [
     'degree',
     'element',
     'formal_charge',
-    'gasteiger_charge',
+    # 'gasteiger_charge',
     'hybridization',
     'is_aromatic',
     'is_h_acceptor',

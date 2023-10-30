@@ -219,6 +219,12 @@ class Data:
             graphs_unique = {s: mol2graph(s) for s in self.df.smiles.unique()}
             self.graphs = np.array([graphs_unique[s] for s in self.df.smiles])
             info(f'computing graphs done ({str(timedelta(seconds=time() - t0))} elapsed)')
+            # check graphs
+            if (self.encoder == 'deepgcnrt'):
+                assert not any([np.isinf(g.ndata['node_feat'].numpy()).any() for g in graphs_unique.values()])
+                assert not any([np.isnan(g.ndata['node_feat'].numpy()).any() for g in graphs_unique.values()])
+                assert not any([np.isinf(g.edata['edge_feat'].numpy()).any() for g in graphs_unique.values()])
+                assert not any([np.isnan(g.edata['edge_feat'].numpy()).any() for g in graphs_unique.values()])
 
     def compute_features(self,
                          filter_features=None,
