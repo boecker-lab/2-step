@@ -13,6 +13,7 @@ from tap import Tap
 from typing import List, Literal, Optional, Union
 import pandas as pd
 from collections import defaultdict
+import sys
 
 from utils import Data
 from features import features, parse_feature_spec
@@ -235,7 +236,7 @@ if __name__ == '__main__':
         import torch
         if (args.gpu):
             torch.set_default_device('cuda')
-        print('torch device:', torch.tensor([1.2, 3.4]).device)
+        print('torch device:', torch.tensor([1.2, 3.4]).device, file=sys.stderr)
         graphs = True
     else:
         import tensorflow as tf
@@ -462,8 +463,8 @@ if __name__ == '__main__':
     #                     multix=graphs, y_neg=(args.mpn_loss == 'margin'),
     #                     conflicting_smiles_pairs=(pickle.load(open(args.conflicting_smiles_pairs, 'rb'))
     #                                               if args.conflicting_smiles_pairs is not None else []))
-    trainloader = DataLoader(traindata, args.batch_size, shuffle=True)
-    valloader = DataLoader(valdata, args.batch_size, shuffle=True) if len(valdata) > 0 else None
+    trainloader = DataLoader(traindata, args.batch_size, shuffle=True, generator=torch.Generator(device='cuda' if args.gpu else 'cpu'))
+    valloader = DataLoader(valdata, args.batch_size, shuffle=True, generator=torch.Generator(device='cuda' if args.gpu else 'cpu')) if len(valdata) > 0 else None
     if (args.plot_weights):
         plot_x = np.linspace(0, 10 * args.weight_mid, 100)
         import matplotlib.pyplot as plt
