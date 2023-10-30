@@ -221,10 +221,10 @@ class Data:
             info(f'computing graphs done ({str(timedelta(seconds=time() - t0))} elapsed)')
             # check graphs
             if (self.encoder == 'deepgcnrt'):
-                assert not any([np.isinf(g.ndata['node_feat'].numpy()).any() for g in graphs_unique.values()])
-                assert not any([np.isnan(g.ndata['node_feat'].numpy()).any() for g in graphs_unique.values()])
-                assert not any([np.isinf(g.edata['edge_feat'].numpy()).any() for g in graphs_unique.values()])
-                assert not any([np.isnan(g.edata['edge_feat'].numpy()).any() for g in graphs_unique.values()])
+                assert not any([np.isinf(g.ndata['node_feat'].cpu().numpy()).any() for g in graphs_unique.values()])
+                assert not any([np.isnan(g.ndata['node_feat'].cpu().numpy()).any() for g in graphs_unique.values()])
+                assert not any([np.isinf(g.edata['edge_feat'].cpu().numpy()).any() for g in graphs_unique.values()])
+                assert not any([np.isnan(g.edata['edge_feat'].cpu().numpy()).any() for g in graphs_unique.values()])
 
     def compute_features(self,
                          filter_features=None,
