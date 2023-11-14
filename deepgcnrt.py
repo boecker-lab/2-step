@@ -295,7 +295,9 @@ if __name__ == '__main__':
     from deepgcnrt_graph import deepgcnrt_graph
 
     smiles = ['C([C@@H]1[C@H]([C@@H]([C@H](C(O1)O)O)O)O)O',
-                'C([C@@H]1[C@H]([C@@H]([C@@H](C(O1)O)O)O)O)O']
+              'C([C@@H]1[C@H]([C@@H]([C@@H](C(O1)O)O)O)O)O',
+              'CCCN',           # Propylamine
+              ]
     graphs = [deepgcnrt_graph(s) for s in smiles]
 
     model = deepgcnrt()

@@ -5,6 +5,7 @@ import torch.optim as optim
 import torch.nn.functional as F
 from torch.optim.lr_scheduler import ExponentialLR
 from torch.utils.data.dataloader import DataLoader
+from torch.utils.data import default_convert
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 from torch.nn.modules.linear import Linear
@@ -34,6 +35,9 @@ class MPNranker(nn.Module):
         elif (encoder == 'deepgcnrt'):
             from deepgcnrt import deepgcnrt
             self.encoder = deepgcnrt(num_layers=depth, hid_dim=encoder_size, dropout=dropout_rate_encoder)
+        elif (encoder == 'graphformer'):
+            from graphformer import graphformer
+            self.encoder = graphformer(num_layers=depth, hid_dim=encoder_size, dropout=dropout_rate_encoder)
         else:
             raise NotImplementedError(f'{encoder} encoder')
         self.extra_features_dim = extra_features_dim
@@ -58,7 +62,6 @@ class MPNranker(nn.Module):
         """(1|2|n) x [batch_size x (smiles|graphs), batch_size x extra_features, batch_size x sys_features]"""
         res = []
         for graphs, extra, sysf in batch:       # normally 1 or 2
-            # encode molecules
             if (self.encoder.name == 'dmpnn'):
                 if (isinstance(graphs[0], str)):                              # NOTE: deprecated
                     enc = torch.cat([self.encoder([[g]]) for g in graphs], 0)  # [batch_size x encoder size]
@@ -72,8 +75,12 @@ class MPNranker(nn.Module):
                                         self.encoder(g.get_components(), None)) for g in graphs], 0)
             elif (self.encoder.name == 'deepgcnrt'):
                 enc = torch.cat([self.encoder(g) for g in graphs], 0)
+            elif (self.encoder.name == 'graphformer'):
+                out = self.encoder(**graphs)
+                enc = out.hidden_states[-1].mean(axis=0)
+                # NOTE: alternatively don't sum and only take the output of the extra node
             else:
-                raise NotImplementedError(f'{encoder} encoder')
+                raise NotImplementedError(f'{self.encoder} encoder')
             # encode system x molecule relationships
             enc_pv = torch.cat([enc, extra, sysf], 1)
             for h in self.hidden_pv:
@@ -96,7 +103,7 @@ class MPNranker(nn.Module):
 
     def predict(self, graphs, extra, sysf, batch_size=8192,
                 prog_bar=False, ret_features=False):
-        if (self.encoder.name in ['dmpnn', 'deepgcnrt']):
+        if (self.encoder.name in ['dmpnn', 'deepgcnrt', 'graphformer']):
             self.eval()
         elif (self.encoder.name.lower() in ['dualmpnnplus', 'dualmpnn']):
             # TODO: necessary because dualmpnn(plus) has different `forward` outputs
@@ -106,10 +113,6 @@ class MPNranker(nn.Module):
             raise NotImplementedError(f'{encoder} encoder')
         preds = []
         features = []
-        if (not isinstance(extra, torch.Tensor)):
-            extra = torch.as_tensor(extra).float().to(self.encoder.device)
-        if (not isinstance(sysf, torch.Tensor)):
-            sysf = torch.as_tensor(sysf).float().to(self.encoder.device)
         it = range(np.ceil(len(graphs) / batch_size).astype(int))
         if (prog_bar):
             it = tqdm(it)
@@ -117,8 +120,15 @@ class MPNranker(nn.Module):
             for i in it:
                 start = i * batch_size
                 end = i * batch_size + batch_size
-                batch = (graphs[start:end], extra[start:end],
-                         sysf[start:end])
+                graphs_batch = graphs[start:end]
+                if (self.encoder.name == 'graphformer'):
+                    from transformers.models.graphormer.collating_graphormer import GraphormerDataCollator
+                    collator = GraphormerDataCollator()
+                    graphs_batch = collator(graphs_batch)
+                batch = (graphs_batch, default_convert(extra[start:end]),
+                         default_convert(sysf[start:end]))
+                # if (input('pdb') == 'y'):
+                #     import pdb; pdb.set_trace()
                 preds.append(self((batch, ))[0].cpu().detach().numpy())
                 if (ret_features):
                     if (isinstance(graphs[0], str)):
@@ -130,8 +140,6 @@ class MPNranker(nn.Module):
         return np.concatenate(preds)
     def loss_step(self, x, y, weights, loss_fun):
         pred = self(x)
-        y = torch.as_tensor(y).float().to(self.encoder.device)
-        weights = torch.as_tensor(weights).to(self.encoder.device)
         if isinstance(loss_fun, nn.MarginRankingLoss):
             loss = ((loss_fun(*pred, y) * weights).mean(), loss_fun(*pred, y) * weights)
         else:
@@ -297,16 +305,6 @@ def train(ranker: MPNranker, bg: DataLoader, epochs=2,
             break
         loop = tqdm(bg)
         for x, y, weights, is_confl in loop:
-            # move tensors/arrays to correct device
-            # NOTE: also move extr/sys arrays/tensors if feature dim == 0; might cause bug?
-            # if (ranker.extra_features_dim > 0):
-            x[0][1] = torch.as_tensor(x[0][1]).float().to(ranker.encoder.device)
-            x[1][1] = torch.as_tensor(x[1][1]).float().to(ranker.encoder.device)
-            # if (ranker.sys_features_dim > 0):
-            x[0][2] = torch.as_tensor(x[0][2]).float().to(ranker.encoder.device)
-            x[1][2] = torch.as_tensor(x[1][2]).float().to(ranker.encoder.device)
-            weights = torch.as_tensor(weights).to(ranker.encoder.device)
-            is_confl = torch.as_tensor(is_confl).to(ranker.encoder.device)
             ranker.zero_grad()
             loss = ranker.loss_step(x, y, weights, loss_fun)
             loss_sum += loss[0].item()
@@ -343,12 +341,6 @@ def train(ranker: MPNranker, bg: DataLoader, epochs=2,
                 ranker.eval()
                 with torch.no_grad():
                     for x, y, weights, is_confl in val_g:
-                        # if (ranker.extra_features_dim > 0):
-                        x[0][1] = torch.as_tensor(x[0][1]).float().to(ranker.encoder.device)
-                        x[1][1] = torch.as_tensor(x[1][1]).float().to(ranker.encoder.device)
-                        # if (ranker.sys_features_dim > 0):
-                        x[0][2] = torch.as_tensor(x[0][2]).float().to(ranker.encoder.device)
-                        x[1][2] = torch.as_tensor(x[1][2]).float().to(ranker.encoder.device)
                         val_loss_sum += ranker.loss_step(x, y, weights, loss_fun)[0].item()
                         val_iter_count += 1
                 val_step = val_loss_sum / val_iter_count

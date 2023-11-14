@@ -523,8 +523,8 @@ if __name__ == '__main__':
         ((train_graphs, train_x, train_sys, train_y),
          (val_graphs, val_x, val_sys, val_y),
          (test_graphs, test_x, test_sys, test_y)) = d.get_split_data()
-        X = np.concatenate((train_x, test_x, val_x))
-        X_sys = np.concatenate((train_sys, test_sys, val_sys))
+        X = np.concatenate((train_x, test_x, val_x)).astype(np.float32)
+        X_sys = np.concatenate((train_sys, test_sys, val_sys)).astype(np.float32)
         Y = np.concatenate((train_y, test_y, val_y))
         if (args.confl_pairs is not None):
             rel_confl = {k for k, v in confl_pairs.items()

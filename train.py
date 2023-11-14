@@ -90,7 +90,7 @@ class TrainArgs(Tap):
     # mpn model
     mpn_loss: Literal['margin', 'bce'] = 'margin'
     mpn_margin: float = 0.1
-    mpn_encoder: Literal['dmpnn', 'dualmpnnplus', 'dualmpnn', 'deepgcnrt'] = 'dmpnn'
+    mpn_encoder: Literal['dmpnn', 'dualmpnnplus', 'dualmpnn', 'deepgcnrt', 'graphformer'] = 'dmpnn'
     smiles_for_graphs: bool = False # always use SMILES internally, compute graphs only on demand
     # pairs
     epsilon: Union[str, float] = '30s' # difference in evaluation measure below which to ignore falsely predicted pairs
@@ -463,8 +463,33 @@ if __name__ == '__main__':
     #                     multix=graphs, y_neg=(args.mpn_loss == 'margin'),
     #                     conflicting_smiles_pairs=(pickle.load(open(args.conflicting_smiles_pairs, 'rb'))
     #                                               if args.conflicting_smiles_pairs is not None else []))
-    trainloader = DataLoader(traindata, args.batch_size, shuffle=True, generator=torch.Generator(device='cuda' if args.gpu else 'cpu'))
-    valloader = DataLoader(valdata, args.batch_size, shuffle=True, generator=torch.Generator(device='cuda' if args.gpu else 'cpu')) if len(valdata) > 0 else None
+    # NOTE: custom collation for graphformer
+    if (args.mpn_encoder == 'graphformer'):
+        from transformers.models.graphormer.collating_graphormer import GraphormerDataCollator
+        from torch.utils.data import default_collate, default_convert
+        graphformer_collator = GraphormerDataCollator()
+        def custom_collate(batch):
+            return (
+                (
+                    (graphformer_collator([_[0][0][0] for _ in batch]),
+                     torch.stack(list(map(default_convert, [_[0][0][1] for _ in batch])), 0),
+                     torch.stack(list(map(default_convert, [_[0][0][2] for _ in batch])), 0)),
+                    (graphformer_collator([_[0][1][0] for _ in batch]),
+                     torch.stack(list(map(default_convert, [_[0][1][1] for _ in batch])), 0),
+                     torch.stack(list(map(default_convert, [_[0][1][2] for _ in batch])), 0))
+                ),
+                torch.stack(list(map(default_convert, [_[1] for _ in batch])), 0),
+                torch.stack(list(map(default_convert, [_[2] for _ in batch])), 0),
+                torch.stack(list(map(default_convert, [_[3] for _ in batch])), 0))
+
+
+    trainloader = DataLoader(traindata, args.batch_size, shuffle=True,
+                             generator=torch.Generator(device='cuda' if args.gpu else 'cpu'),
+                             collate_fn=custom_collate if (args.mpn_encoder == 'graphformer') else None)
+    valloader = DataLoader(valdata, args.batch_size, shuffle=True,
+                           generator=torch.Generator(device='cuda' if args.gpu else 'cpu'),
+                           collate_fn=custom_collate if (args.mpn_encoder == 'graphformer') else None
+                           ) if len(valdata) > 0 else None
     if (args.plot_weights):
         plot_x = np.linspace(0, 10 * args.weight_mid, 100)
         import matplotlib.pyplot as plt
@@ -536,13 +561,14 @@ if __name__ == '__main__':
         if (args.save_data):
             import torch        # TODO: just torch everywhere
             torch.save(ranker, run_name + '.pt')
-        train_preds = ranker.predict(train_graphs, train_x, train_sys, batch_size=8192,
+        train_preds = ranker.predict(train_graphs, train_x.astype(np.float32), train_sys.astype(np.float32),
+                                     batch_size=8192,
                                      # TODO: batch size can be much greater than that for training
                                      prog_bar=args.verbose)
         if (len(val_x) > 0):
-            val_preds = ranker.predict(val_graphs, val_x, val_sys, batch_size=8192)
+            val_preds = ranker.predict(val_graphs, val_x.astype(np.float32), val_sys.astype(np.float32), batch_size=8192)
         if (len(test_x) > 0):
-            test_preds = ranker.predict(test_graphs, test_x, test_sys, batch_size=8192)
+            test_preds = ranker.predict(test_graphs, test_x.astype(np.float32), test_sys.astype(np.float32), batch_size=8192)
     if (args.export_rois and len(test_x) > 0):
         if not os.path.isdir('runs'):
             os.mkdir('runs')

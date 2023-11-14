@@ -65,4 +65,6 @@ def feature_to_dgl_graph(graph):
     return g
 
 def deepgcnrt_graph(smiles):
-    return feature_to_dgl_graph(smiles2graph(smiles))
+    return feature_to_dgl_graph(smiles2graph(
+        smiles, exclude_node=['atom_num', 'is_in_ring_atom', 'chiral_tag'],
+        exclude_edge=['bondtype_num', 'bondstereo_num']))

@@ -29,6 +29,10 @@ atom_features = [
     'num_radical_electrons',
     'num_valence',
     'tpsa_contrib',
+    # for graphformer
+    'atom_num',
+    'is_in_ring_atom',
+    'chiral_tag'
 ]
 
 bond_features = [
@@ -37,6 +41,9 @@ bond_features = [
     'is_conjugated',
     'is_in_ring',
     'is_rotatable',
+    # for graphformer
+    'bondtype_num',
+    'bondstereo_num',
 ]
 
 '''adopted from: https://github.com/akensert/GCN-retention-time-predictions'''
@@ -51,13 +58,13 @@ def encode(x: Union[float, int, str]) -> List[float]:
     return [float(x)]
 
 def bond_featurizer(bond: Chem.Bond,exclude_feature) -> np.ndarray:
-    new_bond_features = [i for i in bond_features if i != exclude_feature]
+    new_bond_features = [i for i in bond_features if i not in exclude_feature]
     return np.concatenate([
         globals()[bond_feature](bond) for bond_feature in new_bond_features
     ], axis=0)
 
 def atom_featurizer(atom: Chem.Atom, exclude_feature) -> np.ndarray:
-    new_atom_features = [i for i in atom_features if i != exclude_feature]
+    new_atom_features = [i for i in atom_features if i not in exclude_feature]
     return np.concatenate([
         globals()[atom_feature](atom) for atom_feature in new_atom_features
     ], axis=0)
@@ -73,9 +80,36 @@ def bondtype(bond: Chem.Bond) -> List[float]:
         ]
     )
 
+def bondtype_num(bond: Chem.Bond) -> List[float]:
+    return encode(
+        x=bond.GetBondType()
+    )
+
+
 def is_in_ring(bond: Chem.Bond) -> List[float]:
     return encode(
         x=bond.IsInRing()
+    )
+
+def is_in_ring_atom(atom: Chem.Atom) -> List[float]:
+    return encode(
+        x=atom.IsInRing()
+    )
+
+def chiral_tag(atom: Chem.Atom) -> List[float]:
+    return onehot_encode(
+        x=atom.GetChiralTag(),
+        allowable_set=[
+            Chem.rdchem.ChiralType.CHI_UNSPECIFIED,
+            Chem.rdchem.ChiralType.CHI_TETRAHEDRAL_CW,
+            Chem.rdchem.ChiralType.CHI_TETRAHEDRAL_CCW,
+            Chem.rdchem.ChiralType.CHI_OTHER,
+        ]
+    )
+
+def atom_num(atom: Chem.Atom) -> List[float]:
+    return encode(
+        x=atom.GetAtomicNum()
     )
 
 def is_conjugated(bond):
@@ -101,6 +135,12 @@ def bondstereo(bond: Chem.Bond) -> List[float]:
             Chem.rdchem.BondStereo.STEREOANY,
         ]
     )
+
+def bondstereo_num(bond: Chem.Bond) -> List[float]:
+    return encode(
+        x=bond.GetStereo()
+    )
+
 
 def element(atom: Chem.Atom) -> List[float]:
     return onehot_encode(
@@ -246,14 +286,14 @@ def gasteiger_charge(atom: Chem.Atom) -> List[float]:
         x=atom.GetDoubleProp('_GasteigerCharge')
     )
 
-def get_node_features(mol, exclude_feature=None):
+def get_node_features(mol, exclude_feature=[]):
     node_features = np.array([
         atom_featurizer(atom,exclude_feature) for atom in mol.GetAtoms()
     ], dtype='float32')
     # logger.info({"node_dim": node_features, "exclude_feature": exclude_feature})
     return node_features
 
-def get_edge_features(mol, exclude_feature=None):
+def get_edge_features(mol, exclude_feature=[]):
     edge_features = np.array([
         bond_featurizer(bond, exclude_feature) for bond in mol.GetBonds()
     ], dtype="float32"
@@ -261,21 +301,14 @@ def get_edge_features(mol, exclude_feature=None):
     # logger.info({"node_dim": edge_features, "exclude_feature": exclude_feature})
     return edge_features
 
-def get_edge_dim(exclude_feature=None):
+def get_edge_dim(exclude_feature=[]):
     """Hacky way to get edge dim from bond_featurizer"""
     mol = Chem.MolFromSmiles('CC')
-    if exclude_feature:
-        edge_dim = len(bond_featurizer(mol.GetBonds()[0], exclude_feature))
-    else:
-        edge_dim = len(bond_featurizer(mol.GetBonds()[0], exclude_feature))
-
+    edge_dim = len(bond_featurizer(mol.GetBonds()[0], exclude_feature))
     return edge_dim
 
-def get_node_dim(exclude_feature=None):
+def get_node_dim(exclude_feature=[]):
     """Hacky way to get node dim from atom_featurizer"""
     mol = Chem.MolFromSmiles('CC')
-    if exclude_feature:
-        node_dim = len(atom_featurizer(mol.GetAtoms()[0], exclude_feature))
-    else:
-        node_dim = len(atom_featurizer(mol.GetAtoms()[0], exclude_feature))
+    node_dim = len(atom_featurizer(mol.GetAtoms()[0], exclude_feature))
     return node_dim

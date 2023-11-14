@@ -214,6 +214,8 @@ class Data:
                 from cdmvgnn_graph import cdmvgnn_graph as mol2graph
             elif (self.encoder == 'deepgcnrt'):
                 from deepgcnrt_graph import deepgcnrt_graph as mol2graph
+            elif (self.encoder == 'graphformer'):
+                from graphformer_graph import graphformer_graph as mol2graph
             else:
                 raise NotImplementedError(f'{self.encoder} encoder')
             graphs_unique = {s: mol2graph(s) for s in self.df.smiles.unique()}
