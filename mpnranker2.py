@@ -14,6 +14,7 @@ from utils import Data
 import numpy as np
 import logging
 from functools import reduce
+from torch.utils.data import default_collate, default_convert
 
 logger = logging.getLogger('rtranknet.mpnranker2')
 info = logger.info
@@ -63,10 +64,7 @@ class MPNranker(nn.Module):
         res = []
         for graphs, extra, sysf in batch:       # normally 1 or 2
             if (self.encoder.name == 'dmpnn'):
-                if (isinstance(graphs[0], str)):                              # NOTE: deprecated
-                    enc = torch.cat([self.encoder([[g]]) for g in graphs], 0)  # [batch_size x encoder size]
-                else:
-                    enc = torch.cat([self.encoder([g]) for g in graphs], 0)  # [batch_size x encoder size]
+                enc = self.encoder([graphs]) # [batch_size x encoder size]
             elif (self.encoder.name.lower() in ['dualmpnnplus', 'dualmpnn']):
                 # just assume cd-mvgnn model
                 # NOTE: has two outputs: for bonds and atom
@@ -121,10 +119,12 @@ class MPNranker(nn.Module):
                 start = i * batch_size
                 end = i * batch_size + batch_size
                 graphs_batch = graphs[start:end]
-                if (self.encoder.name == 'graphformer'):
-                    from transformers.models.graphormer.collating_graphormer import GraphormerDataCollator
-                    collator = GraphormerDataCollator()
-                    graphs_batch = collator(graphs_batch)
+                if (self.encoder.name == 'dmpnn'):
+                    from dmpnn_graph import dmpnn_batch
+                    graphs_batch = dmpnn_batch(graphs_batch)
+                elif (self.encoder.name == 'graphformer'):
+                    from graphformer_graph import graphformer_batch
+                    graphs_batch = graphformer_batch(graphs_batch)
                 batch = (graphs_batch, default_convert(extra[start:end]),
                          default_convert(sysf[start:end]))
                 # if (input('pdb') == 'y'):
@@ -448,3 +448,17 @@ def train(ranker: MPNranker, bg: DataLoader, epochs=2,
         if (adaptive_lr):
             scheduler.step()
         ranker.train()
+
+def custom_collate(batch):
+    return (
+                (
+                    (custom_collate.graph_batch([_[0][0][0] for _ in batch]),
+                     torch.stack(list(map(default_convert, [_[0][0][1] for _ in batch])), 0),
+                     torch.stack(list(map(default_convert, [_[0][0][2] for _ in batch])), 0)),
+                    (custom_collate.graph_batch([_[0][1][0] for _ in batch]),
+                     torch.stack(list(map(default_convert, [_[0][1][1] for _ in batch])), 0),
+                     torch.stack(list(map(default_convert, [_[0][1][2] for _ in batch])), 0))
+                ),
+                torch.stack(list(map(default_convert, [_[1] for _ in batch])), 0),
+                torch.stack(list(map(default_convert, [_[2] for _ in batch])), 0),
+                torch.stack(list(map(default_convert, [_[3] for _ in batch])), 0))

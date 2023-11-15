@@ -44,7 +44,9 @@ TODO: atom: is_in_ring, chirality, element_number
 
 from deepgcnrt_graph import smiles2graph
 from deepgcnrt_features import atom_features, bond_features
-from transformers.models.graphormer.collating_graphormer import preprocess_item
+from transformers.models.graphormer.collating_graphormer import preprocess_item, GraphormerDataCollator
+
+collator = GraphormerDataCollator()
 
 def graphformer_graph(smiles_string):
     graph = smiles2graph(
@@ -54,3 +56,6 @@ def graphformer_graph(smiles_string):
             'bondtype_num', 'bondstereo_num', 'is_conjugated']])
     graph['labels'] = [0.]
     return preprocess_item(graph)
+
+def graphformer_batch(graphs):
+    return collator(graphs)

@@ -464,31 +464,21 @@ if __name__ == '__main__':
     #                     conflicting_smiles_pairs=(pickle.load(open(args.conflicting_smiles_pairs, 'rb'))
     #                                               if args.conflicting_smiles_pairs is not None else []))
     # NOTE: custom collation for graphformer
-    if (args.mpn_encoder == 'graphformer'):
-        from transformers.models.graphormer.collating_graphormer import GraphormerDataCollator
-        from torch.utils.data import default_collate, default_convert
-        graphformer_collator = GraphormerDataCollator()
-        def custom_collate(batch):
-            return (
-                (
-                    (graphformer_collator([_[0][0][0] for _ in batch]),
-                     torch.stack(list(map(default_convert, [_[0][0][1] for _ in batch])), 0),
-                     torch.stack(list(map(default_convert, [_[0][0][2] for _ in batch])), 0)),
-                    (graphformer_collator([_[0][1][0] for _ in batch]),
-                     torch.stack(list(map(default_convert, [_[0][1][1] for _ in batch])), 0),
-                     torch.stack(list(map(default_convert, [_[0][1][2] for _ in batch])), 0))
-                ),
-                torch.stack(list(map(default_convert, [_[1] for _ in batch])), 0),
-                torch.stack(list(map(default_convert, [_[2] for _ in batch])), 0),
-                torch.stack(list(map(default_convert, [_[3] for _ in batch])), 0))
-
+    if (args.mpn_encoder == 'dmpnn'):
+        from mpnranker2 import custom_collate
+        from dmpnn_graph import dmpnn_batch
+        custom_collate.graph_batch = dmpnn_batch
+    elif (args.mpn_encoder == 'graphformer'):
+        from mpnranker2 import custom_collate
+        from graphformer_graph import graphformer_batch
+        custom_collate.graph_batch = graphformer_batch
 
     trainloader = DataLoader(traindata, args.batch_size, shuffle=True,
                              generator=torch.Generator(device='cuda' if args.gpu else 'cpu'),
-                             collate_fn=custom_collate if (args.mpn_encoder == 'graphformer') else None)
+                             collate_fn=custom_collate if (args.mpn_encoder in ['dmpnn', 'graphformer']) else None)
     valloader = DataLoader(valdata, args.batch_size, shuffle=True,
                            generator=torch.Generator(device='cuda' if args.gpu else 'cpu'),
-                           collate_fn=custom_collate if (args.mpn_encoder == 'graphformer') else None
+                           collate_fn=custom_collate if (args.mpn_encoder in ['dmpnn', 'graphformer']) else None
                            ) if len(valdata) > 0 else None
     if (args.plot_weights):
         plot_x = np.linspace(0, 10 * args.weight_mid, 100)
