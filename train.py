@@ -535,6 +535,7 @@ if __name__ == '__main__':
                                dropout_rate_encoder=args.dropout_rate_encoder,
                                dropout_rate_pv=args.dropout_rate_pv,
                                dropout_rate_rank=args.dropout_rate_rank)
+            print(ranker)
         rename_old_writer_logs(f'runs/{run_name}')
         writer = SummaryWriter(f'runs/{run_name}_train')
         val_writer = SummaryWriter(f'runs/{run_name}_val') if len(valdata) > 0 else None

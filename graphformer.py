@@ -12,8 +12,8 @@ def graphformer(num_layers=12, hid_dim=768, dropout=0.1):
     config.hidden_size = hid_dim
     config.dropout = dropout
     model = GraphormerForGraphClassification(config)
-    model.name = 'graphformer'
-    return model
+    model.encoder.name = 'graphformer'
+    return model.encoder
 
 
 if __name__ == '__main__':
