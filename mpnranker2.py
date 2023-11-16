@@ -61,7 +61,7 @@ class MPNranker(nn.Module):
         self.ident = Linear(hidden_units[-1], 1)
     def forward(self, batch):
         """(1|2|n) x [batch_size x (smiles|graphs), batch_size x extra_features, batch_size x sys_features]"""
-        res = []
+        res = []                          # TODO: no lists, just tensor stuff
         for graphs, extra, sysf in batch:       # normally 1 or 2
             if (self.encoder.name == 'dmpnn'):
                 enc = self.encoder([graphs]) # [batch_size x encoder size]
@@ -75,8 +75,9 @@ class MPNranker(nn.Module):
                 enc = torch.cat([self.encoder(g) for g in graphs], 0)
             elif (self.encoder.name == 'graphformer'):
                 out = self.encoder(**graphs)
-                enc = out.hidden_states[-1].mean(axis=0)
-                # NOTE: alternatively don't sum and only take the output of the extra node
+                # two versions: mean of all nodes or virtual node output
+                # enc = out.last_hidden_state.mean(axis=0)
+                enc = out.last_hidden_state[:, 0, :] # node at pos 0 is virtual node
             else:
                 raise NotImplementedError(f'{self.encoder} encoder')
             # encode system x molecule relationships

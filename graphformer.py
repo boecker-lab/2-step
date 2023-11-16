@@ -17,9 +17,10 @@ def graphformer(num_layers=12, hid_dim=768, dropout=0.1):
 
 
 if __name__ == '__main__':
-    config = GraphormerConfig()
-    # config.num_atoms = 440000
-    model = GraphormerForGraphClassification(config)
+    # config = GraphormerConfig()
+    # # config.num_atoms = 440000
+    # model = GraphormerForGraphClassification(config)
+    model = graphformer()
     from graphformer_graph import graphformer_graph
     g = graphformer_graph('CCCN')
     g = graphformer_graph('C([C@@H]1[C@H]([C@@H]([C@H](C(O1)O)O)O)O)O')
@@ -27,7 +28,7 @@ if __name__ == '__main__':
     g_prep = preprocess_item(g)
     c = GraphormerDataCollator()
     x = c([g_prep])
-    model.encoder(**x).last_hidden_state.shape
+    model(**x).last_hidden_state.shape
     # get 34 graphs with batch size 32, try out how the batching works
     import pandas as pd
     graphs = [graphformer_graph(s) for s in pd.read_csv('/home/fleming/Documents/Projects/RtPredTrainingData_mostcurrent/processed_data/0045/0045_rtdata_isomeric_success.tsv', sep='\t')['smiles.std'].tolist()]
