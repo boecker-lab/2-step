@@ -553,13 +553,13 @@ if __name__ == '__main__':
             import torch        # TODO: just torch everywhere
             torch.save(ranker, run_name + '.pt')
         train_preds = ranker.predict(train_graphs, train_x.astype(np.float32), train_sys.astype(np.float32),
-                                     batch_size=8192,
+                                     batch_size=args.batch_size * 2,
                                      # TODO: batch size can be much greater than that for training
                                      prog_bar=args.verbose)
         if (len(val_x) > 0):
-            val_preds = ranker.predict(val_graphs, val_x.astype(np.float32), val_sys.astype(np.float32), batch_size=8192)
+            val_preds = ranker.predict(val_graphs, val_x.astype(np.float32), val_sys.astype(np.float32), batch_size=args.batch_size * 2)
         if (len(test_x) > 0):
-            test_preds = ranker.predict(test_graphs, test_x.astype(np.float32), test_sys.astype(np.float32), batch_size=8192)
+            test_preds = ranker.predict(test_graphs, test_x.astype(np.float32), test_sys.astype(np.float32), batch_size=args.batch_size * 2)
     if (args.export_rois and len(test_x) > 0):
         if not os.path.isdir('runs'):
             os.mkdir('runs')
