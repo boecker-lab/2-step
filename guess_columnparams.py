@@ -2,13 +2,14 @@ from random import shuffle
 from mpnranker2 import MPNranker
 from evaluate import load_model
 import torch
-from utils import Data, BatchGenerator, get_column_scaling
+from utils import Data
 from features import parse_feature_spec
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 from tqdm import tqdm
 import pickle
+from itertools import combinations
 
 def guess_from_data(d: Data):
     possibilities = set(list(map(tuple, np.concatenate([d.train_x, d.val_x, d.test_x])[:, 1:].tolist())))
@@ -18,7 +19,7 @@ def simple_loss_fun(x1, x2, y):
     return ((-y * (x1 - x2)) > 0).numpy().astype(int)
 
 
-def try_column_vector(m: MPNranker, bg: BatchGenerator, guess, mpn_margin=0.1):
+def try_column_vector(m: MPNranker, bg, guess, mpn_margin=0.1):
     # loss_fun = torch.nn.MarginRankingLoss(mpn_margin, reduction='none')
     # loss_fun = torch.nn.BCELoss(reduction='none')
     loss_fun = simple_loss_fun
@@ -61,9 +62,9 @@ def guesses_different_datasets(dss, ranker, guesses, scaler, custom_features=['M
                      'custom_column_fields': None,
                      'columns_remove_na': False,
                      'graph_mode': True,
-                     'repo_root_folder': '/home/lo63tor/rtpred/RtPredTrainingData'}
+                     'repo_root_folder': '/home/lo63tor/rtpred/repo_newest'}
         test_data = Data(**data_args)
-        test_data.add_dataset_id(ds, isomeric=True, repo_root_folder='/home/lo63tor/rtpred/RtPredTrainingData')
+        test_data.add_dataset_id(ds, isomeric=True, repo_root_folder='/home/lo63tor/rtpred/repo_newest')
         test_data.compute_features(mode=parse_feature_spec('rdkall')['mode'])
         test_data.compute_graphs()
         test_data.split_data((0, 0))
@@ -90,12 +91,27 @@ if __name__ == '__main__':
     parser = ArgumentParser()
     parser.add_argument('model')
     parser.add_argument('--mode', choices=['testall', 'specific', 'allpairs'])
-    parser.add_argument('--pairs_file', default='/home/fleming/Documents/Uni/RTpred/pairs2.pkl')
+    parser.add_argument('--pairs_file', default='/home/fleming/Documents/Uni/RTpred/pairs6.pkl')
     parser.add_argument('--verbose', action='store_true')
     parser.add_argument('--no_save', action='store_true')
-    # args = parser.parse_args('/home/fleming/Documents/Projects/rtranknet/runs/newweightsconfl/newweightsconfl'.split())
+    parser.add_argument('--batch_size', type=int, default=32)
+    # args = parser.parse_args('--mode allpairs runs/graphformer/graphformer_small_ep10'.split())
     args = parser.parse_args()
     m, data, config = load_model(args.model, 'mpn')
+    # get batch/collate function
+    if m.encoder.name == 'dmpnn':
+        from dmpnn_graph import dmpnn_batch as graph_batch_fn
+    elif m.encoder.name == 'graphformer':
+        from graphformer_graph import graphformer_batch as graph_batch_fn
+    elif m.encoder.name == 'deepgcnrt':
+        from deepgcnrt_graph import deepgcnrt_batch as graph_batch_fn
+    else:
+        raise NotImplementedError(m.encoder.name, 'collate')
+    # get model device
+    if hasattr(m.encoder, 'device'):
+        device = m.encoder.device
+    else:
+        device = next(m.parameters()).device
     if (args.mode == 'testall'):
         # test all column param configurations
         test = "0048 0072 0078 0084 0098 0083 0076 0101 0019 0079 0099 0070 0102 0087 0086 0066 0062 0017 0095 0067 0097 0082 0124 0069 0181 0024 0085 0093 0094 0100 0092 0179 0068".split()
@@ -120,67 +136,96 @@ if __name__ == '__main__':
         print('(compound, dataset): (roi, rt)')
         pprint({i: (rois[i], rts[i]) for i in indices})
     elif (args.mode == 'allpairs'):
+        # NOTE: only checks for pairs (with datasets) occuring in data.pkl!!!
+        # make a tsv out of all conflicting pairs then use this to make Data object
+        # TODO: make this batched, make predictions beforehand and only once!!
+        #  get all rows occurring in
         import pickle
         df = data.df.reset_index()
         pairs = pickle.load(open(args.pairs_file, 'rb'))
+        # what has to be predicted?
+        to_predict = []
+        for p in pairs:
+            for dss in pairs[p]:
+                for ds in dss:
+                    c1, c2 = p
+                    to_predict.append((ds, c1))
+                    to_predict.append((ds, c2))
+        to_predict = set(to_predict)
+        to_predict_data = {'graphs': [], 'extra': [], 'sysf': []}
+        to_predict_data_info = {'input': [], 'rt': []}
+        data_graphs = data.get_graphs()
+        data_x_features = data.get_x()[0]
+        data_x_sys = data.get_x()[1]
+        for i, r in df.iterrows():
+            if (input_:=(r.dataset_id, r.smiles)) in to_predict:
+                to_predict_data['graphs'].append(data_graphs[i])
+                to_predict_data['extra'].append(data_x_features[i])
+                to_predict_data['sysf'].append(data_x_sys[i])
+                to_predict_data_info['input'].append(input_)
+                to_predict_data_info['rt'].append(r.rt)
+        to_predict_data['extra'] = np.array(to_predict_data['extra'], dtype=np.float32)
+        to_predict_data['sysf'] = np.array(to_predict_data['sysf'], dtype=np.float32)
+        # do the predictions
+        print('making predictions...')
+        preds = m.predict(**to_predict_data, batch_size=args.batch_size, prog_bar=True)
+        preds = dict(zip(to_predict_data_info['input'], preds))
+        rts = dict(zip(to_predict_data_info['input'], to_predict_data_info['rt']))
+        sysf = dict(zip(to_predict_data_info['input'], map(lambda x: tuple(np.round(xi, 3) for xi in x),
+                                                      to_predict_data['sysf'])))
         pairs_keys = list(pairs)
         shuffle(pairs_keys)
         correct_pairs = []
         verb_counter = 0        # for verbose print at most 50 instances
+        wait_till_correct = False
+        waited_till_correct = False
         for p in tqdm(pairs_keys):
             datasets = pairs[p]
-            if (args.verbose and verb_counter >= 10):
+            if (args.verbose and not wait_till_correct and verb_counter >= 10):
                 break
-            verb_counter += 1
+            if (waited_till_correct):
+                break
             for dss in datasets:
                 # check if part of data
-                rows = {(c, ds): df.loc[(df['smiles.std'] == c) &
-                                        (df.dataset_id == ds if 'dataset_id' in df.columns
-                                         else df.id.str.contains(ds + '_'))].index
-                        for c in p for ds in dss}
-                if (not all(len(v) > 0 for v in rows.values())):
+                if (not all([(ds, c) in preds for c in p for ds in dss])):
                     continue
-                # for normal [(graphs, extra, sys), (graphs, extra, sys)] ranker
-                rois = {i: m([[[data.get_graphs()[rows[i][0]]],
-                               torch.as_tensor([data.get_x()[0][rows[i][0]]], dtype=torch.float).to(m.encoder.device),
-                               torch.as_tensor([data.get_x()[1][rows[i][0]]], dtype=torch.float).to(m.encoder.device)]]
-                             )[0].detach().cpu().numpy()[0]
-                        for i in rows}
-                # for nonsym [((graphs, extra), (graphs, extra)), sys] ranker
-                # rois = {i: 1- m([([data.get_graphs()[rows[i][0]]],
-                #                torch.as_tensor([data.get_x()[0][rows[i][0]]], dtype=torch.float)),
-                #               torch.as_tensor([data.get_x()[1][rows[i][0]]], dtype=torch.float)]).detach().item()
-                #         for i in rows}
-                # pickle.dump([[[data.get_graphs()[list(rows.values())[0][0]]], torch.as_tensor([data.get_x()[list(rows.values())[0][0]]], dtype=torch.float)]], open('/tmp/torchvizdump.pkl', 'wb'))
                 # check order
-                if (len(p) != 2):
-                    print('wtf?', p)
-                    continue
                 c1, c2 = p
-                correct = [(data.get_y()[rows[(c1, ds)][0]] - data.get_y()[rows[(c2, ds)][0]]) * (rois[(c1, ds)] - rois[(c2, ds)]) > 0
-                           for ds in dss]
+                is_really_conflicting = any([(rts[(ds1, c1)] - rts[(ds1, c2)]) * (rts[(ds2, c1)] - rts[(ds2, c2)])
+                                             < 0 for ds1, ds2 in combinations(dss, 2)])
+                if (not is_really_conflicting):
+                    continue
+                verb_counter += 1
+                correct = {ds: (rts[(ds, c1)] - rts[(ds, c2)]) * (preds[(ds, c1)] - preds[(ds, c2)]) > 0
+                           for ds in dss}
+                assert all(map(lambda x: len(x) == 1, (sysf_p:=({ds: list(set(sysf[(ds, c)] for c in p))
+                                                            for ds in dss})).values())
+                           ), 'different sys features with the same dataset?'
+                could_be_correct = any([not np.isclose(sysf_p[ds1], sysf_p[ds2], atol=1e-3).all()
+                                        for ds1, ds2 in combinations(dss, 2)])
+                if (wait_till_correct and all(correct)):
+                    waited_till_correct = True
                 if (args.verbose):
-                    # print(rois)
-                    # print(correct)
                     verb_df = pd.DataFrame.from_records(
-                        [{'compound': c, 'dataset': ds, 'roi': rois[(c, ds)], 'rt': data.get_y()[rows[(c, ds)][0]]}
-                         for c, ds in rows])
+                        [{'compound': c, 'dataset': ds, 'roi': preds[(ds, c)], 'rt': rts[(ds, c)],
+                          'correct': correct[ds], 'could_be_correct': could_be_correct,
+                          'roi_diff': np.abs(preds[(ds, c1)] - preds[(ds, c2)])}
+                         for c in p for ds in dss])
                     print(verb_df.set_index(['dataset', 'compound']).sort_values(by=['dataset', 'rt']))
-                    print(verb_df.groupby('compound').roi.diff().dropna().abs())
-                    # gradient fuer ROIs
-                    # rois = {i: m([[[data.get_graphs()[rows[i][0]]],
-                    #            torch.as_tensor([data.get_x()[0][rows[i][0]]], dtype=torch.float),
-                    #            torch.as_tensor([data.get_x()[1][rows[i][0]]], dtype=torch.float)]]
-                    #          )[0][0].detach().numpy()[0]
-                    #     for i in rows}
-                correct_pairs.append({'pair': p, 'datasets': dss, 'correct': all(correct)})
+                correct_pairs.append({'pair': p, 'datasets': dss, 'correct': all(correct.values()),
+                                      'could_be_correct': could_be_correct})
         correct_df = pd.DataFrame.from_records(correct_pairs)
+        correct_df_possible = correct_df.loc[correct_df.could_be_correct]
         if (not args.no_save):
             correct_df.to_csv(f'confl_pairs_preds_{os.path.splitext(os.path.basename(args.model))[0]}.tsv', sep='\t')
         print(correct_df.groupby('pair').describe())
-        num_correct = len(correct_df.loc[correct_df.correct == True])
-        print('correct pairs (for one dataset): '
-              f'{num_correct}/{len(correct_df)} ({num_correct/len(correct_df):.2%})')
+        print('correct pairs (for any one dataset pair):   ' +
+              f'{correct_df.correct.sum()}/{len(correct_df)} ({correct_df.correct.sum()/len(correct_df):.2%})')
+        print('only those that are possible to predict     ' +
+              f'{correct_df_possible.correct.sum()}/{len(correct_df_possible)} ({correct_df_possible.correct.sum()/len(correct_df_possible):.2%})')
         num_correct = (correct_df.groupby('pair').correct.min() == True).sum()
-        print('pairs correct for all datasets: '
+        print('pairs correct for all dataset pairs:        ' +
+              f'{num_correct}/{len(correct_df.groupby("pair"))} ({num_correct/len(correct_df.groupby("pair")):.2%})')
+        num_correct = (correct_df_possible.groupby('pair').correct.min() == True).sum()
+        print('[only those that are possible to predict]   ' +
               f'{num_correct}/{len(correct_df.groupby("pair"))} ({num_correct/len(correct_df.groupby("pair")):.2%})')
