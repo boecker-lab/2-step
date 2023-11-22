@@ -312,9 +312,9 @@ class EvalArgs(Tap):
     def configure(self) -> None:
         self.add_argument('--epsilon', type=str)
 
-class CPU_Unpickler(pickle.Unpickler):
+class DataUnpickler(pickle.Unpickler):
     def find_class(self, module, name):
-        if module == 'torch.storage' and name == '_load_from_bytes':
+        if module == 'torch.storage' and name == '_load_from_bytes' and not torch.cuda.is_available():
             return lambda b: torch.load(io.BytesIO(b), map_location='cpu')
         else:
             return super().find_class(module, name)
@@ -334,7 +334,7 @@ def load_model(path: str, type_='mpn'):
         else:
             model = torch.load(path, map_location=torch.device('cpu'))
         path = re.sub(r'_ep\d+(\.pt)?$', '', path.rstrip('.pt')) # for ep_save
-        data = CPU_Unpickler(open(f'{path}_data.pkl', 'rb')).load()
+        data = DataUnpickler(open(f'{path}_data.pkl', 'rb')).load()
         config = json.load(open(f'{path}_config.json'))
     return model, data, config
 
