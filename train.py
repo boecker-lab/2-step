@@ -254,6 +254,7 @@ if __name__ == '__main__':
     info('reading in data and computing features...')
     # TRAINING
     if (len(args.input) == 1 and os.path.exists(input_ := args.input[0])):
+        # TODO: probably broken, fix!
         if (input_.endswith('.csv') or input_.endswith('.tsv')):
             print('input from CSV/TSV file')
             # csv file
@@ -382,21 +383,7 @@ if __name__ == '__main__':
      (test_graphs, test_x, test_sys, test_y)) = preprocess(data, args)
     conflicting_smiles_pairs = (pickle.load(open(args.conflicting_smiles_pairs, 'rb'))
                                 if args.conflicting_smiles_pairs is not None else {})
-    info('done. Initializing BatchGenerator...')
-    # bg = BatchGenerator((train_graphs, train_x) if graphs else train_x, train_y,
-    #                     ids=data.df.iloc[data.train_indices].smiles.tolist(),
-    #                     batch_size=args.batch_size, pair_step=args.pair_step,
-    #                     pair_stop=args.pair_stop, use_weights=args.use_weights,
-    #                     use_group_weights=(not args.no_group_weights),
-    #                     dataset_info=data.df.dataset_id.iloc[data.train_indices].tolist(),
-    #                     void_info=data.void_info, weight_steep=args.weight_steep,
-    #                     no_inter_pairs=args.no_inter_pairs,
-    #                     no_intra_pairs=args.no_intra_pairs,
-    #                     max_indices_size=args.max_pair_compounds,
-    #                     weight_mid=args.weight_mid,
-    #                     multix=graphs, y_neg=(args.mpn_loss == 'margin'),
-    #                     conflicting_smiles_pairs=(pickle.load(open(args.conflicting_smiles_pairs, 'rb'))
-    #                                               if args.conflicting_smiles_pairs is not None else []))
+    info('done. Initializing RankDatasets...')
     traindata = RankDataset(x_mols=train_graphs, x_extra=train_x, x_sys=train_sys,
                             x_ids=data.df.iloc[data.train_indices].smiles.tolist(),
                             y=train_y, x_sys_global_num=data.x_info_global_num,
@@ -446,24 +433,6 @@ if __name__ == '__main__':
             valdata.remove_indices(clean_val)
             print(f'cleaning up {len(clean_val)} of {len(valdata.y_trans)} total '
                   f'({np.divide(len(clean_val), len(valdata.y_trans)):.0%}) pairs for being invalid')
-    # NOTE: DEBUG dump traindata for examination
-    # pickle.dump(traindata, open('td.pkl', 'wb'))
-    # exit(0)
-    # vg = BatchGenerator((val_graphs, val_x) if graphs else train_x, val_y,
-    #                     ids=data.df.iloc[data.val_indices].smiles.tolist(),
-    #                     batch_size=args.batch_size, pair_step=args.pair_step,
-    #                     pair_stop=args.pair_stop, use_weights=args.use_weights,
-    #                     use_group_weights=(not args.no_group_weights),
-    #                     dataset_info=data.df.dataset_id.iloc[data.val_indices].tolist(),
-    #                     void_info=data.void_info, weight_steep=args.weight_steep,
-    #                     no_inter_pairs=args.no_inter_pairs,
-    #                     no_intra_pairs=args.no_intra_pairs,
-    #                     max_indices_size=args.max_pair_compounds,
-    #                     weight_mid=args.weight_mid,
-    #                     multix=graphs, y_neg=(args.mpn_loss == 'margin'),
-    #                     conflicting_smiles_pairs=(pickle.load(open(args.conflicting_smiles_pairs, 'rb'))
-    #                                               if args.conflicting_smiles_pairs is not None else []))
-    # NOTE: custom collation for graphformer
     if (args.mpn_encoder == 'dmpnn'):
         from mpnranker2 import custom_collate
         from dmpnn_graph import dmpnn_batch
@@ -472,6 +441,8 @@ if __name__ == '__main__':
         from mpnranker2 import custom_collate
         from graphformer_graph import graphformer_batch
         custom_collate.graph_batch = graphformer_batch
+    else:
+        raise NotImplementedError(args.mpn_encoder, 'collate')
 
     trainloader = DataLoader(traindata, args.batch_size, shuffle=True,
                              generator=torch.Generator(device='cuda' if args.gpu else 'cpu'),
