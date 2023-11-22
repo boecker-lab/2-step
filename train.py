@@ -287,7 +287,7 @@ if __name__ == '__main__':
             # ensure Data/config.json also exist
             assert os.path.exists(data_path := input_.replace('.pt', '_data.pkl'))
             assert os.path.exists(config_path := input_.replace('.pt', '_config.json'))
-            if (not torch.cuda.is_available()):
+            if (not torch.cuda.is_available() and False ): # TODO:
                 # might be a GPU trained model -> adapt
                 ranker = torch.load(input_, map_location=torch.device('cpu'))
                 ranker.encoder.device = torch.device('cpu')
@@ -508,6 +508,7 @@ if __name__ == '__main__':
                       open(f'{run_name}_config.json', 'w'), indent=2)
         try:
             mpn_train(ranker=ranker, bg=trainloader, epochs=args.epochs,
+                      epochs_start=ranker.max_epoch,
                       writer=writer, val_g=valloader, val_writer=val_writer,
                       confl_writer=confl_writer, # TODO:
                       steps_train_loss=np.ceil(len(trainloader) / 100).astype(int),

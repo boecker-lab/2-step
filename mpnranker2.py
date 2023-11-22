@@ -59,6 +59,8 @@ class MPNranker(nn.Module):
         self.dropout_rank = nn.Dropout(dropout_rate_rank)
         # One ROI value for (graph,extr,sys) sample
         self.ident = Linear(hidden_units[-1], 1)
+        self.max_epoch = 0      # track number epochs trained
+
     def forward(self, batch):
         """(1|2|n) x [batch_size x (smiles|graphs), batch_size x extra_features, batch_size x sys_features]"""
         res = []                          # TODO: no lists, just tensor stuff
@@ -266,6 +268,7 @@ def twin_train(twins: RankerTwins, epochs: int,
                 torch.save(twins, f'{save_name}_ep{epoch + 1}.pt')
 
 def train(ranker: MPNranker, bg: DataLoader, epochs=2,
+          epochs_start=0,
           writer:SummaryWriter=None, val_g: DataLoader=None,
           epsilon=0.5, val_writer:SummaryWriter=None,
           confl_writer:SummaryWriter=None,
@@ -301,7 +304,7 @@ def train(ranker: MPNranker, bg: DataLoader, epochs=2,
     last_val_step = np.infty
     stop = False
     val_stats, train_stats = {}, {}
-    for epoch in range(epochs):
+    for epoch in range(epochs_start, epochs_start + epochs):
         if stop:                # CTRL+C
             break
         loop = tqdm(bg)
@@ -354,7 +357,7 @@ def train(ranker: MPNranker, bg: DataLoader, epochs=2,
                     val_pat += 1
                 last_val_step = min(val_step, last_val_step)
                 ranker.train()
-            loop.set_description(f'Epoch [{epoch+1}/{epochs}]')
+            loop.set_description(f'Epoch [{epoch+1}/{epochs_start + epochs}]')
             loop.set_postfix(loss=loss_sum/iter_count if iter_count > 0 else np.nan,
                              val_loss=val_loss_sum/val_iter_count if val_iter_count > 0 else np.nan,
                              confl_loss=confl_loss_sum/iter_count)
@@ -443,7 +446,7 @@ def train(ranker: MPNranker, bg: DataLoader, epochs=2,
                 val_writer.add_scalar('acc', val_acc, iter_count)
                 val_writer.flush()
                 print(f'{val_acc=:.2%}')
-
+        ranker.max_epoch = epoch + 1
         if (ep_save):
             torch.save(ranker, f'{save_name}_ep{epoch + 1}.pt')
         if (adaptive_lr):
