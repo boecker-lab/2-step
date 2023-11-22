@@ -17,7 +17,7 @@ import sys
 
 from utils import Data
 from features import features, parse_feature_spec
-from evaluate import eval_, predict, export_predictions
+from evaluate import predict, export_predictions, load_model
 from utils_newbg import RankDataset, check_integrity
 
 logger = logging.getLogger('rtranknet')
@@ -274,31 +274,11 @@ if __name__ == '__main__':
                                       fallback_column=args.fallback_column,
                                       fallback_metadata=args.fallback_metadata)
         elif (input_.endswith('.tf')):
-            # tensorflow model
             print('input is trained Tensorflow model')
-            import tensorflow as tf
-            ranker = tf.keras.models.load_model(input_)
-            data = pickle.load(open(os.path.join(input_, 'assets', 'data.pkl'), 'rb'))
-            config = json.load(open(os.path.join(input_, 'assets', 'config.json')))
+            ranker, data, config = load_model(input_, 'keras')
         elif (input_.endswith('.pt')):
-            # pytorch/mpn model
             print('input is trained PyTorch model')
-            import torch
-            # ensure Data/config.json also exist
-            assert os.path.exists(data_path := input_.replace('.pt', '_data.pkl'))
-            assert os.path.exists(config_path := input_.replace('.pt', '_config.json'))
-            if (not torch.cuda.is_available() and False ): # TODO:
-                # might be a GPU trained model -> adapt
-                ranker = torch.load(input_, map_location=torch.device('cpu'))
-                ranker.encoder.device = torch.device('cpu')
-            else:
-                ranker = torch.load(input_)
-            info('loaded model')
-            data = pickle.load(open(data_path, 'rb'))
-            if (not hasattr(data, 'void_info')):
-                data.void_info = None
-            info('loaded data')
-            config = json.load(open(config_path))
+            ranker, data, config = load_model(input_, 'mpn')
         else:
             raise Exception(f'input {args.input} not supported')
     elif (all(re.match(r'\d{4}', i) for i in args.input)):

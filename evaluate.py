@@ -311,19 +311,20 @@ class EvalArgs(Tap):
         self.add_argument('--epsilon', type=str)
 
 
-def load_model(path: str, type_='keras'):
+def load_model(path: str, type_='mpn'):
     if (type_ == 'keras'):
+        # NOTE: might be broken because of missing .tf, but not used anyways anymore
         import tensorflow as tf
         model = tf.keras.models.load_model(path)
         data = pickle.load(open(os.path.join(path, 'assets', 'data.pkl'), 'rb'))
         config = json.load(open(os.path.join(path, 'assets', 'config.json')))
     else:
+        path = path + '.pt' if not path.endswith('pt') else path
         if (torch.cuda.is_available()):
-            model = torch.load(path + '.pt')
+            model = torch.load(path)
         else:
-            model = torch.load(path + '.pt', map_location=torch.device('cpu'))
-            model.encoder.device = torch.device('cpu')
-        path = re.sub(r'_ep\d+$', '', path) # for ep_save
+            model = torch.load(path, map_location=torch.device('cpu'))
+        path = re.sub(r'_ep\d+(\.pt)?$', '', path.rstrip('.pt')) # for ep_save
         data = pickle.load(open(f'{path}_data.pkl', 'rb'))
         config = json.load(open(f'{path}_config.json'))
     return model, data, config
