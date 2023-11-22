@@ -98,20 +98,6 @@ if __name__ == '__main__':
     # args = parser.parse_args('--mode allpairs runs/graphformer/graphformer_small_ep10'.split())
     args = parser.parse_args()
     m, data, config = load_model(args.model, 'mpn')
-    # get batch/collate function
-    if m.encoder.name == 'dmpnn':
-        from dmpnn_graph import dmpnn_batch as graph_batch_fn
-    elif m.encoder.name == 'graphformer':
-        from graphformer_graph import graphformer_batch as graph_batch_fn
-    elif m.encoder.name == 'deepgcnrt':
-        from deepgcnrt_graph import deepgcnrt_batch as graph_batch_fn
-    else:
-        raise NotImplementedError(m.encoder.name, 'collate')
-    # get model device
-    if hasattr(m.encoder, 'device'):
-        device = m.encoder.device
-    else:
-        device = next(m.parameters()).device
     if (args.mode == 'testall'):
         # test all column param configurations
         test = "0048 0072 0078 0084 0098 0083 0076 0101 0019 0079 0099 0070 0102 0087 0086 0066 0062 0017 0095 0067 0097 0082 0124 0069 0181 0024 0085 0093 0094 0100 0092 0179 0068".split()
