@@ -243,7 +243,7 @@ if __name__ == '__main__':
         from LambdaRankNN import RankNetNN
         graphs = True
     # caching
-    if (args.cache_file is not None):
+    if (args.cache_file is not None and args.feature_type != 'None'):
         features.write_cache = False # flag for reporting changes to cache
         info('reading in cache...')
         if (os.path.exists(args.cache_file)):
@@ -564,6 +564,6 @@ if __name__ == '__main__':
         if not os.path.isdir('runs'):
             os.mkdir('runs')
         export_predictions(data, test_preds, f'runs/{run_name}_test.tsv', 'test')
-    if (args.cache_file is not None and features.write_cache):
+    if (args.cache_file is not None and hasattr(features, 'write_cache') and features.write_cache):
         print('writing cache, don\'t interrupt!!')
         pickle.dump(features.cached, open(args.cache_file, 'wb'))
