@@ -506,7 +506,6 @@ if __name__ == '__main__':
             torch.save(ranker, run_name + '.pt')
         train_preds = ranker.predict(train_graphs, train_x.astype(np.float32), train_sys.astype(np.float32),
                                      batch_size=args.batch_size * 2,
-                                     # TODO: batch size can be much greater than that for training
                                      prog_bar=args.verbose)
         if (len(val_x) > 0):
             val_preds = ranker.predict(val_graphs, val_x.astype(np.float32), val_sys.astype(np.float32), batch_size=args.batch_size * 2)

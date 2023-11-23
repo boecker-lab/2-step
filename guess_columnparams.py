@@ -95,9 +95,12 @@ if __name__ == '__main__':
     parser.add_argument('--verbose', action='store_true')
     parser.add_argument('--no_save', action='store_true')
     parser.add_argument('--batch_size', type=int, default=32)
+    parser.add_argument('--gpu', action='store_true')
     # args = parser.parse_args('--mode allpairs runs/graphformer/graphformer_small_ep10'.split())
     args = parser.parse_args()
     m, data, config = load_model(args.model, 'mpn')
+    if (args.gpu):
+        torch.set_default_device('cuda')
     if (args.mode == 'testall'):
         # test all column param configurations
         test = "0048 0072 0078 0084 0098 0083 0076 0101 0019 0079 0099 0070 0102 0087 0086 0066 0062 0017 0095 0067 0097 0082 0124 0069 0181 0024 0085 0093 0094 0100 0092 0179 0068".split()
