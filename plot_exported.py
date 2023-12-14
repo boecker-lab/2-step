@@ -45,6 +45,9 @@ parser.add_argument('--errorlabels', action='store_true')
 parser.add_argument('--dont_show', action='store_true')
 parser.add_argument('--repo_root', default='/home/fleming/Documents/Projects/RtPredTrainingData_mostcurrent/')
 parser.add_argument('--void_factor', default=2, type=float)
+parser.add_argument('--extrap', default=None, type=int)
+parser.add_argument('--onlybest', action='store_true')
+parser.add_argument('--showolsfit', action='store_true')
 
 class LADModel:
     def __init__(self, data, void=0, ols_after=False):
@@ -125,8 +128,14 @@ if __name__ == '__main__':
         data[id_] = df
         # models['all_points'][ds] = LADModel(data[ds])
         void_t = dss['column.t0'].loc[id_] * args.void_factor
-        models['LAD'][id_] = LADModel(data[id_], void=void_t)
+        if (not args.onlybest):
+            models['LAD'][id_] = LADModel(data[id_], void=void_t)
         models['LAD+OLS'][id_] = LADModel(data[id_], void=void_t, ols_after=True)
+        if args.extrap is not None:
+            extrap = f'extrap{args.extrap}'
+            data_void = data[id_].loc[data[id_].rt > void_t]
+            roi_cutoff[extrap][id_] = data_void.roi.sort_values().iloc[int(len(data_void) * (args.extrap / 100))]
+            models[extrap][id_] = LADModel(data[id_].loc[data[id_].roi < roi_cutoff[extrap][id_]], void=void_t, ols_after=True)
     ds_list = list(data)
     # optionally various other information
     accs = defaultdict(lambda: None)
@@ -167,7 +176,7 @@ if __name__ == '__main__':
             ax.plot(x, y, color=c,
                     label=f'{type_}' + (f'(MAE={error.mean():.2f}, MedAE={error.median():.2f})'
                                         if args.errorlabels else ''))
-            if (not 'extrap' in type_ and hasattr(models[type_][ds], 'ols_points')):
+            if (args.showolsfit and not 'extrap' in type_ and hasattr(models[type_][ds], 'ols_points')):
                 ax.scatter(models[type_][ds].ols_points[0], models[type_][ds].ols_points[1],
                            label='OLS fit points', c=c, s=5)
         ax.set_title(titles[ds])
