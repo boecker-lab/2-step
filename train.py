@@ -364,6 +364,7 @@ if __name__ == '__main__':
     conflicting_smiles_pairs = (pickle.load(open(args.conflicting_smiles_pairs, 'rb'))
                                 if args.conflicting_smiles_pairs is not None else {})
     info('done. Initializing RankDatasets...')
+    print(f'training data shapes: {train_x.shape=}, {train_sys.shape=}')
     traindata = RankDataset(x_mols=train_graphs, x_extra=train_x, x_sys=train_sys,
                             x_ids=data.df.iloc[data.train_indices].smiles.tolist(),
                             y=train_y, x_sys_global_num=data.x_info_global_num,
