@@ -438,11 +438,10 @@ class Data:
         if (self.x_features is None):
             self.compute_features()
         self.features_indices = [0, self.x_features.shape[1] - 1]
-        if (not self.use_compound_classes and not self.use_system_information):
-            return self.x_features
         if (self.use_compound_classes and self.x_classes is None):
+            raise Exception('compound classes are not supported anymore')
             self.compute_classes()
-        if (self.use_system_information and self.x_info is None):
+        if (self.x_info is None):
             self.compute_system_information(use_usp_codes=self.use_usp_codes,
                                             use_hsm=self.use_hsm, use_tanaka=self.use_tanaka,
                                             use_newonehot=self.use_newonehot, use_ph=self.use_ph,
