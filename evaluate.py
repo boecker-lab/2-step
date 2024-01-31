@@ -264,7 +264,7 @@ def predict(X, model, batch_size):
 class EvalArgs(Tap):
     model: str # model to load
     test_sets: List[str] # either CSV or dataset IDs to evaluate on
-    model_type: Literal['ranknet', 'mpn'] = 'mpn'
+    model_type: Literal['ranknet', 'mpn', 'rankformer_rt'] = 'mpn'
     gpu: bool = False
     batch_size: int = 256
     no_isomeric: bool = False
@@ -333,7 +333,7 @@ def load_model(path: str, type_='mpn'):
             model = torch.load(path)
         else:
             model = torch.load(path, map_location=torch.device('cpu'))
-        path = re.sub(r'_ep\d+(\.pt)?$', '', path.rstrip('.pt')) # for ep_save
+        path = re.sub(r'_ep\d+(\.pt)?$', '', re.sub(r'\.pt$', '', path)) # for ep_save
         data = DataUnpickler(open(f'{path}_data.pkl', 'rb')).load()
         config = json.load(open(f'{path}_config.json'))
     return model, data, config
@@ -417,10 +417,11 @@ if __name__ == '__main__':
     else:
         args = EvalArgs().parse_args('--model runs/newranker/newranker_ph9 --test_sets 0129 0040 0030 0125 0070 0096 0004 0019 0038 0042 0049 0052 --metadata_void_rt --model_type mpn --epsilon 0.5 --test_stats --confl_pairs /home/fleming/Documents/Uni/RTpred/pairs3.pkl --export_rois'.split())
         args = EvalArgs().parse_args('--model runs/hsmvstanaka/hsm_vs_tanaka4_both --test_sets 0016 0037 0062 0073 0080 0131 0133 0219 --metadata_void_rt --model_type mpn --epsilon 0.5 --test_stats --confl_pairs /home/fleming/Documents/Uni/RTpred/pairs3.pkl'.split())
+        args = EvalArgs().parse_args('--model rankformer_test_rt --test_sets 0354 0355 --test_stats --model_type rankformer_rt'.split())
 
     if (args.verbose):
         basicConfig(level=INFO)
-    if (args.model_type == 'mpn' and args.gpu):
+    if (args.model_type != 'ranknet' and args.gpu):
         torch.set_default_device('cuda')
 
     # load model
@@ -458,7 +459,7 @@ if __name__ == '__main__':
                  'custom_column_fields': data.custom_column_fields,
                  'columns_remove_na': False,
                  'hsm_fields': data.hsm_fields,
-                 'graph_mode': args.model_type == 'mpn',
+                 'graph_mode': args.model_type != 'ranknet',
                  'encoder': (config['args']['mpn_encoder'] if 'mpn_encoder' in config['args']
                              else 'dmpnn'),
                  'remove_doublets': True}
@@ -522,7 +523,7 @@ if __name__ == '__main__':
         info('computing features')
         d.compute_features(verbose=args.verbose, mode=features_type, add_descs=features_add,
                            add_desc_file=args.add_desc_file, n_thr=n_thr)
-        if (args.model_type == 'mpn'):
+        if (args.model_type != 'ranknet'):
             info('computing graphs')
             d.compute_graphs()
         info('(fake) splitting data')
@@ -547,7 +548,7 @@ if __name__ == '__main__':
             graphs = np.concatenate((train_graphs, test_graphs, val_graphs))
             if (args.export_embeddings):
                 preds, embeddings = model.predict(graphs, X, X_sys, batch_size=args.batch_size,
-                                                prog_bar=args.verbose, ret_features=True)
+                                                  prog_bar=args.verbose, ret_features=True)
                 embeddings_df = pd.DataFrame({'smiles': d.df.smiles} |
                                              {f'e{i}': embeddings[:, i]
                                               for i in range(embeddings.shape[1])})
@@ -557,6 +558,11 @@ if __name__ == '__main__':
             else:
                 preds = model.predict(graphs, X, X_sys, batch_size=args.batch_size,
                                       prog_bar=args.verbose, ret_features=False)
+        elif (args.model_type == 'rankformer_rt'):
+            from ranknet_transformer import rankformer_rt_predict
+            graphs = np.concatenate((train_graphs, test_graphs, val_graphs))
+            preds = rankformer_rt_predict(model, graphs, X, X_sys, batch_size=args.batch_size,
+                                          prog_bar=args.verbose)
         else:
             preds = predict(X, model, args.batch_size)
         info('done predicting. evaluation...')

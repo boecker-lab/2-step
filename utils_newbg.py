@@ -42,6 +42,7 @@ class RankDataset(Dataset):
     no_intra_pairs: bool=False                    # don't generate intra dataset pairs
     max_indices_size:Optional[int]=None           # limit for the size of indices
     y_neg : bool=False                            # -1 instead of 0 for negative pair
+    y_float : bool=False                          # yield target values as floats instead of as longs
     conflicting_smiles_pairs:dict = field(default_factory=dict) # conflicting pairs (smiles)
     only_confl: bool=False                                          # gather only conflicting pairs
     confl_weight: float=1.                                          # weight modifier for conflicting pairs
@@ -64,6 +65,8 @@ class RankDataset(Dataset):
         self.x1_indices = transformed['x1_indices']
         self.x2_indices = transformed['x2_indices']
         self.y_trans = transformed['y_trans']
+        if (self.y_float):
+            self.y_trans = self.y_trans.astype('float32')
         self.weights = transformed['weights']
         self.is_confl = transformed['is_confl']
 

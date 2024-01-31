@@ -466,3 +466,11 @@ def custom_collate(batch):
                 torch.stack(list(map(default_convert, [_[1] for _ in batch])), 0),
                 torch.stack(list(map(default_convert, [_[2] for _ in batch])), 0),
                 torch.stack(list(map(default_convert, [_[3] for _ in batch])), 0))
+
+def custom_collate_single(batch):
+    transformed = ((custom_collate_single.graph_batch([_[0][0] for _ in batch]),
+                    None,
+                    torch.stack(list(map(default_convert, [_[0][2] for _ in batch])), 0)),
+                   torch.stack(list(map(default_convert, [_[1] for _ in batch])), 0),
+                   torch.stack(list(map(default_convert, [_[2] for _ in batch])), 0))
+    return transformed

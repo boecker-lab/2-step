@@ -25,7 +25,7 @@ info = logger.info
 
 class TrainArgs(Tap):
     input: List[str]            # Either CSV or dataset ids
-    model_type: Literal['ranknet', 'mpn'] = 'mpn'
+    model_type: Literal['ranknet', 'mpn', 'rankformer', 'rankformer_rt'] = 'mpn'
     feature_type: Literal['None', 'rdkall', 'rdk2d', 'rdk3d'] = 'None' # type of features to use
     # training
     gpu: bool = False
@@ -92,6 +92,11 @@ class TrainArgs(Tap):
     mpn_margin: float = 0.1
     mpn_encoder: Literal['dmpnn', 'dualmpnnplus', 'dualmpnn', 'deepgcnrt', 'graphformer'] = 'dmpnn'
     smiles_for_graphs: bool = False # always use SMILES internally, compute graphs only on demand
+    # rankformer model
+    # TODO: all the hyperparams
+    transformer_nhead: int = 4
+    transformer_nhid: int = 1024
+    transformer_nlayers: int = 6    
     # pairs
     epsilon: Union[str, float] = '30s' # difference in evaluation measure below which to ignore falsely predicted pairs
     pair_step: int = 3
@@ -238,6 +243,14 @@ if __name__ == '__main__':
             torch.set_default_device('cuda')
         print('torch device:', torch.tensor([1.2, 3.4]).device, file=sys.stderr)
         graphs = True
+    elif ('rankformer' in args.model_type):
+        from ranknet_transformer import (RankformerEncoder, Rankformer, RankformerRTPredictor,
+                                         rankformer_train, rankformer_rt_train, RTDataset)
+        import torch
+        if (args.gpu):
+            torch.set_default_device('cuda')
+        print('torch device:', torch.tensor([1.2, 3.4]).device, file=sys.stderr)
+        graphs = True
     else:
         import tensorflow as tf
         from LambdaRankNN import RankNetNN
@@ -361,161 +374,249 @@ if __name__ == '__main__':
     ((train_graphs, train_x, train_sys, train_y),
      (val_graphs, val_x, val_sys, val_y),
      (test_graphs, test_x, test_sys, test_y)) = preprocess(data, args)
-    conflicting_smiles_pairs = (pickle.load(open(args.conflicting_smiles_pairs, 'rb'))
-                                if args.conflicting_smiles_pairs is not None else {})
-    info('done. Initializing RankDatasets...')
-    print(f'training data shapes: {train_x.shape=}, {train_sys.shape=}')
-    traindata = RankDataset(x_mols=train_graphs, x_extra=train_x, x_sys=train_sys,
-                            x_ids=data.df.iloc[data.train_indices].smiles.tolist(),
-                            y=train_y, x_sys_global_num=data.x_info_global_num,
-                            dataset_info=data.df.dataset_id.iloc[data.train_indices].tolist(),
-                            void_info=data.void_info,
-                            pair_step=args.pair_step,
-                            pair_stop=args.pair_stop, use_pair_weights=args.use_weights,
-                            use_group_weights=(not args.no_group_weights),
-                            cluster=args.cluster,
-                            no_inter_pairs=(not args.inter_pairs),
-                            no_intra_pairs=args.no_intra_pairs,
-                            max_indices_size=args.max_pair_compounds,
-                            weight_mid=args.weight_mid,
-                            weight_steepness=args.weight_steep,
-                            dynamic_weights=args.dynamic_weights,
-                            y_neg=(args.mpn_loss == 'margin'),
-                            conflicting_smiles_pairs=conflicting_smiles_pairs,
-                            confl_weight=args.confl_weight)
-    valdata = RankDataset(x_mols=val_graphs, x_extra=val_x, x_sys=val_sys,
-                          x_ids=data.df.iloc[data.val_indices].smiles.tolist(),
-                          y=val_y, x_sys_global_num=data.x_info_global_num,
-                          dataset_info=data.df.dataset_id.iloc[data.val_indices].tolist(),
-                          void_info=data.void_info,
-                          pair_step=args.pair_step,
-                          pair_stop=args.pair_stop, use_pair_weights=args.use_weights,
-                          use_group_weights=(not args.no_group_weights),
-                          cluster=args.cluster,
-                          no_inter_pairs=(not args.inter_pairs),
-                          no_intra_pairs=args.no_intra_pairs,
-                          max_indices_size=args.max_pair_compounds,
-                          weight_mid=args.weight_mid,
-                          weight_steepness=args.weight_steep,
-                          dynamic_weights=args.dynamic_weights,
-                          y_neg=(args.mpn_loss == 'margin'),
-                          conflicting_smiles_pairs=conflicting_smiles_pairs,
-                          confl_weight=args.confl_weight)
-    if (args.clean_data or args.check_data):
-        print('training data check:')
-        stats_train, clean_train, _ = check_integrity(traindata, clean=args.clean_data)
-        if (args.clean_data):
-            traindata.remove_indices(clean_train)
-            print(f'cleaning up {len(clean_train)} of {len(traindata.y_trans)} total '
-                  f'({len(clean_train)/len(traindata.y_trans):.0%}) pairs for being invalid')
-        print('validation data check:')
-        stats_val, clean_val, _ = check_integrity(valdata, clean=args.clean_data)
-        if (args.clean_data):
-            valdata.remove_indices(clean_val)
-            print(f'cleaning up {len(clean_val)} of {len(valdata.y_trans)} total '
-                  f'({np.divide(len(clean_val), len(valdata.y_trans)):.0%}) pairs for being invalid')
+
     if (args.mpn_encoder == 'dmpnn'):
-        from mpnranker2 import custom_collate
+        if (args.model_type == 'rankformer_rt'):
+            from mpnranker2 import custom_collate_single as custom_collate
+        else:
+            from mpnranker2 import custom_collate
         from dmpnn_graph import dmpnn_batch
         custom_collate.graph_batch = dmpnn_batch
     elif (args.mpn_encoder == 'graphformer'):
         from mpnranker2 import custom_collate
         from graphformer_graph import graphformer_batch
         custom_collate.graph_batch = graphformer_batch
-    else:
-        raise NotImplementedError(args.mpn_encoder, 'collate')
-
-    trainloader = DataLoader(traindata, args.batch_size, shuffle=True,
-                             generator=torch.Generator(device='cuda' if args.gpu else 'cpu'),
-                             collate_fn=custom_collate if (args.mpn_encoder in ['dmpnn', 'graphformer']) else None)
-    valloader = DataLoader(valdata, args.batch_size, shuffle=True,
-                           generator=torch.Generator(device='cuda' if args.gpu else 'cpu'),
-                           collate_fn=custom_collate if (args.mpn_encoder in ['dmpnn', 'graphformer']) else None
-                           ) if len(valdata) > 0 else None
-    if (args.plot_weights):
-        plot_x = np.linspace(0, 10 * args.weight_mid, 100)
-        import matplotlib.pyplot as plt
-        plt.plot(plot_x, [bg.weight_fn(_, args.weight_steep, args.weight_mid) for _ in plot_x])
-        plt.show()
-    if (not graphs):
-        if ('ranker' not in vars() or ranker is None):    # otherwise loaded already
-            ranker = prepare_tf_model(args, train_x.shape[1])
-        es = tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience=2,
-                                              restore_best_weights=True)
+    rename_old_writer_logs(f'runs/{run_name}')
+    writer = SummaryWriter(f'runs/{run_name}_train')
+    val_writer = SummaryWriter(f'runs/{run_name}_val') if len(val_y) > 0 else None
+    confl_writer = SummaryWriter(f'runs/{run_name}_confl')
+    if (args.save_data):
+        pickle.dump(data, open(os.path.join(f'{run_name}_data.pkl'), 'wb'))
+        json.dump({'train_sets': args.input, 'name': run_name,
+                   'args': args._log_all()},
+                  open(f'{run_name}_config.json', 'w'), indent=2)
+    if (args.model_type == 'rankformer_rt'):
+        # no need for ranking pairs
+        rankformer_encoder = ranker.ranknet_encoder
+        rankformer_rt = RankformerRTPredictor(rankformer_encoder, 64)
+        # drop doublets and void compounds from data
+        train_df = data.df.iloc[data.train_indices]
+        val_df = data.df.iloc[data.val_indices]
+        test_df = data.df.iloc[data.test_indices]
+        train_void_thr = train_df.dataset_id.apply(lambda x: data.void_info[x])
+        val_void_thr = val_df.dataset_id.apply(lambda x: data.void_info[x])
+        test_void_thr = test_df.dataset_id.apply(lambda x: data.void_info[x])
+        train_doublets = train_df.duplicated(subset=['dataset_id', 'smiles.std'], keep=False)
+        val_doublets = val_df.duplicated(subset=['dataset_id', 'smiles.std'], keep=False)
+        test_doublets = test_df.duplicated(subset=['dataset_id', 'smiles.std'], keep=False)
+        train_select = ~((train_y < train_void_thr) | train_doublets)
+        val_select = ~((val_y < val_void_thr) | val_doublets)
+        test_select = ~((test_y < test_void_thr) | test_doublets)
+        train_graphs = train_graphs[train_select]
+        train_sys = train_sys[train_select]
+        train_y = train_y[train_select]
+        val_graphs = val_graphs[val_select]
+        val_sys = val_sys[val_select]
+        val_y = val_y[val_select]
+        test_graphs = test_graphs[test_select]
+        test_sys = test_sys[test_select]
+        test_y = test_y[test_select]
+        # weights: by dataset size (1 -- approx. 500)
+        train_counts = train_df[train_select].groupby('dataset_id')['smiles.std'].transform('count')
+        train_weights = (train_counts.max() / train_counts).values
+        val_counts = val_df[val_select].groupby('dataset_id')['smiles.std'].transform('count')
+        val_weights = (val_counts.max() / val_counts).values
+        test_counts = test_df[test_select].groupby('dataset_id')['smiles.std'].transform('count')
+        test_weights = (test_counts.max() / test_counts).values
+        train_dataset = RTDataset(train_graphs, train_sys.astype('float32'), train_y.astype('float32'), train_weights.astype('float32'))
+        val_dataset = RTDataset(val_graphs, val_sys.astype('float32'), val_y.astype('float32'), val_weights.astype('float32'))
+        test_dataset = RTDataset(test_graphs, test_sys.astype('float32'), test_y.astype('float32'), test_weights.astype('float32'))
+        trainloader = DataLoader(train_dataset, args.batch_size, shuffle=True,
+                                 generator=torch.Generator(device='cuda' if args.gpu else 'cpu'),
+                                 collate_fn=custom_collate if (args.mpn_encoder in ['dmpnn', 'graphformer']) else None)
+        valloader = DataLoader(val_dataset, args.batch_size, shuffle=True,
+                                 generator=torch.Generator(device='cuda' if args.gpu else 'cpu'),
+                                 collate_fn=custom_collate if (args.mpn_encoder in ['dmpnn', 'graphformer']) else None)
+        testloader = DataLoader(test_dataset, args.batch_size, shuffle=True,
+                                 generator=torch.Generator(device='cuda' if args.gpu else 'cpu'),
+                                 collate_fn=custom_collate if (args.mpn_encoder in ['dmpnn', 'graphformer']) else None)
         try:
-            ranker.model.fit(bg,
-                             callbacks=[es,
-                                        # tf.keras.callbacks.TensorBoard(update_freq='epoch', histogram_freq=1,)
-                                ],
-                             epochs=args.epochs,
-                             verbose=1 if not args.no_progbar else 2,
-                             validation_data=vg)
+            rankformer_rt_train(rankformer_rt=rankformer_rt, bg=trainloader, epochs=args.epochs,
+                                epochs_start=ranker.max_epoch,
+                                writer=writer, val_g=valloader, val_writer=val_writer,
+                                steps_train_loss=np.ceil(len(trainloader) / 100).astype(int),
+                                steps_val_loss=np.ceil(len(trainloader) / 5).astype(int),
+                                early_stopping_patience=args.early_stopping_patience,
+                                learning_rate=args.learning_rate,
+                                no_encoder_train=args.no_encoder_train, ep_save=args.ep_save)
         except KeyboardInterrupt:
-            print('interrupted training, evaluating...')
-        if (args.save_data):
-            path = run_name + '.tf'
-            ranker.model.save(path, overwrite=True)
-            pickle.dump(data, open(os.path.join(path, 'assets', 'data.pkl'), 'wb'))
-            json.dump({'train_sets': args.input, 'name': run_name,
-                       'args': vars(args)},
-                      open(os.path.join(path, 'assets', 'config.json'), 'w'), indent=2)
-            print(f'model written to {path}')
-        train_preds = predict(train_x, ranker.model, args.batch_size)
-        if (len(val_x) > 0):
-            val_preds = predict(val_x, ranker.model, args.batch_size)
-        if (len(test_x) > 0):
-            test_preds = predict(test_x, ranker.model, args.batch_size)
-    else:
-        # MPNranker
-        if ('ranker' not in vars() or ranker is None):    # otherwise loaded already
-            ranker = MPNranker(encoder=args.mpn_encoder,
-                               extra_features_dim=train_x.shape[1],
-                               sys_features_dim=train_sys.shape[1],
-                               hidden_units=args.sizes, hidden_units_pv=args.sizes_sys,
-                               encoder_size=args.encoder_size,
-                               depth=args.mpn_depth,
-                               dropout_rate_encoder=args.dropout_rate_encoder,
-                               dropout_rate_pv=args.dropout_rate_pv,
-                               dropout_rate_rank=args.dropout_rate_rank)
-            print(ranker)
-        rename_old_writer_logs(f'runs/{run_name}')
-        writer = SummaryWriter(f'runs/{run_name}_train')
-        val_writer = SummaryWriter(f'runs/{run_name}_val') if len(valdata) > 0 else None
-        confl_writer = SummaryWriter(f'runs/{run_name}_confl')
-        if (args.save_data):
-            pickle.dump(data, open(os.path.join(f'{run_name}_data.pkl'), 'wb'))
-            json.dump({'train_sets': args.input, 'name': run_name,
-                       'args': args._log_all()},
-                      open(f'{run_name}_config.json', 'w'), indent=2)
-        try:
-            mpn_train(ranker=ranker, bg=trainloader, epochs=args.epochs,
-                      epochs_start=ranker.max_epoch,
-                      writer=writer, val_g=valloader, val_writer=val_writer,
-                      confl_writer=confl_writer, # TODO:
-                      steps_train_loss=np.ceil(len(trainloader) / 100).astype(int),
-                      steps_val_loss=np.ceil(len(trainloader) / 5).astype(int),
-                      batch_size=args.batch_size, epsilon=args.epsilon,
-                      sigmoid_loss=(args.mpn_loss == 'bce'), margin_loss=args.mpn_margin,
-                      early_stopping_patience=args.early_stopping_patience,
-                      learning_rate=args.learning_rate,
-                      adaptive_lr=args.adaptive_learning_rate,
-                      no_encoder_train=args.no_encoder_train, ep_save=args.ep_save)
-        except KeyboardInterrupt:
-            print('caught interrupt; stopping training')
+            print('interrupted training')
         if (args.save_data):
             import torch        # TODO: just torch everywhere
-            torch.save(ranker, run_name + '.pt')
-        train_preds = ranker.predict(train_graphs, train_x.astype(np.float32), train_sys.astype(np.float32),
-                                     batch_size=args.batch_size * 2,
-                                     prog_bar=args.verbose)
-        if (len(val_x) > 0):
-            val_preds = ranker.predict(val_graphs, val_x.astype(np.float32), val_sys.astype(np.float32), batch_size=args.batch_size * 2)
-        if (len(test_x) > 0):
-            test_preds = ranker.predict(test_graphs, test_x.astype(np.float32), test_sys.astype(np.float32), batch_size=args.batch_size * 2)
-    if (args.export_rois and len(test_x) > 0):
-        if not os.path.isdir('runs'):
-            os.mkdir('runs')
-        export_predictions(data, test_preds, f'runs/{run_name}_test.tsv', 'test')
+            torch.save(rankformer_rt, run_name + '.pt')
+    else:
+        conflicting_smiles_pairs = (pickle.load(open(args.conflicting_smiles_pairs, 'rb'))
+                                    if args.conflicting_smiles_pairs is not None else {})
+        info('done. Initializing RankDatasets...')
+        print(f'training data shapes: {train_x.shape=}, {train_sys.shape=}')
+        traindata = RankDataset(x_mols=train_graphs, x_extra=train_x, x_sys=train_sys,
+                                x_ids=data.df.iloc[data.train_indices].smiles.tolist(),
+                                y=train_y, x_sys_global_num=data.x_info_global_num,
+                                dataset_info=data.df.dataset_id.iloc[data.train_indices].tolist(),
+                                void_info=data.void_info,
+                                pair_step=args.pair_step,
+                                pair_stop=args.pair_stop, use_pair_weights=args.use_weights,
+                                use_group_weights=(not args.no_group_weights),
+                                cluster=args.cluster,
+                                no_inter_pairs=(not args.inter_pairs),
+                                no_intra_pairs=args.no_intra_pairs,
+                                max_indices_size=args.max_pair_compounds,
+                                weight_mid=args.weight_mid,
+                                weight_steepness=args.weight_steep,
+                                dynamic_weights=args.dynamic_weights,
+                                y_neg=(False if 'rankformer' in args.model_type else args.mpn_loss == 'margin'),
+                                y_float=('rankformer' in args.model_type),
+                                conflicting_smiles_pairs=conflicting_smiles_pairs,
+                                confl_weight=args.confl_weight)
+        valdata = RankDataset(x_mols=val_graphs, x_extra=val_x, x_sys=val_sys,
+                              x_ids=data.df.iloc[data.val_indices].smiles.tolist(),
+                              y=val_y, x_sys_global_num=data.x_info_global_num,
+                              dataset_info=data.df.dataset_id.iloc[data.val_indices].tolist(),
+                              void_info=data.void_info,
+                              pair_step=args.pair_step,
+                              pair_stop=args.pair_stop, use_pair_weights=args.use_weights,
+                              use_group_weights=(not args.no_group_weights),
+                              cluster=args.cluster,
+                              no_inter_pairs=(not args.inter_pairs),
+                              no_intra_pairs=args.no_intra_pairs,
+                              max_indices_size=args.max_pair_compounds,
+                              weight_mid=args.weight_mid,
+                              weight_steepness=args.weight_steep,
+                              dynamic_weights=args.dynamic_weights,
+                              y_neg=(False if 'rankformer' in args.model_type else args.mpn_loss == 'margin'),
+                              y_float=('rankformer' in args.model_type),
+                              conflicting_smiles_pairs=conflicting_smiles_pairs,
+                              confl_weight=args.confl_weight)
+        if (args.clean_data or args.check_data):
+            print('training data check:')
+            stats_train, clean_train, _ = check_integrity(traindata, clean=args.clean_data)
+            if (args.clean_data):
+                traindata.remove_indices(clean_train)
+                print(f'cleaning up {len(clean_train)} of {len(traindata.y_trans)} total '
+                      f'({len(clean_train)/len(traindata.y_trans):.0%}) pairs for being invalid')
+            print('validation data check:')
+            stats_val, clean_val, _ = check_integrity(valdata, clean=args.clean_data)
+            if (args.clean_data):
+                valdata.remove_indices(clean_val)
+                print(f'cleaning up {len(clean_val)} of {len(valdata.y_trans)} total '
+                      f'({np.divide(len(clean_val), len(valdata.y_trans)):.0%}) pairs for being invalid')
+        else:
+            raise NotImplementedError(args.mpn_encoder, 'collate')
+
+        trainloader = DataLoader(traindata, args.batch_size, shuffle=True,
+                                 generator=torch.Generator(device='cuda' if args.gpu else 'cpu'),
+                                 collate_fn=custom_collate if (args.mpn_encoder in ['dmpnn', 'graphformer']) else None)
+        valloader = DataLoader(valdata, args.batch_size, shuffle=True,
+                               generator=torch.Generator(device='cuda' if args.gpu else 'cpu'),
+                               collate_fn=custom_collate if (args.mpn_encoder in ['dmpnn', 'graphformer']) else None
+                               ) if len(valdata) > 0 else None
+        if (args.plot_weights):
+            plot_x = np.linspace(0, 10 * args.weight_mid, 100)
+            import matplotlib.pyplot as plt
+            plt.plot(plot_x, [bg.weight_fn(_, args.weight_steep, args.weight_mid) for _ in plot_x])
+            plt.show()
+        if (not graphs):
+            if ('ranker' not in vars() or ranker is None):    # otherwise loaded already
+                ranker = prepare_tf_model(args, train_x.shape[1])
+            es = tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience=2,
+                                                  restore_best_weights=True)
+            try:
+                ranker.model.fit(bg,
+                                 callbacks=[es,
+                                            # tf.keras.callbacks.TensorBoard(update_freq='epoch', histogram_freq=1,)
+                                    ],
+                                 epochs=args.epochs,
+                                 verbose=1 if not args.no_progbar else 2,
+                                 validation_data=vg)
+            except KeyboardInterrupt:
+                print('interrupted training, evaluating...')
+            if (args.save_data):
+                path = run_name + '.tf'
+                ranker.model.save(path, overwrite=True)
+                pickle.dump(data, open(os.path.join(path, 'assets', 'data.pkl'), 'wb'))
+                json.dump({'train_sets': args.input, 'name': run_name,
+                           'args': vars(args)},
+                          open(os.path.join(path, 'assets', 'config.json'), 'w'), indent=2)
+                print(f'model written to {path}')
+            train_preds = predict(train_x, ranker.model, args.batch_size)
+            if (len(val_x) > 0):
+                val_preds = predict(val_x, ranker.model, args.batch_size)
+            if (len(test_x) > 0):
+                test_preds = predict(test_x, ranker.model, args.batch_size)
+        else:
+            # MPNranker
+            if ('ranker' not in vars() or ranker is None):    # otherwise loaded already
+                if (args.model_type == 'mpn'):
+                    ranker = MPNranker(encoder=args.mpn_encoder,
+                                       extra_features_dim=train_x.shape[1],
+                                       sys_features_dim=train_sys.shape[1],
+                                       hidden_units=args.sizes, hidden_units_pv=args.sizes_sys,
+                                       encoder_size=args.encoder_size,
+                                       depth=args.mpn_depth,
+                                       dropout_rate_encoder=args.dropout_rate_encoder,
+                                       dropout_rate_pv=args.dropout_rate_pv,
+                                       dropout_rate_rank=args.dropout_rate_rank)
+                elif (args.model_type == 'rankformer'):
+                    rankformer_encoder = RankformerEncoder(ninp=args.encoder_size, nhead=args.transformer_nhead, nhid=args.transformer_nhid,
+                                                           nlayers=args.transformer_nlayers,
+                                                           nsysf=train_sys.shape[1], gnn_depth=args.mpn_depth,
+                                                           gnn_dropout=args.dropout_rate_encoder)
+                    ranker = Rankformer(rankformer_encoder, sigmoid_output=True)
+                else:
+                    raise NotImplementedError(args.model_type)
+                print(ranker)
+            try:
+                if (args.model_type == 'mpn'):
+                    mpn_train(ranker=ranker, bg=trainloader, epochs=args.epochs,
+                              epochs_start=ranker.max_epoch,
+                              writer=writer, val_g=valloader, val_writer=val_writer,
+                              confl_writer=confl_writer, # TODO:
+                              steps_train_loss=np.ceil(len(trainloader) / 100).astype(int),
+                              steps_val_loss=np.ceil(len(trainloader) / 5).astype(int),
+                              batch_size=args.batch_size, epsilon=args.epsilon,
+                              sigmoid_loss=(args.mpn_loss == 'bce'), margin_loss=args.mpn_margin,
+                              early_stopping_patience=args.early_stopping_patience,
+                              learning_rate=args.learning_rate,
+                              adaptive_lr=args.adaptive_learning_rate,
+                              no_encoder_train=args.no_encoder_train, ep_save=args.ep_save)
+                elif (args.model_type == 'rankformer'):
+                    rankformer_train(rankformer=ranker, bg=trainloader, epochs=args.epochs,
+                                     epochs_start=ranker.max_epoch,
+                                     writer=writer, val_g=valloader, val_writer=val_writer,
+                                     steps_train_loss=np.ceil(len(trainloader) / 100).astype(int),
+                                     steps_val_loss=np.ceil(len(trainloader) / 5).astype(int),
+                                     early_stopping_patience=args.early_stopping_patience,
+                                     learning_rate=args.learning_rate,
+                                     no_encoder_train=args.no_encoder_train, ep_save=args.ep_save)
+                else:
+                    raise NotImplementedError(args.model_type)
+            except KeyboardInterrupt:
+                print('caught interrupt; stopping training')
+            if (args.save_data):
+                import torch        # TODO: just torch everywhere
+                torch.save(ranker, run_name + '.pt')
+            if hasattr(ranker, 'predict'):
+                train_preds = ranker.predict(train_graphs, train_x.astype(np.float32), train_sys.astype(np.float32),
+                                             batch_size=args.batch_size * 2,
+                                             prog_bar=args.verbose)
+                if (len(val_x) > 0):
+                    val_preds = ranker.predict(val_graphs, val_x.astype(np.float32), val_sys.astype(np.float32), batch_size=args.batch_size * 2)
+                if (len(test_x) > 0):
+                    test_preds = ranker.predict(test_graphs, test_x.astype(np.float32), test_sys.astype(np.float32), batch_size=args.batch_size * 2)
+                    if (args.export_rois):
+                        if not os.path.isdir('runs'):
+                            os.mkdir('runs')
+                        export_predictions(data, test_preds, f'runs/{run_name}_test.tsv', 'test')
     if (args.cache_file is not None and hasattr(features, 'write_cache') and features.write_cache):
         print('writing cache, don\'t interrupt!!')
         pickle.dump(features.cached, open(args.cache_file, 'wb'))
