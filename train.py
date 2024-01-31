@@ -96,7 +96,9 @@ class TrainArgs(Tap):
     # TODO: all the hyperparams
     transformer_nhead: int = 4
     transformer_nhid: int = 1024
-    transformer_nlayers: int = 6    
+    transformer_nlayers: int = 6
+    transformer_multiple_sys_tokens: bool = False
+    transformer_no_special_tokens: bool = False
     # pairs
     epsilon: Union[str, float] = '30s' # difference in evaluation measure below which to ignore falsely predicted pairs
     pair_step: int = 3
@@ -570,7 +572,9 @@ if __name__ == '__main__':
                     rankformer_encoder = RankformerEncoder(ninp=args.encoder_size, nhead=args.transformer_nhead, nhid=args.transformer_nhid,
                                                            nlayers=args.transformer_nlayers,
                                                            nsysf=train_sys.shape[1], gnn_depth=args.mpn_depth,
-                                                           gnn_dropout=args.dropout_rate_encoder)
+                                                           gnn_dropout=args.dropout_rate_encoder,
+                                                           no_special_tokens=args.transformer_no_special_tokens,
+                                                           multiple_sys_tokens=args.transformer_multiple_sys_tokens)
                     ranker = Rankformer(rankformer_encoder, sigmoid_output=True)
                 else:
                     raise NotImplementedError(args.model_type)

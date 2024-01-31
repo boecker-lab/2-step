@@ -42,11 +42,16 @@ def dmpnn(encoder_size, depth, dropout_rate):
 
 
 class RankformerGNNEmbedding(nn.Module):
-    def __init__(self, ninp, nsysf, gnn_depth=3, gnn_dropout=0.0):
+    def __init__(self, ninp, nsysf, gnn_depth=3, gnn_dropout=0.0,
+                 multiple_sys_tokens=False):
         super(RankformerGNNEmbedding, self).__init__()
         self.gnn = dmpnn(ninp, gnn_depth, gnn_dropout)
         self.pad_token = torch.rand((1, ninp))
-        self.sysf_emb = nn.Linear(nsysf, ninp)
+        self.multiple_sys_tokens = multiple_sys_tokens
+        if multiple_sys_tokens:
+            self.sysf_emb = nn.Linear(1, ninp)
+        else:
+            self.sysf_emb = nn.Linear(nsysf, ninp)
     def forward(self, batch, encode_sys=True):
         graphs, sysf = batch
         graphs_emb = self.gnn([graphs])
@@ -55,13 +60,20 @@ class RankformerGNNEmbedding(nn.Module):
         # NOTE: graph1 and graph2 do not share the same pad_len
         graphs_emb = torch.stack([torch.cat([g_emb] + [self.pad_token] * (pad_len - g_emb.shape[0]))
                                   for g_emb in graphs_emb])
-        sysf_emb = torch.stack([self.sysf_emb(sysf)], dim=1) if encode_sys else None
+        if encode_sys:
+            if self.multiple_sys_tokens:
+                sysf_emb = self.sysf_emb(torch.unsqueeze(sysf, 2))
+            else:
+                sysf_emb = torch.stack([self.sysf_emb(sysf)], dim=1)
+        else:
+            sysf_emb = None
         return (sysf_emb, graphs_emb)
 
 
 class RankformerEncoder(nn.Module):
     def __init__(self, ninp, nhead, nhid, nlayers, nsysf, gnn_depth=3, gnn_dropout=0.0,
-                 sysf_encoding_only_first_part=True):
+                 sysf_encoding_only_first_part=True, no_special_tokens=False,
+                 multiple_sys_tokens=False):
         super(RankformerEncoder, self).__init__()
         self.encoder = nn.Transformer(d_model=ninp, nhead=nhead,
                                       dim_feedforward=nhid,
@@ -69,25 +81,35 @@ class RankformerEncoder(nn.Module):
                                       num_decoder_layers=0,
                                       # might be better to not use batch_first, perhaps dmpnn output already is the not-batch_first way
                                       batch_first=True).encoder
-        self.embedding = RankformerGNNEmbedding(ninp=ninp, gnn_depth=gnn_depth, gnn_dropout=gnn_dropout, nsysf=nsysf)
-        self.cls_token = torch.rand((1, ninp))
-        self.sep_token = torch.rand((1, ninp))
+        self.embedding = RankformerGNNEmbedding(ninp=ninp, gnn_depth=gnn_depth, gnn_dropout=gnn_dropout,
+                                                nsysf=nsysf, multiple_sys_tokens=multiple_sys_tokens)
+        self.no_special = no_special_tokens
+        if (not no_special_tokens):
+            self.cls_token = torch.rand((1, ninp))
+            self.sep_token = torch.rand((1, ninp))
         self.ninp = ninp
         self.sysf_encoding_only_first_part = sysf_encoding_only_first_part
         # self.init_weights()
-    def forward(self, batch):
+    def forward(self, batch, verbose=False):
         batch_size = batch[0][2].shape[0] # size of sysf of first part
-        cls_token = torch.stack([self.cls_token] * batch_size)
-        sep_token = torch.stack([self.sep_token] * batch_size)
-        sentence = [cls_token]
+        if (self.no_special):
+            sentence = []
+        else:
+            cls_token = torch.stack([self.cls_token] * batch_size)
+            sep_token = torch.stack([self.sep_token] * batch_size)
+            sentence = [cls_token]
         for i, part in enumerate(batch):
             graphs, extra, sysf = part
             batch_size = sysf.shape[0]
             # ignore "extra", sysf1 must be == sysf2
             sysf_emb, graph_emb = self.embedding((graphs, sysf), encode_sys=(
                 i == 0 or not self.sysf_encoding_only_first_part))
+            sentence.extend(([sysf_emb] if sysf_emb is not None else []) + [graph_emb])
             # TODO: option to pad both graphs to the same size (just append pad tokens to end)
-            sentence.extend(([sysf_emb] if sysf_emb is not None else []) + [graph_emb] + [sep_token])
+            if (not self.no_special):
+                sentence.extend([sep_token])
+        if verbose:
+            print('sentence:', [token.shape for token in sentence])
         encoding = self.encoder(torch.cat(sentence, 1)) # (N, S, E)
         return encoding
 
@@ -280,6 +302,14 @@ if __name__ == '__main__':
         batch = pickle.load(f)
     ((graphs1, extra1, sysf1), (graphs2, extra2, sysf2)), y, weights, is_confl = batch
     encoder = RankformerEncoder(300, 4, 512, 2, sysf1.shape[1])
+    print(f'{encoder(batch[0]).shape=}')
+    encoder_multisys = RankformerEncoder(300, 4, 512, 2, sysf1.shape[1], multiple_sys_tokens=True)
+    print(f'{encoder_multisys(batch[0]).shape=}')
+    encoder_multisys_nospecial = RankformerEncoder(300, 4, 512, 2, sysf1.shape[1], multiple_sys_tokens=True,
+                                                   no_special_tokens=True)
+    print(f'{encoder_multisys_nospecial(batch[0], verbose=True).shape=}')
+    encoder_nospecial = RankformerEncoder(300, 4, 512, 2, sysf1.shape[1], no_special_tokens=True)
+    print(f'{encoder_nospecial(batch[0], verbose=True).shape=}')
     ranker = Rankformer(encoder)
     ranker(((graphs1, extra1, sysf1), (graphs2, extra2, sysf2)))
     rankformer_rt = RankformerRTPredictor(encoder, 16)
@@ -290,8 +320,6 @@ if __name__ == '__main__':
     with open('/home/fleming/Documents/Projects/rtranknet/rankformer_test_rt_data.pkl', 'rb') as f:
         d = pickle.load(f)
     rankformer_rt_predict(rankformer_rt, d.train_graphs, d.train_x.astype('float32'), d.train_sys.astype('float32'))
-
-
     # other stuff
     gnn = dmpnn(300, 3, 0)
     model = RanknetTransformer(300, 4, 512, 2, sysf1.shape[1], gnn)
