@@ -99,6 +99,7 @@ class TrainArgs(Tap):
     transformer_nlayers: int = 6
     transformer_multiple_sys_tokens: bool = False
     transformer_no_special_tokens: bool = False
+    transformer_rt_hidden_sizes: List[int] = [16]
     # pairs
     epsilon: Union[str, float] = '30s' # difference in evaluation measure below which to ignore falsely predicted pairs
     pair_step: int = 3
@@ -181,6 +182,32 @@ def preprocess(data: Data, args: TrainArgs):
         data.nan_columns_to_zeros()
     return data.get_split_data((args.test_split, args.val_split))
 
+def prepare_rt_data(data, train_graphs, train_sys, train_y, val_graphs, val_sys, val_y):
+    from ranknet_transformer import RTDataset
+    # drop doublets and void compounds from data
+    train_df = data.df.iloc[data.train_indices]
+    val_df = data.df.iloc[data.val_indices]
+    train_void_thr = train_df.dataset_id.apply(lambda x: data.void_info[x])
+    val_void_thr = val_df.dataset_id.apply(lambda x: data.void_info[x])
+    train_doublets = train_df.duplicated(subset=['dataset_id', 'smiles.std'], keep=False)
+    val_doublets = val_df.duplicated(subset=['dataset_id', 'smiles.std'], keep=False)
+    train_select = ~((train_y < train_void_thr) | train_doublets)
+    val_select = ~((val_y < val_void_thr) | val_doublets)
+    train_graphs = train_graphs[train_select]
+    train_sys = train_sys[train_select]
+    train_y = train_y[train_select]
+    val_graphs = val_graphs[val_select]
+    val_sys = val_sys[val_select]
+    val_y = val_y[val_select]
+    # weights: by dataset size (1 -- approx. 500)
+    train_counts = train_df[train_select].groupby('dataset_id')['smiles.std'].transform('count')
+    train_weights = (train_counts.max() / train_counts).values
+    val_counts = val_df[val_select].groupby('dataset_id')['smiles.std'].transform('count')
+    val_weights = (val_counts.max() / val_counts).values
+    train_dataset = RTDataset(train_graphs, train_sys.astype('float32'), train_y.astype('float32'), train_weights.astype('float32'))
+    val_dataset = RTDataset(val_graphs, val_sys.astype('float32'), val_y.astype('float32'), val_weights.astype('float32'))
+    return train_dataset, val_dataset
+
 def prepare_tf_model(args: TrainArgs, input_size: int):
     if (args.device is not None and re.match(r'[cg]pu:\d', args.device.lower())):
         print(f'attempting to use device {args.device}')
@@ -247,7 +274,7 @@ if __name__ == '__main__':
         graphs = True
     elif ('rankformer' in args.model_type):
         from ranknet_transformer import (RankformerEncoder, Rankformer, RankformerRTPredictor,
-                                         rankformer_train, rankformer_rt_train, RTDataset)
+                                         rankformer_train, rankformer_rt_train)
         import torch
         if (args.gpu):
             torch.set_default_device('cuda')
@@ -400,48 +427,24 @@ if __name__ == '__main__':
     if (args.model_type == 'rankformer_rt'):
         # no need for ranking pairs
         rankformer_encoder = ranker.ranknet_encoder
-        rankformer_rt = RankformerRTPredictor(rankformer_encoder, 64)
-        # drop doublets and void compounds from data
-        train_df = data.df.iloc[data.train_indices]
-        val_df = data.df.iloc[data.val_indices]
-        test_df = data.df.iloc[data.test_indices]
-        train_void_thr = train_df.dataset_id.apply(lambda x: data.void_info[x])
-        val_void_thr = val_df.dataset_id.apply(lambda x: data.void_info[x])
-        test_void_thr = test_df.dataset_id.apply(lambda x: data.void_info[x])
-        train_doublets = train_df.duplicated(subset=['dataset_id', 'smiles.std'], keep=False)
-        val_doublets = val_df.duplicated(subset=['dataset_id', 'smiles.std'], keep=False)
-        test_doublets = test_df.duplicated(subset=['dataset_id', 'smiles.std'], keep=False)
-        train_select = ~((train_y < train_void_thr) | train_doublets)
-        val_select = ~((val_y < val_void_thr) | val_doublets)
-        test_select = ~((test_y < test_void_thr) | test_doublets)
-        train_graphs = train_graphs[train_select]
-        train_sys = train_sys[train_select]
-        train_y = train_y[train_select]
-        val_graphs = val_graphs[val_select]
-        val_sys = val_sys[val_select]
-        val_y = val_y[val_select]
-        test_graphs = test_graphs[test_select]
-        test_sys = test_sys[test_select]
-        test_y = test_y[test_select]
-        # weights: by dataset size (1 -- approx. 500)
-        train_counts = train_df[train_select].groupby('dataset_id')['smiles.std'].transform('count')
-        train_weights = (train_counts.max() / train_counts).values
-        val_counts = val_df[val_select].groupby('dataset_id')['smiles.std'].transform('count')
-        val_weights = (val_counts.max() / val_counts).values
-        test_counts = test_df[test_select].groupby('dataset_id')['smiles.std'].transform('count')
-        test_weights = (test_counts.max() / test_counts).values
-        train_dataset = RTDataset(train_graphs, train_sys.astype('float32'), train_y.astype('float32'), train_weights.astype('float32'))
-        val_dataset = RTDataset(val_graphs, val_sys.astype('float32'), val_y.astype('float32'), val_weights.astype('float32'))
-        test_dataset = RTDataset(test_graphs, test_sys.astype('float32'), test_y.astype('float32'), test_weights.astype('float32'))
+        rankformer_rt = RankformerRTPredictor(rankformer_encoder, args.transformer_rt_hidden_sizes)
+        if args.verbose:
+            print(rankformer_rt)
+        train_dataset, val_dataset = prepare_rt_data(data=data, train_graphs=train_graphs, train_sys=train_sys,
+                                                     train_y=train_y, val_graphs=val_graphs, val_sys=val_sys,
+                                                     val_y=val_y)
         trainloader = DataLoader(train_dataset, args.batch_size, shuffle=True,
                                  generator=torch.Generator(device='cuda' if args.gpu else 'cpu'),
                                  collate_fn=custom_collate if (args.mpn_encoder in ['dmpnn', 'graphformer']) else None)
-        valloader = DataLoader(val_dataset, args.batch_size, shuffle=True,
-                                 generator=torch.Generator(device='cuda' if args.gpu else 'cpu'),
-                                 collate_fn=custom_collate if (args.mpn_encoder in ['dmpnn', 'graphformer']) else None)
-        testloader = DataLoader(test_dataset, args.batch_size, shuffle=True,
-                                 generator=torch.Generator(device='cuda' if args.gpu else 'cpu'),
-                                 collate_fn=custom_collate if (args.mpn_encoder in ['dmpnn', 'graphformer']) else None)
+        if len(val_dataset) > 0:
+            valloader = DataLoader(val_dataset, args.batch_size, shuffle=True,
+                                   generator=torch.Generator(device='cuda' if args.gpu else 'cpu'),
+                                   collate_fn=custom_collate if (args.mpn_encoder in ['dmpnn', 'graphformer']) else None)
+        else:
+            valloader = None
+        # testloader = DataLoader(test_dataset, args.batch_size, shuffle=True,
+        #                          generator=torch.Generator(device='cuda' if args.gpu else 'cpu'),
+        #                          collate_fn=custom_collate if (args.mpn_encoder in ['dmpnn', 'graphformer']) else None)
         try:
             rankformer_rt_train(rankformer_rt=rankformer_rt, bg=trainloader, epochs=args.epochs,
                                 epochs_start=ranker.max_epoch,

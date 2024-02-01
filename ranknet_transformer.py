@@ -127,18 +127,22 @@ class Rankformer(nn.Module):
         return F.sigmoid(output) if self.sigmoid_output else output
 
 class RankformerRTPredictor(nn.Module):
-    def __init__(self, ranknet_encoder, rt_hidden_dim):
+    def __init__(self, ranknet_encoder, rt_hidden_dims=[64]):
         super(RankformerRTPredictor, self).__init__()
         self.ranknet_encoder = ranknet_encoder
         self.activation = F.relu
-        self.hidden = nn.Linear(ranknet_encoder.ninp, rt_hidden_dim)
-        self.rt_pred = nn.Linear(rt_hidden_dim, 1)
+        self.hidden = nn.ModuleList()
+        for i, u in enumerate(rt_hidden_dims):
+            self.hidden.append(nn.Linear(ranknet_encoder.ninp if i == 0
+                                      else rt_hidden_dims[i - 1], u))
+        self.rt_pred = nn.Linear(rt_hidden_dims[-1], 1)
         self.max_epoch = 0      # track number epochs trained
         # self.init_weights()
     def forward(self, batch):
         encoding = self.ranknet_encoder((batch,))
         output = encoding[:, 0, :] # CLS token
-        output = self.activation(self.hidden(output))
+        for h in self.hidden:
+            output = self.activation(h(output))
         return self.rt_pred(output).flatten()
 
 
