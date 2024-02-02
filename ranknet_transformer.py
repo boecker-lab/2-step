@@ -127,7 +127,7 @@ class RankformerEncoder(nn.Module):
             print('mol order:', sentence_order)
         encoding = torch.cat(sentence, 1)
         if self.mol_order_embedding:
-            mol_order_embedding = self.mol_order(torch.IntTensor(sentence_order))
+            mol_order_embedding = self.mol_order(torch.tensor(sentence_order, dtype=torch.int))
             encoding += mol_order_embedding
         encoding *= math.sqrt(self.ninp)
         encoding = self.encoder(encoding) # (N, S, E)
