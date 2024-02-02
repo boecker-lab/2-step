@@ -582,6 +582,8 @@ if __name__ == '__main__':
                 else:
                     raise NotImplementedError(args.model_type)
                 print(ranker)
+                print('total params', sum(p.numel() for p in ranker.parameters()))
+                print('total params (trainable)', sum(p.numel() for p in ranker.parameters() if p.requires_grad))
             try:
                 if (args.model_type == 'mpn'):
                     mpn_train(ranker=ranker, bg=trainloader, epochs=args.epochs,
