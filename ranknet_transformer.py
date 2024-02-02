@@ -1,3 +1,4 @@
+import math
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -28,14 +29,14 @@ class RTDataset(Dataset):
         return (self.x_mols[index], None, self.x_sys[index]), self.y[index], self.weights[index]
 
 
-def dmpnn(encoder_size, depth, dropout_rate):
+def dmpnn(encoder_size, depth, dropout_rate, no_reduce=True):
     args = TrainArgs()
     args.from_dict({'dataset_type': 'classification',
                     'data_path': None,
                     'hidden_size': encoder_size,
                     'depth': depth,
                     'dropout': dropout_rate,
-                    'is_atom_bond_targets': True})
+                    'is_atom_bond_targets': no_reduce})
     model = MPN(args)
     model.name = 'dmpnn'
     return model
@@ -43,10 +44,12 @@ def dmpnn(encoder_size, depth, dropout_rate):
 
 class RankformerGNNEmbedding(nn.Module):
     def __init__(self, ninp, nsysf, gnn_depth=3, gnn_dropout=0.0,
-                 multiple_sys_tokens=False):
+                 multiple_sys_tokens=False, one_token_per_graph=False):
         super(RankformerGNNEmbedding, self).__init__()
-        self.gnn = dmpnn(ninp, gnn_depth, gnn_dropout)
-        self.pad_token = torch.rand((1, ninp))
+        self.one_token_per_graph = one_token_per_graph
+        self.gnn = dmpnn(ninp, gnn_depth, gnn_dropout,
+                         no_reduce=not one_token_per_graph)
+        self.pad_token = nn.Parameter(torch.randn(1, ninp))
         self.multiple_sys_tokens = multiple_sys_tokens
         if multiple_sys_tokens:
             self.sysf_emb = nn.Linear(1, ninp)
@@ -55,11 +58,14 @@ class RankformerGNNEmbedding(nn.Module):
     def forward(self, batch, encode_sys=True):
         graphs, sysf = batch
         graphs_emb = self.gnn([graphs])
-        graphs_emb = [graphs_emb[0].narrow(0, a_start, a_size) for a_start, a_size in graphs_emb[1]]
-        pad_len = max([x.shape[0] for x in graphs_emb])
-        # NOTE: graph1 and graph2 do not share the same pad_len
-        graphs_emb = torch.stack([torch.cat([g_emb] + [self.pad_token] * (pad_len - g_emb.shape[0]))
-                                  for g_emb in graphs_emb])
+        if self.one_token_per_graph:
+            graphs_emb = graphs_emb.unsqueeze(1)
+        else:
+            graphs_emb = [graphs_emb[0].narrow(0, a_start, a_size) for a_start, a_size in graphs_emb[1]]
+            pad_len = max([x.shape[0] for x in graphs_emb])
+            # NOTE: graph1 and graph2 do not share the same pad_len
+            graphs_emb = torch.stack([torch.cat([g_emb] + [self.pad_token] * (pad_len - g_emb.shape[0]))
+                                      for g_emb in graphs_emb])
         if encode_sys:
             if self.multiple_sys_tokens:
                 sysf_emb = self.sysf_emb(torch.unsqueeze(sysf, 2))
@@ -71,24 +77,78 @@ class RankformerGNNEmbedding(nn.Module):
 
 
 class RankformerEncoder(nn.Module):
-    def __init__(self, ninp, nhead, nhid, nlayers, nsysf, gnn_depth=3, gnn_dropout=0.0,
+    def __init__(self, ninp, nhead, nhid, nlayers, nsysf, dropout=0.1, gnn_depth=3, gnn_dropout=0.0,
                  sysf_encoding_only_first_part=True, no_special_tokens=False,
-                 multiple_sys_tokens=False):
+                 multiple_sys_tokens=False, one_token_per_graph=False, mol_order_embedding=True):
         super(RankformerEncoder, self).__init__()
-        self.encoder = nn.Transformer(d_model=ninp, nhead=nhead,
-                                      dim_feedforward=nhid,
-                                      num_encoder_layers=nlayers,
-                                      num_decoder_layers=0,
-                                      # might be better to not use batch_first, perhaps dmpnn output already is the not-batch_first way
-                                      batch_first=True).encoder
+        encoder_layers = nn.TransformerEncoderLayer(
+            d_model=ninp, nhead=nhead, dim_feedforward=nhid,
+            dropout=dropout,
+            batch_first=True # might be better to not use batch_first, perhaps dmpnn output already is the not-batch_first way
+        )
+        self.encoder = nn.TransformerEncoder(encoder_layers, nlayers)
         self.embedding = RankformerGNNEmbedding(ninp=ninp, gnn_depth=gnn_depth, gnn_dropout=gnn_dropout,
-                                                nsysf=nsysf, multiple_sys_tokens=multiple_sys_tokens)
+                                                nsysf=nsysf, multiple_sys_tokens=multiple_sys_tokens,
+                                                one_token_per_graph=one_token_per_graph)
+        self.mol_order_embedding = mol_order_embedding
+        if mol_order_embedding:
+            self.mol_order = nn.Embedding(2, 1)
         self.no_special = no_special_tokens
         if (not no_special_tokens):
-            self.cls_token = torch.rand((1, ninp))
-            self.sep_token = torch.rand((1, ninp))
+            self.cls_token = nn.Parameter(torch.randn(1, ninp))
+            self.sep_token = nn.Parameter(torch.randn(1, ninp))
         self.ninp = ninp
         self.sysf_encoding_only_first_part = sysf_encoding_only_first_part
+        # self.init_weights()
+    def forward(self, batch, verbose=False):
+        batch_size = batch[0][2].shape[0] # size of sysf of first part
+        if (self.no_special):
+            sentence = []
+            sentence_order = []
+        else:
+            cls_token = torch.stack([self.cls_token] * batch_size)
+            sep_token = torch.stack([self.sep_token] * batch_size)
+            sentence = [cls_token]
+            sentence_order = [0] * sum([x.shape[1] for x in sentence])
+        for i, part in enumerate(batch):
+            graphs, extra, sysf = part
+            batch_size = sysf.shape[0]
+            # ignore "extra", sysf1 must be == sysf2
+            sysf_emb, graph_emb = self.embedding((graphs, sysf), encode_sys=(
+                i == 0 or not self.sysf_encoding_only_first_part))
+            extension = ([sysf_emb] if sysf_emb is not None else []) + [graph_emb]
+            # TODO: option to pad both graphs to the same size (just append pad tokens to end)
+            if (not self.no_special):
+                extension += [sep_token]
+            sentence.extend(extension)
+            sentence_order += [i] * sum([x.shape[1] for x in extension])
+        if verbose:
+            print('sentence:', [token.shape for token in sentence])
+            print('mol order:', sentence_order)
+        encoding = torch.cat(sentence, 1)
+        if self.mol_order_embedding:
+            mol_order_embedding = self.mol_order(torch.IntTensor(sentence_order))
+            encoding += mol_order_embedding
+        encoding *= math.sqrt(self.ninp)
+        encoding = self.encoder(encoding) # (N, S, E)
+        return encoding
+
+class FFNEncoder(nn.Module):
+    def __init__(self, ninp, nsysf, gnn_depth=3, gnn_dropout=0.0,
+                 no_special_tokens=False):
+        super(FFNEncoder, self).__init__()
+        self.no_special = no_special_tokens
+        if no_special_tokens:
+            sentence_len = 3        # SYS, G1, G2
+        else:
+            sentence_len = 6        # CLS, SYS, G1, SEP, G2, SEP
+        self.encoder = nn.Linear(ninp * sentence_len, ninp)
+        self.embedding = RankformerGNNEmbedding(ninp=ninp, gnn_depth=gnn_depth, gnn_dropout=gnn_dropout,
+                                                nsysf=nsysf, multiple_sys_tokens=False,
+                                                one_token_per_graph=True)
+        self.cls_token = nn.Parameter(torch.randn(1, ninp))
+        self.sep_token = nn.Parameter(torch.randn(1, ninp))
+        self.ninp = ninp
         # self.init_weights()
     def forward(self, batch, verbose=False):
         batch_size = batch[0][2].shape[0] # size of sysf of first part
@@ -101,29 +161,36 @@ class RankformerEncoder(nn.Module):
         for i, part in enumerate(batch):
             graphs, extra, sysf = part
             batch_size = sysf.shape[0]
-            # ignore "extra", sysf1 must be == sysf2
-            sysf_emb, graph_emb = self.embedding((graphs, sysf), encode_sys=(
-                i == 0 or not self.sysf_encoding_only_first_part))
+            sysf_emb, graph_emb = self.embedding((graphs, sysf), encode_sys=(i == 0))
             sentence.extend(([sysf_emb] if sysf_emb is not None else []) + [graph_emb])
-            # TODO: option to pad both graphs to the same size (just append pad tokens to end)
             if (not self.no_special):
                 sentence.extend([sep_token])
         if verbose:
             print('sentence:', [token.shape for token in sentence])
-        encoding = self.encoder(torch.cat(sentence, 1)) # (N, S, E)
+        encoding = self.encoder(torch.cat(sentence, 1).flatten(1)).unsqueeze(1) # (N, 1, E)
         return encoding
 
 class Rankformer(nn.Module):
-    def __init__(self, ranknet_encoder, sigmoid_output=False):
+    def __init__(self, ranknet_encoder, sigmoid_output=False, hidden_dims=[]):
         super(Rankformer, self).__init__()
         self.ranknet_encoder = ranknet_encoder
-        self.ranking = nn.Linear(ranknet_encoder.ninp, 1)
+        if len(hidden_dims) > 0:
+            self.activation = F.relu
+            self.hidden = nn.ModuleList()
+            for i, u in enumerate(hidden_dims):
+                self.hidden.append(nn.Linear(ranknet_encoder.ninp if i == 0
+                                             else hidden_dims[i - 1], u))
+        self.ranking = nn.Linear(ranknet_encoder.ninp if len(hidden_dims) == 0
+                                 else hidden_dims[-1], 1)
         self.sigmoid_output = sigmoid_output
         self.max_epoch = 0      # track number epochs trained
         # self.init_weights()
     def forward(self, batch):
-        encoding = self.ranknet_encoder(batch)
-        output = self.ranking(encoding[:, 0, :]).flatten() # CLS token
+        output = self.ranknet_encoder(batch)[:, 0, :]
+        if (hasattr(self, 'hidden')):
+            for h in self.hidden:
+                output = self.activation(h(output))
+        output = self.ranking(output).flatten() # CLS token
         return F.sigmoid(output) if self.sigmoid_output else output
 
 class RankformerRTPredictor(nn.Module):
@@ -152,18 +219,26 @@ def rankformer_train(rankformer: Rankformer, bg: DataLoader, epochs=2,
                      confl_writer:SummaryWriter=None,
                      steps_train_loss=10, steps_val_loss=100,
                      sigmoid_loss=False,
+                     no_weights=False,
                      early_stopping_patience=None,
                      ep_save=False, learning_rate=1e-3,
-                     no_encoder_train=False):
+                     no_encoder_train=False, calc_acc=True):
     save_name = ('rankformer' if writer is None else
                  writer.get_logdir().split('/')[-1].replace('_train', ''))
     if (no_encoder_train):
         for p in rankformer.ranknet_encoder.parameters():
             p.requires_grad = False
-    optimizer = optim.Adam(rankformer.parameters(), lr=learning_rate)
-    loss_fun = nn.BCEWithLogitsLoss(reduction='none') if sigmoid_loss else nn.BCELoss(reduction='none')
+    # optimizer = optim.Adam(rankformer.parameters(), lr=learning_rate)
+    optimizer = optim.RAdam(rankformer.parameters(), lr=learning_rate)
+    # optimizer = optim.SGD(rankformer.parameters(), lr=learning_rate)
+    # scheduler = optim.lr_scheduler.StepLR(optimizer, 1, gamma=0.95)
+    loss_kwargs = dict(reduction='none')
+    loss_fun = nn.BCEWithLogitsLoss(**loss_kwargs) if sigmoid_loss else nn.BCELoss(**loss_kwargs)
+    # loss_fun = nn.L1Loss(reduction='none')
     rankformer.train()
     loss_sum = iter_count = val_loss_sum = val_iter_count = val_pat = confl_loss_sum = 0
+    train_acc = val_acc = np.nan
+    train_acc_sum = val_acc_sum = 0
     last_val_step = np.infty
     stop = False
     for epoch in range(epochs_start, epochs_start + epochs):
@@ -174,11 +249,23 @@ def rankformer_train(rankformer: Rankformer, bg: DataLoader, epochs=2,
             # NOTE: y has to be 0 or 1 here!
             rankformer.zero_grad()
             pred = rankformer(x)
-            loss_all = loss_fun(pred, y) * weights
+            # print(pred)
+            # print('\nx1', [g.smiles for g in x[0][0].mol_graphs])
+            # print('x2', [g.smiles for g in x[1][0].mol_graphs])
+            # print('y', y)
+            # DEBUG: change y so it is simply which mol has more atoms
+            # y = torch.from_numpy(np.array([g1.n_atoms > g2.n_atoms for g1, g2 in zip(x[0][0].mol_graphs, x[1][0].mol_graphs)], dtype='float32'))
+            loss_all = loss_fun(pred, y)
+            if not (no_weights):
+                loss_all *= weights
+            if (calc_acc):
+                train_acc = (torch.isclose(pred, y, atol=0.499999).sum() / len(y)).item()
+                train_acc_sum += train_acc
             loss = loss_all.mean()
             loss_sum += loss.item()
             iter_count += 1
             loss.backward()
+            # nn.utils.clip_grad_norm_(rankformer.parameters(), 0.5)
             optimizer.step()
             if (is_confl.sum() > 0):
                 confl_loss_sum += loss_all[is_confl].mean().item()
@@ -196,7 +283,13 @@ def rankformer_train(rankformer: Rankformer, bg: DataLoader, epochs=2,
                 with torch.no_grad():
                     for x, y, weights, is_confl in val_g:
                         pred = rankformer(x)
-                        val_loss_sum += (loss_fun(pred, y) * weights).mean().item()
+                        val_loss_all = loss_fun(pred, y)
+                        if not (no_weights):
+                            val_loss_all *= weights
+                        val_loss_sum += val_loss_all.mean().item()
+                        if (calc_acc):
+                            val_acc = (torch.isclose(pred, y, atol=0.499999).sum() / len(y)).item()
+                            val_acc_sum += val_acc
                         val_iter_count += 1
                 val_step = val_loss_sum / val_iter_count
                 val_writer.add_scalar('loss', val_step, iter_count)
@@ -211,7 +304,10 @@ def rankformer_train(rankformer: Rankformer, bg: DataLoader, epochs=2,
             loop.set_description(f'Epoch [{epoch+1}/{epochs_start + epochs}]')
             loop.set_postfix(loss=loss_sum/iter_count if iter_count > 0 else np.nan,
                              val_loss=val_loss_sum/val_iter_count if val_iter_count > 0 else np.nan,
-                             confl_loss=confl_loss_sum/iter_count)
+                             confl_loss=confl_loss_sum/iter_count,
+                             **(dict(train_acc=train_acc_sum/iter_count if iter_count > 0 else np.nan,
+                                     val_acc=val_acc_sum/val_iter_count if val_iter_count > 0 else np.nan) if calc_acc else dict()))
+        # scheduler.step()
         rankformer.max_epoch = epoch + 1
         if (ep_save):
             torch.save(rankformer, f'{save_name}_ep{epoch + 1}.pt')
@@ -243,6 +339,7 @@ def rankformer_rt_train(rankformer_rt: RankformerRTPredictor, bg: DataLoader, ep
             rankformer_rt.zero_grad()
             pred = rankformer_rt(x)
             loss_all = loss_fun(pred, y) * weights
+            # loss_all = loss_fun(pred, y / 100) * weights # TODO: maybe needed
             loss = loss_all.mean()
             loss_sum += loss.item()
             iter_count += 1
@@ -299,6 +396,110 @@ def rankformer_rt_predict(model: RankformerRTPredictor, graphs, extra, sysf, bat
                      default_convert(sysf[start:end]))
             preds.append(model(batch).cpu().detach().numpy())
     return np.concatenate(preds)
+
+def rankformer_eval(rankformer, bg, max_batches_count=None):
+    rankformer.eval()
+    correct = []
+    with torch.no_grad():
+        loop = tqdm(enumerate(bg), total=max_batches_count)
+        for i, (x, y, weights, is_confl) in loop:
+            if max_batches_count and i >= max_batches_count:
+                break
+            try:
+                pred = rankformer(x)
+                correct.extend(torch.isclose(pred, y, atol=0.499999).detach().tolist())
+            except KeyboardInterrupt:
+                break
+            # val_loss_sum += (loss_fun(pred, y) * weights).mean().item()
+    return sum(correct) / len(correct)
+
+def test_rankformer_rt():
+    rankformer_model = torch.load('/home/fleming/Documents/Projects/rtranknet/runs/rankformer.pt', map_location=torch.device('cpu'))
+    rankformer_encoder = rankformer_model.ranknet_encoder
+    rankformer_rt = RankformerRTPredictor(rankformer_encoder, [64])
+    with open('/home/fleming/Documents/Projects/rtranknet/runs/rankformer_data.pkl', 'rb') as f:
+        data = pickle.load(f)
+    from train import prepare_rt_data
+    from mpnranker2 import custom_collate_single as custom_collate
+    from dmpnn_graph import dmpnn_batch
+    custom_collate.graph_batch = dmpnn_batch
+    train_ds, val_ds = prepare_rt_data(data, data.train_graphs, data.train_sys, data.train_y,
+                                       data.val_graphs, data.val_sys, data.val_y)
+    trainloader = DataLoader(train_ds, 1024, shuffle=True, collate_fn=custom_collate)
+    (graphs, extra, sysf), y, weights = next(iter(trainloader))
+    rankformer_rt((graphs, extra, sysf))
+    # trained rankformer_rt
+    rankformer_rt = torch.load('/home/fleming/Documents/Projects/rtranknet/rankformer_rt_frozen.pt')
+    preds = rankformer_rt((graphs, extra, sysf))
+    print(f'{(preds - y).abs().mean()=}')
+    rankformer_rt_train(rankformer_rt, trainloader, 1, 0,  no_encoder_train=True)
+
+def load_rankformer(path, device):
+    model = torch.load(path, map_location=torch.device('cpu'))
+    model.ranknet_encoder.embedding.gnn.device = device
+    model.ranknet_encoder.embedding.gnn.encoder[0].device = device
+    return model
+
+def test_rankformer():
+    from utils_newbg import RankDataset, check_integrity
+    from mpnranker2 import custom_collate
+    from dmpnn_graph import dmpnn_batch
+    custom_collate.graph_batch = dmpnn_batch
+    with open('/home/fleming/Documents/Projects/rtranknet/runs/rankformer_data.pkl', 'rb') as f:
+        data = pickle.load(f)
+    traindata = RankDataset(x_mols=data.train_graphs, x_extra=data.train_x, x_sys=data.train_sys,
+                            x_ids=data.df.iloc[data.train_indices].smiles.tolist(),
+                            y=data.train_y, x_sys_global_num=data.x_info_global_num,
+                            dataset_info=data.df.dataset_id.iloc[data.train_indices].tolist(),
+                            void_info=data.void_info, cluster=True, y_neg=False, y_float=True,
+                            max_indices_size=10_000)
+    # with open('/home/fleming/Documents/Projects/rtranknet/runs/rankformer_dataset.pkl', 'wb') as out:
+    #     pickle.dump(traindata, out)
+    # _, to_clean, _ = check_integrity(traindata, clean=True)
+    # traindata.remove_indices(to_clean)
+    trainloader = DataLoader(traindata, 128, shuffle=True, collate_fn=custom_collate)
+    rankformer_model = load_rankformer('/home/fleming/Documents/Projects/rtranknet/runs/rankformer.pt', torch.device('cpu'))
+    rankformer_model = load_rankformer('/home/fleming/Documents/Projects/rtranknet/runs/rankformer_nospecial.pt', torch.device('cpu'))
+    rankformer_model = load_rankformer('/home/fleming/Documents/Projects/rtranknet/runs/rankformer_multisys.pt', torch.device('cpu'))
+    print(f'{rankformer_eval(rankformer_model, trainloader, max_batches_count=20)=}')
+
+def construct_sample(g1, g2, y, sysf=0):
+    arr = lambda x: np.array(x, dtype='float32')
+    return (((g1, arr([-1]), arr([sysf])),
+             (g2, arr([-1]), arr([sysf]))),
+            arr([y]), arr([1]), arr([1]))
+
+def check_order(ds, s1, s2):
+    return cs_df.loc[(cs_df.dataset_id == ds)].set_index('smiles.std').loc[[s1, s2], 'rt']
+
+def test_embedding():
+    smiles_list = [
+        'CC',
+        'CO',
+        'CN',
+        'COC',
+        'C=C'
+    ]
+    from dmpnn_graph import dmpnn_batch, dmpnn_graph
+    graphs = [dmpnn_graph(s) for s in smiles_list]
+    sample1 = [
+        construct_sample(graphs[3], graphs[2], 1),
+        construct_sample(graphs[0], graphs[1], 0),
+    ]
+    # sample1 = ((graphs[0:2], None, np.array([0])), (graphs[2:4], None, np.array([0]))), np.array([0, 1]), np.array([1, 1])
+    from mpnranker2 import custom_collate
+    custom_collate.graph_batch = dmpnn_batch
+    sample1_batch = custom_collate(sample1)
+    encoder = RankformerEncoder(6, 2, 2, 1, 1, 1, one_token_per_graph=True)
+    fake_encoder = FFNEncoder(6, 1)
+    rankformer = Rankformer(encoder)
+    fake_rankformer = Rankformer(fake_encoder)
+    # how is the first batch embedded?
+    semb, gemb = encoder.embedding((sample1_batch[0][0][0], sample1_batch[0][0][2]))
+    gemb_gnn = encoder.embedding.gnn(([sample1_batch[0][0][0]]))
+    # whole sample
+    encoder(sample1_batch[0], verbose=True)
+
 
 
 if __name__ == '__main__':

@@ -98,7 +98,11 @@ class TrainArgs(Tap):
     transformer_nhid: int = 1024
     transformer_nlayers: int = 6
     transformer_multiple_sys_tokens: bool = False
+    transformer_one_token_per_graph: bool = False
     transformer_no_special_tokens: bool = False
+    transformer_dropout: float = 0.1
+    transformer_rank_hidden_sizes: List[int] = []
+    transformer_fake: bool = False # TODO: DEBUG
     transformer_rt_hidden_sizes: List[int] = [16]
     # pairs
     epsilon: Union[str, float] = '30s' # difference in evaluation measure below which to ignore falsely predicted pairs
@@ -274,7 +278,7 @@ if __name__ == '__main__':
         graphs = True
     elif ('rankformer' in args.model_type):
         from ranknet_transformer import (RankformerEncoder, Rankformer, RankformerRTPredictor,
-                                         rankformer_train, rankformer_rt_train)
+                                         rankformer_train, rankformer_rt_train, FFNEncoder)
         import torch
         if (args.gpu):
             torch.set_default_device('cuda')
@@ -518,6 +522,7 @@ if __name__ == '__main__':
         else:
             raise NotImplementedError(args.mpn_encoder, 'collate')
 
+        # print(f'{traindata.y_trans.mean()=}') DEBUG
         trainloader = DataLoader(traindata, args.batch_size, shuffle=True,
                                  generator=torch.Generator(device='cuda' if args.gpu else 'cpu'),
                                  collate_fn=custom_collate if (args.mpn_encoder in ['dmpnn', 'graphformer']) else None)
@@ -572,13 +577,20 @@ if __name__ == '__main__':
                                        dropout_rate_pv=args.dropout_rate_pv,
                                        dropout_rate_rank=args.dropout_rate_rank)
                 elif (args.model_type == 'rankformer'):
-                    rankformer_encoder = RankformerEncoder(ninp=args.encoder_size, nhead=args.transformer_nhead, nhid=args.transformer_nhid,
-                                                           nlayers=args.transformer_nlayers,
-                                                           nsysf=train_sys.shape[1], gnn_depth=args.mpn_depth,
-                                                           gnn_dropout=args.dropout_rate_encoder,
-                                                           no_special_tokens=args.transformer_no_special_tokens,
-                                                           multiple_sys_tokens=args.transformer_multiple_sys_tokens)
-                    ranker = Rankformer(rankformer_encoder, sigmoid_output=True)
+                    if (not args.transformer_fake):
+                        rankformer_encoder = RankformerEncoder(
+                            ninp=args.encoder_size, nhead=args.transformer_nhead, nhid=args.transformer_nhid,
+                            nlayers=args.transformer_nlayers, dropout=args.transformer_dropout,
+                            nsysf=train_sys.shape[1], gnn_depth=args.mpn_depth,
+                            gnn_dropout=args.dropout_rate_encoder,
+                            no_special_tokens=args.transformer_no_special_tokens,
+                            multiple_sys_tokens=args.transformer_multiple_sys_tokens,
+                            one_token_per_graph=args.transformer_one_token_per_graph)
+                    else:
+                        rankformer_encoder = FFNEncoder(args.encoder_size, train_sys.shape[1],
+                                                        no_special_tokens=args.transformer_no_special_tokens,)
+                    ranker = Rankformer(rankformer_encoder, sigmoid_output=True,
+                                        hidden_dims=args.transformer_rank_hidden_sizes)
                 else:
                     raise NotImplementedError(args.model_type)
                 print(ranker)
@@ -606,6 +618,8 @@ if __name__ == '__main__':
                                      steps_val_loss=np.ceil(len(trainloader) / 5).astype(int),
                                      early_stopping_patience=args.early_stopping_patience,
                                      learning_rate=args.learning_rate,
+                                     sigmoid_loss=False,
+                                     no_weights=False, # TODO:
                                      no_encoder_train=args.no_encoder_train, ep_save=args.ep_save)
                 else:
                     raise NotImplementedError(args.model_type)
