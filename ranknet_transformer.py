@@ -261,6 +261,8 @@ def rankformer_train(rankformer: Rankformer, bg: DataLoader, epochs=2,
             if (calc_acc):
                 train_acc = (torch.isclose(pred, y, atol=0.499999).sum() / len(y)).item()
                 train_acc_sum += train_acc
+                if writer is not None:
+                    writer.add_scalar('acc', train_acc_sum/iter_count, iter_count)
             loss = loss_all.mean()
             loss_sum += loss.item()
             iter_count += 1
@@ -290,6 +292,8 @@ def rankformer_train(rankformer: Rankformer, bg: DataLoader, epochs=2,
                         if (calc_acc):
                             val_acc = (torch.isclose(pred, y, atol=0.499999).sum() / len(y)).item()
                             val_acc_sum += val_acc
+                            if val_writer is not None:
+                                val_writer.add_scalar('acc', val_acc_sum/val_iter_count, iter_count)
                         val_iter_count += 1
                 val_step = val_loss_sum / val_iter_count
                 val_writer.add_scalar('loss', val_step, iter_count)
