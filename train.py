@@ -614,6 +614,7 @@ if __name__ == '__main__':
                     rankformer_train(rankformer=ranker, bg=trainloader, epochs=args.epochs,
                                      epochs_start=ranker.max_epoch,
                                      writer=writer, val_g=valloader, val_writer=val_writer,
+                                     confl_writer=confl_writer,
                                      steps_train_loss=np.ceil(len(trainloader) / 100).astype(int),
                                      steps_val_loss=np.ceil(len(trainloader) / 5).astype(int),
                                      early_stopping_patience=args.early_stopping_patience,
