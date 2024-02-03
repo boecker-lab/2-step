@@ -237,8 +237,8 @@ def rankformer_train(rankformer: Rankformer, bg: DataLoader, epochs=2,
     # loss_fun = nn.L1Loss(reduction='none')
     rankformer.train()
     loss_sum = iter_count = val_loss_sum = val_iter_count = val_pat = confl_loss_sum = 0
-    train_acc = val_acc = np.nan
-    train_acc_sum = val_acc_sum = 0
+    train_acc = val_acc = confl_acc = np.nan
+    train_acc_sum = val_acc_sum = confl_acc_sum = 0
     last_val_step = np.infty
     stop = False
     for epoch in range(epochs_start, epochs_start + epochs):
@@ -262,7 +262,8 @@ def rankformer_train(rankformer: Rankformer, bg: DataLoader, epochs=2,
                 train_acc = (torch.isclose(pred, y, atol=0.499999).sum() / len(y)).item()
                 train_acc_sum += train_acc
                 if writer is not None:
-                    writer.add_scalar('acc', train_acc_sum/iter_count, iter_count)
+                    writer.add_scalar('acc', train_acc_sum/iter_count
+                                      if iter_count > 0 else np.nan, iter_count)
             loss = loss_all.mean()
             loss_sum += loss.item()
             iter_count += 1
@@ -271,6 +272,13 @@ def rankformer_train(rankformer: Rankformer, bg: DataLoader, epochs=2,
             optimizer.step()
             if (is_confl.sum() > 0):
                 confl_loss_sum += loss_all[is_confl].mean().item()
+                if (calc_acc):
+                    confl_acc = (torch.isclose(pred[is_confl], y[is_confl], atol=0.499999).sum()
+                                 / is_confl.sum()).item()
+                    confl_acc_sum += confl_acc
+                    if confl_writer is not None:
+                        confl_writer.add_scalar('acc', confl_acc_sum/iter_count
+                                                if iter_count > 0 else np.nan, iter_count)
             if (iter_count % steps_train_loss == (steps_train_loss - 1) and writer is not None):
                 loss_avg = loss_sum / iter_count
                 if writer is not None:
@@ -293,7 +301,8 @@ def rankformer_train(rankformer: Rankformer, bg: DataLoader, epochs=2,
                             val_acc = (torch.isclose(pred, y, atol=0.499999).sum() / len(y)).item()
                             val_acc_sum += val_acc
                             if val_writer is not None:
-                                val_writer.add_scalar('acc', val_acc_sum/val_iter_count, iter_count)
+                                val_writer.add_scalar('acc', val_acc_sum/val_iter_count
+                                                      if val_iter_count > 0 else np.nan, iter_count)
                         val_iter_count += 1
                 val_step = val_loss_sum / val_iter_count
                 val_writer.add_scalar('loss', val_step, iter_count)
@@ -310,7 +319,9 @@ def rankformer_train(rankformer: Rankformer, bg: DataLoader, epochs=2,
                              val_loss=val_loss_sum/val_iter_count if val_iter_count > 0 else np.nan,
                              confl_loss=confl_loss_sum/iter_count,
                              **(dict(train_acc=train_acc_sum/iter_count if iter_count > 0 else np.nan,
-                                     val_acc=val_acc_sum/val_iter_count if val_iter_count > 0 else np.nan) if calc_acc else dict()))
+                                     val_acc=val_acc_sum/val_iter_count if val_iter_count > 0 else np.nan,
+                                     confl_acc=confl_acc_sum/iter_count if iter_count > 0 else np.nan)
+                                if calc_acc else dict()))
         # scheduler.step()
         rankformer.max_epoch = epoch + 1
         if (ep_save):
