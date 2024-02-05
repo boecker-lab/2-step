@@ -186,7 +186,8 @@ def preprocess(data: Data, args: TrainArgs):
         data.nan_columns_to_zeros()
     return data.get_split_data((args.test_split, args.val_split))
 
-def prepare_rt_data(data, train_graphs, train_sys, train_y, val_graphs, val_sys, val_y):
+def prepare_rt_data(data, train_graphs, train_sys, train_y, val_graphs, val_sys, val_y,
+                    use_weights=True):
     from ranknet_transformer import RTDataset
     # drop doublets and void compounds from data
     train_df = data.df.iloc[data.train_indices]
@@ -203,11 +204,15 @@ def prepare_rt_data(data, train_graphs, train_sys, train_y, val_graphs, val_sys,
     val_graphs = val_graphs[val_select]
     val_sys = val_sys[val_select]
     val_y = val_y[val_select]
-    # weights: by dataset size (1 -- approx. 500)
-    train_counts = train_df[train_select].groupby('dataset_id')['smiles.std'].transform('count')
-    train_weights = (train_counts.max() / train_counts).values
-    val_counts = val_df[val_select].groupby('dataset_id')['smiles.std'].transform('count')
-    val_weights = (val_counts.max() / val_counts).values
+    if (use_weights):
+        # weights: by dataset size (1 -- approx. 500)
+        train_counts = train_df[train_select].groupby('dataset_id')['smiles.std'].transform('count')
+        train_weights = (train_counts.max() / train_counts).values
+        val_counts = val_df[val_select].groupby('dataset_id')['smiles.std'].transform('count')
+        val_weights = (val_counts.max() / val_counts).values
+    else:
+        train_weights = np.ones_like(train_y).astype('float32')
+        val_weights = np.ones_like(val_y).astype('float32')
     train_dataset = RTDataset(train_graphs, train_sys.astype('float32'), train_y.astype('float32'), train_weights.astype('float32'))
     val_dataset = RTDataset(val_graphs, val_sys.astype('float32'), val_y.astype('float32'), val_weights.astype('float32'))
     return train_dataset, val_dataset
@@ -436,7 +441,7 @@ if __name__ == '__main__':
             print(rankformer_rt)
         train_dataset, val_dataset = prepare_rt_data(data=data, train_graphs=train_graphs, train_sys=train_sys,
                                                      train_y=train_y, val_graphs=val_graphs, val_sys=val_sys,
-                                                     val_y=val_y)
+                                                     val_y=val_y, use_weights=(not args.no_group_weights))
         trainloader = DataLoader(train_dataset, args.batch_size, shuffle=True,
                                  generator=torch.Generator(device='cuda' if args.gpu else 'cpu'),
                                  collate_fn=custom_collate if (args.mpn_encoder in ['dmpnn', 'graphformer']) else None)
