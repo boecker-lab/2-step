@@ -249,6 +249,10 @@ def rankformer_train(rankformer: Rankformer, bg: DataLoader, epochs=2,
             # NOTE: y has to be 0 or 1 here!
             rankformer.zero_grad()
             pred = rankformer(x)
+            if not (((pred >= 0) & (pred <= 1)).all().item()):
+                print(pred)
+            if not (((y >= 0) & (y <= 1)).all().item()):
+                print(y)
             # print(pred)
             # print('\nx1', [g.smiles for g in x[0][0].mol_graphs])
             # print('x2', [g.smiles for g in x[1][0].mol_graphs])
