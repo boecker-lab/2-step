@@ -222,7 +222,8 @@ def rankformer_train(rankformer: Rankformer, bg: DataLoader, epochs=2,
                      no_weights=False,
                      early_stopping_patience=None,
                      ep_save=False, learning_rate=1e-3,
-                     no_encoder_train=False, calc_acc=True):
+                     no_encoder_train=False, calc_acc=True,
+                     clip_gradient=1.):
     save_name = ('rankformer' if writer is None else
                  writer.get_logdir().split('/')[-1].replace('_train', ''))
     if (no_encoder_train):
@@ -272,7 +273,8 @@ def rankformer_train(rankformer: Rankformer, bg: DataLoader, epochs=2,
             loss_sum += loss.item()
             iter_count += 1
             loss.backward()
-            # nn.utils.clip_grad_norm_(rankformer.parameters(), 0.5)
+            if (clip_gradient is not None):
+                nn.utils.clip_grad_norm_(rankformer.parameters(), clip_gradient)
             optimizer.step()
             if (is_confl.sum() > 0):
                 confl_loss_sum += loss_all[is_confl].mean().item()
