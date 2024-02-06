@@ -361,6 +361,8 @@ def rankformer_rt_train(rankformer_rt: RankformerRTPredictor, bg: DataLoader, ep
             pred = rankformer_rt(x)
             loss_all = loss_fun(pred, y) * weights
             # loss_all = loss_fun(pred, y / 100) * weights # TODO: maybe needed
+            # or other way around: y times 100
+            # loss_all = loss_fun(pred, y * 100) * weights # TODO: maybe needed
             loss = loss_all.mean()
             loss_sum += loss.item()
             iter_count += 1
@@ -435,10 +437,10 @@ def rankformer_eval(rankformer, bg, max_batches_count=None):
     return sum(correct) / len(correct)
 
 def test_rankformer_rt():
-    rankformer_model = torch.load('/home/fleming/Documents/Projects/rtranknet/runs/rankformer.pt', map_location=torch.device('cpu'))
+    rankformer_model = torch.load('/home/fleming/Documents/Projects/rtranknet/runs/rankformer_small_ep2.pt', map_location=torch.device('cpu'))
     rankformer_encoder = rankformer_model.ranknet_encoder
     rankformer_rt = RankformerRTPredictor(rankformer_encoder, [64])
-    with open('/home/fleming/Documents/Projects/rtranknet/runs/rankformer_data.pkl', 'rb') as f:
+    with open('/home/fleming/Documents/Projects/rtranknet/runs/rankformer_small_data.pkl', 'rb') as f:
         data = pickle.load(f)
     from train import prepare_rt_data
     from mpnranker2 import custom_collate_single as custom_collate
@@ -450,9 +452,19 @@ def test_rankformer_rt():
     (graphs, extra, sysf), y, weights = next(iter(trainloader))
     rankformer_rt((graphs, extra, sysf))
     # trained rankformer_rt
-    rankformer_rt = torch.load('/home/fleming/Documents/Projects/rtranknet/rankformer_rt_frozen.pt')
+    rankformer_rt = torch.load('/home/fleming/Documents/Projects/rtranknet/rankformer_small_rt_ep5.pt')
     preds = rankformer_rt((graphs, extra, sysf))
     print(f'{(preds - y).abs().mean()=}')
+    # plot, but only for one dataset
+    train_df = data.df.iloc[data.train_indices].set_index(data.train_indices)
+    ds = train_df.dataset_id.iloc[0]
+    ds_select = (train_df.dataset_id == '0239')
+    ds_graphs, ds_sys, ds_y = data.train_graphs[ds_select], data.train_sys[ds_select], data.train_y[ds_select]
+    ds_ds = RTDataset(ds_graphs, ds_sys.astype('float32'), ds_y.astype('float32'), np.ones_like(ds_y).astype('float32'))
+    ds_loader = DataLoader(ds_ds, 1024, shuffle=False, collate_fn=custom_collate)
+    (graphs, extra, sysf), y, weights = next(iter(ds_loader))
+    preds = rankformer_rt((graphs, extra, sysf))
+    print(f'{(preds / 100 - y).abs().mean()=}')
     rankformer_rt_train(rankformer_rt, trainloader, 1, 0,  no_encoder_train=True)
 
 def load_rankformer(path, device):
