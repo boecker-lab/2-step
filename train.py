@@ -90,7 +90,7 @@ class TrainArgs(Tap):
     # mpn model
     mpn_loss: Literal['margin', 'bce'] = 'margin'
     mpn_margin: float = 0.1
-    mpn_encoder: Literal['dmpnn', 'dualmpnnplus', 'dualmpnn', 'deepgcnrt', 'graphformer'] = 'dmpnn'
+    mpn_encoder: Literal['dmpnn', 'dualmpnnplus', 'dualmpnn', 'deepgcnrt', 'graphformer', 'deepergcn'] = 'dmpnn'
     smiles_for_graphs: bool = False # always use SMILES internally, compute graphs only on demand
     # rankformer model
     # TODO: all the hyperparams
@@ -424,6 +424,10 @@ if __name__ == '__main__':
         from mpnranker2 import custom_collate
         from graphformer_graph import graphformer_batch
         custom_collate.graph_batch = graphformer_batch
+    elif (args.mpn_encoder == 'deepergcn'):
+        from mpnranker2 import custom_collate
+        from generic_gnn_graph import gnn_batch
+        custom_collate.graph_batch = gnn_batch
     rename_old_writer_logs(f'runs/{run_name}')
     writer = SummaryWriter(f'runs/{run_name}_train')
     val_writer = SummaryWriter(f'runs/{run_name}_val') if len(val_y) > 0 else None
@@ -444,11 +448,11 @@ if __name__ == '__main__':
                                                      val_y=val_y, use_weights=(not args.no_group_weights))
         trainloader = DataLoader(train_dataset, args.batch_size, shuffle=True,
                                  generator=torch.Generator(device='cuda' if args.gpu else 'cpu'),
-                                 collate_fn=custom_collate if (args.mpn_encoder in ['dmpnn', 'graphformer']) else None)
+                                 collate_fn=custom_collate if (args.mpn_encoder in ['dmpnn', 'graphformer', 'deepergcn']) else None)
         if len(val_dataset) > 0:
             valloader = DataLoader(val_dataset, args.batch_size, shuffle=True,
                                    generator=torch.Generator(device='cuda' if args.gpu else 'cpu'),
-                                   collate_fn=custom_collate if (args.mpn_encoder in ['dmpnn', 'graphformer']) else None)
+                                   collate_fn=custom_collate if (args.mpn_encoder in ['dmpnn', 'graphformer', 'deepergcn']) else None)
         else:
             valloader = None
         # testloader = DataLoader(test_dataset, args.batch_size, shuffle=True,
@@ -524,16 +528,14 @@ if __name__ == '__main__':
                 valdata.remove_indices(clean_val)
                 print(f'cleaning up {len(clean_val)} of {len(valdata.y_trans)} total '
                       f'({np.divide(len(clean_val), len(valdata.y_trans)):.0%}) pairs for being invalid')
-        else:
-            raise NotImplementedError(args.mpn_encoder, 'collate')
 
         # print(f'{traindata.y_trans.mean()=}') DEBUG
         trainloader = DataLoader(traindata, args.batch_size, shuffle=True,
                                  generator=torch.Generator(device='cuda' if args.gpu else 'cpu'),
-                                 collate_fn=custom_collate if (args.mpn_encoder in ['dmpnn', 'graphformer']) else None)
+                                 collate_fn=custom_collate if (args.mpn_encoder in ['dmpnn', 'graphformer', 'deepergcn']) else None)
         valloader = DataLoader(valdata, args.batch_size, shuffle=True,
                                generator=torch.Generator(device='cuda' if args.gpu else 'cpu'),
-                               collate_fn=custom_collate if (args.mpn_encoder in ['dmpnn', 'graphformer']) else None
+                               collate_fn=custom_collate if (args.mpn_encoder in ['dmpnn', 'graphformer', 'deepergcn']) else None
                                ) if len(valdata) > 0 else None
         if (args.plot_weights):
             plot_x = np.linspace(0, 10 * args.weight_mid, 100)

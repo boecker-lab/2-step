@@ -39,6 +39,9 @@ class MPNranker(nn.Module):
         elif (encoder == 'graphformer'):
             from graphformer import graphformer
             self.encoder = graphformer(num_layers=depth, hid_dim=encoder_size, dropout=dropout_rate_encoder)
+        elif (encoder == 'deepergcn'):
+            from deeper_gcn import deeper_gcn
+            self.encoder = deeper_gcn(num_layers=depth, hid_dim=encoder_size)
         else:
             raise NotImplementedError(f'{encoder} encoder')
         self.extra_features_dim = extra_features_dim
@@ -80,6 +83,8 @@ class MPNranker(nn.Module):
                 # two versions: mean of all nodes or virtual node output
                 # enc = out.last_hidden_state.mean(axis=0)
                 enc = out.last_hidden_state[:, 0, :] # node at pos 0 is virtual node
+            elif (self.encoder.name == 'deepergcn'):
+                enc = self.encoder(graphs)
             else:
                 raise NotImplementedError(f'{self.encoder} encoder')
             # encode system x molecule relationships
@@ -104,7 +109,7 @@ class MPNranker(nn.Module):
 
     def predict(self, graphs, extra, sysf, batch_size=8192,
                 prog_bar=False, ret_features=False):
-        if (self.encoder.name in ['dmpnn', 'deepgcnrt', 'graphformer']):
+        if (self.encoder.name in ['dmpnn', 'deepgcnrt', 'graphformer', 'deepergcn']):
             self.eval()
         elif (self.encoder.name.lower() in ['dualmpnnplus', 'dualmpnn']):
             # TODO: necessary because dualmpnn(plus) has different `forward` outputs
@@ -128,6 +133,9 @@ class MPNranker(nn.Module):
                 elif (self.encoder.name == 'graphformer'):
                     from graphformer_graph import graphformer_batch
                     graphs_batch = graphformer_batch(graphs_batch)
+                elif (self.encoder.name == 'deepergcn'):
+                    from generic_gnn_graph import gnn_batch
+                    graphs_batch = gnn_batch(graphs_batch)
                 batch = (graphs_batch, default_convert(extra[start:end]),
                          default_convert(sysf[start:end]))
                 # if (input('pdb') == 'y'):

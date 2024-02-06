@@ -177,7 +177,7 @@ class Data:
     void_info: dict = field(default_factory=dict)
     fallback_column: str = 'Waters ACQUITY UPLC BEH C18' # can be 'average'
     fallback_metadata: str = '0045'                       # can be 'average'
-    encoder: Literal['dmpnn', 'dualmpnnplus', 'dualmpnn'] = 'dmpnn'
+    encoder: str = 'dmpnn'
     sys_scales: dict = field(default_factory=dict)
     remove_doublets: bool = False # invalid doublet *pairs* will be excluded regardless; only useful for evaluating
 
@@ -216,6 +216,8 @@ class Data:
                 from deepgcnrt_graph import deepgcnrt_graph as mol2graph
             elif (self.encoder == 'graphformer'):
                 from graphformer_graph import graphformer_graph as mol2graph
+            elif (self.encoder == 'deepergcn'):
+                from generic_gnn_graph import gnn_graph as mol2graph
             else:
                 raise NotImplementedError(f'{self.encoder} encoder')
             graphs_unique = {s: mol2graph(s) for s in self.df.smiles.unique()}
