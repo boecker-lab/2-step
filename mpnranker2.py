@@ -24,7 +24,7 @@ class MPNranker(nn.Module):
     def __init__(self, encoder='dmpnn', extra_features_dim=0, sys_features_dim=0,
                  hidden_units=[16, 8], hidden_units_pv=[16, 2], encoder_size=300,
                  depth=3, dropout_rate_encoder=0.0, dropout_rate_pv=0.0,
-                 dropout_rate_rank=0.0):
+                 dropout_rate_rank=0.0, res_conn_enc=True):
         super(MPNranker, self).__init__()
         if (encoder == 'dmpnn'):
             from dmpnn import dmpnn
@@ -47,6 +47,7 @@ class MPNranker(nn.Module):
         self.extra_features_dim = extra_features_dim
         self.sys_features_dim = sys_features_dim
         self.encextra_size = encoder_size + extra_features_dim + sys_features_dim
+        self.res_conn_enc = res_conn_enc
         # System x molecule preference encoding
         self.hidden_pv = nn.ModuleList()
         for i, u in enumerate(hidden_units_pv):
@@ -56,7 +57,7 @@ class MPNranker(nn.Module):
         # actual ranking layers
         self.hidden = nn.ModuleList()
         for i, u in enumerate(hidden_units):
-            self.hidden.append(Linear(encoder_size + extra_features_dim + hidden_units_pv[-1]
+            self.hidden.append(Linear((encoder_size if res_conn_enc else 0) + extra_features_dim + hidden_units_pv[-1]
                                       if i == 0 else hidden_units[i - 1], u))
         # ranking dropout layer
         self.dropout_rank = nn.Dropout(dropout_rate_rank)
@@ -94,7 +95,10 @@ class MPNranker(nn.Module):
             # apply dropout to last pv layer
             enc_pv = self.dropout_pv(enc_pv)
             # now ranking layers: [enc, enc_pv] -> ROI
-            enc = torch.cat([enc, extra, enc_pv], 1)
+            if self.res_conn_enc:
+                enc = torch.cat([enc, extra, enc_pv], 1)
+            else:
+                enc = torch.cat([extra, enc_pv], 1)
             for h in self.hidden:
                 enc = F.relu(h(enc))
             # apply dropout to last ranking layer

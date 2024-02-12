@@ -92,6 +92,7 @@ class TrainArgs(Tap):
     mpn_margin: float = 0.1
     mpn_encoder: Literal['dmpnn', 'dualmpnnplus', 'dualmpnn', 'deepgcnrt', 'graphformer', 'deepergcn'] = 'dmpnn'
     smiles_for_graphs: bool = False # always use SMILES internally, compute graphs only on demand
+    mpn_no_residual_connections_encoder: bool = False # last stack for mpn model only takes the encoding convolved with sys features
     # rankformer model
     # TODO: all the hyperparams
     transformer_nhead: int = 4
@@ -582,7 +583,8 @@ if __name__ == '__main__':
                                        depth=args.mpn_depth,
                                        dropout_rate_encoder=args.dropout_rate_encoder,
                                        dropout_rate_pv=args.dropout_rate_pv,
-                                       dropout_rate_rank=args.dropout_rate_rank)
+                                       dropout_rate_rank=args.dropout_rate_rank,
+                                       res_conn_enc=(not args.mpn_no_residual_connections_encoder))
                 elif (args.model_type == 'rankformer'):
                     if (not args.transformer_fake):
                         rankformer_encoder = RankformerEncoder(
