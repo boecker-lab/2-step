@@ -95,7 +95,8 @@ class MPNranker(nn.Module):
             # apply dropout to last pv layer
             enc_pv = self.dropout_pv(enc_pv)
             # now ranking layers: [enc, enc_pv] -> ROI
-            if self.res_conn_enc:
+            # TODO: backwards compatibility: this did not use to be an option
+            if not hasattr(self, 'res_conn_enc') or self.res_conn_enc:
                 enc = torch.cat([enc, extra, enc_pv], 1)
             else:
                 enc = torch.cat([extra, enc_pv], 1)
