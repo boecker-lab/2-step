@@ -101,6 +101,9 @@ if __name__ == '__main__':
     m, data, config = load_model(args.model, 'mpn')
     if (args.gpu):
         torch.set_default_device('cuda')
+    else:
+        if hasattr(m, 'encoder') and hasattr(m.encoder, 'device'):
+            m.device = m.encoder.device = m.encoder.encoder[0].device = torch.device('cpu')
     if (args.mode == 'testall'):
         # test all column param configurations
         test = "0048 0072 0078 0084 0098 0083 0076 0101 0019 0079 0099 0070 0102 0087 0086 0066 0062 0017 0095 0067 0097 0082 0124 0069 0181 0024 0085 0093 0094 0100 0092 0179 0068".split()
