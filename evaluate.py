@@ -226,8 +226,7 @@ def data_stats(d, data, custom_column_fields=None, validation_counts_as_train=Fa
     this_column = d.df['column.name'].unique().item()
     train_compounds_col = set(train_df.loc[train_df['column.name'] == this_column, compound_identifier])
     test_compounds = set(d.df[compound_identifier])
-    system_fields = custom_column_fields
-    # TODO: now something like pH should be included
+    system_fields = custom_column_fields + ['ph'] if data.use_ph else []
     train_configs = [t[1:] for t in set(train_df[['dataset_id', 'column.name'] + system_fields]
                                         .itertuples(index=False, name=None))]
     test_config = tuple(d.df[['column.name'] + system_fields].iloc[0].tolist())
