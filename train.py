@@ -132,6 +132,7 @@ class TrainArgs(Tap):
     plot_weights: bool = False
     save_data: bool = False
     ep_save: bool = False       # save after each epoch (only for mpn models)
+    no_train_acc_all: bool = False # can save memory; this metric is pretty useless anyways
 
     def process_args(self):
         # process epsilon unit
@@ -618,7 +619,8 @@ if __name__ == '__main__':
                               early_stopping_patience=args.early_stopping_patience,
                               learning_rate=args.learning_rate,
                               adaptive_lr=args.adaptive_learning_rate,
-                              no_encoder_train=args.no_encoder_train, ep_save=args.ep_save)
+                              no_encoder_train=args.no_encoder_train, ep_save=args.ep_save,
+                              eval_train_all=(not args.no_train_acc_all))
                 elif (args.model_type == 'rankformer'):
                     rankformer_train(rankformer=ranker, bg=trainloader, epochs=args.epochs,
                                      epochs_start=ranker.max_epoch,

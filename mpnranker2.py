@@ -290,7 +290,7 @@ def train(ranker: MPNranker, bg: DataLoader, epochs=2,
           margin_loss=0.1, early_stopping_patience=None,
           ep_save=False, learning_rate=1e-3, adaptive_lr=False,
           gradient_clip=5, no_encoder_train=False,
-          accs=True, confl_images=False):
+          accs=True, confl_images=False, eval_train_all=True):
     if (confl_images):
         from rdkit.Chem import Draw
         from PIL import ImageDraw
@@ -413,9 +413,12 @@ def train(ranker: MPNranker, bg: DataLoader, epochs=2,
                 train_stats = stats_d
             else:
                 train_acc = np.nan
-            train_acc_all = eval_(bg.dataset.y, ranker.predict(
-                bg.dataset.x_mols, bg.dataset.x_extra, bg.dataset.x_sys, batch_size=batch_size), epsilon=epsilon)
-            writer.add_scalar('acc_all', train_acc_all, iter_count)
+            if (eval_train_all):
+                train_acc_all = eval_(bg.dataset.y, ranker.predict(
+                    bg.dataset.x_mols, bg.dataset.x_extra, bg.dataset.x_sys, batch_size=batch_size), epsilon=epsilon)
+                writer.add_scalar('acc_all', train_acc_all, iter_count)
+            else:
+                train_acc_all = np.nan
             writer.add_scalar('acc', train_acc, iter_count)
             writer.flush()
             print(f'{train_acc=:.2%}, {train_acc_all=:.2%}')
