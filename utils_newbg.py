@@ -41,6 +41,7 @@ class RankDataset(Dataset):
     no_inter_pairs: bool=True                     # don't generate inter dataset pairs
     no_intra_pairs: bool=False                    # don't generate intra dataset pairs
     max_indices_size:Optional[int]=None           # limit for the size of indices
+    max_num_pairs:Optional[int]=None              # limit for the number of pairs per dataset/group
     y_neg : bool=False                            # -1 instead of 0 for negative pair
     y_float : bool=False                          # yield target values as floats instead of as longs
     conflicting_smiles_pairs:dict = field(default_factory=dict) # conflicting pairs (smiles)
@@ -115,6 +116,7 @@ class RankDataset(Dataset):
                             confl_indices.add(frozenset((i, j)))
                 it = self.dataset_pair_it(groups[group], self.pair_step, self.pair_stop,
                                           max_indices_size=self.max_indices_size,
+                                          max_num_pairs=self.max_num_pairs,
                                           obl_indices=confl_indices)
                 if (logger.level <= logging.INFO):
                     from tqdm import tqdm
@@ -265,18 +267,28 @@ class RankDataset(Dataset):
 
     @staticmethod
     def dataset_pair_it(indices, pair_step=1, pair_stop=None,
-                        max_indices_size=None, obl_indices=set()):
+                        max_indices_size=None, max_num_pairs=None,
+                        obl_indices=set()):
         n = len(indices)
-        if (max_indices_size is None):
-            it = range(n)
-        else:
+
+        if (max_indices_size is not None):
             it = sorted(sample(list(range(n)), min(max_indices_size, n)))
+        elif (max_num_pairs is not None):
+            it = sample(list(range(n)), n)
+        else:
+            it = range(n)
         non_obl_pairs = 0
+        do_break = False
         for i in it:
+            if do_break:
+                break
             for j in range(i + 1,
                            (n if pair_stop is None else min(i + pair_stop, n)),
                            pair_step):
                 if (frozenset((indices[i], indices[j])) not in obl_indices):
+                    if (max_num_pairs is not None and non_obl_pairs > max_num_pairs):
+                        do_break = True
+                        break
                     yield indices[i], indices[j], 1.0
                     non_obl_pairs += 1
         if (len(obl_indices) > 0):

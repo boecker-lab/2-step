@@ -116,6 +116,7 @@ class TrainArgs(Tap):
     inter_pairs: bool = False # use pairs of compounds of different datasets (DEPRECATED)
     no_intra_pairs: bool = False # don't use pairs of compounds of the same dataset
     max_pair_compounds: Optional[int] = None
+    max_num_pairs: Optional[int] = None            # limit for the number of pairs per dataset/group
     conflicting_smiles_pairs: Optional[str] = None # pickle file with conflicting pairs (smiles)
     confl_weight: float = 1.                       # weight modifier for conflicting pairs
     check_data: bool = False                       # check how many pairs are conflicting/unpredictable
@@ -492,6 +493,7 @@ if __name__ == '__main__':
                                 no_inter_pairs=(not args.inter_pairs),
                                 no_intra_pairs=args.no_intra_pairs,
                                 max_indices_size=args.max_pair_compounds,
+                                max_num_pairs=args.max_num_pairs,
                                 weight_mid=args.weight_mid,
                                 weight_steepness=args.weight_steep,
                                 dynamic_weights=args.dynamic_weights,
@@ -511,6 +513,7 @@ if __name__ == '__main__':
                               no_inter_pairs=(not args.inter_pairs),
                               no_intra_pairs=args.no_intra_pairs,
                               max_indices_size=args.max_pair_compounds,
+                              max_num_pairs=args.max_num_pairs,
                               weight_mid=args.weight_mid,
                               weight_steepness=args.weight_steep,
                               dynamic_weights=args.dynamic_weights,
