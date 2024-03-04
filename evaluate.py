@@ -263,7 +263,7 @@ def predict(X, model, batch_size):
 class EvalArgs(Tap):
     model: str # model to load
     test_sets: List[str] # either CSV or dataset IDs to evaluate on
-    model_type: Literal['ranknet', 'mpn', 'rankformer_rt'] = 'mpn'
+    model_type: Literal['ranknet', 'mpn', 'rankformer_rt', 'rankformer'] = 'mpn'
     gpu: bool = False
     batch_size: int = 256
     no_isomeric: bool = False
@@ -545,10 +545,11 @@ if __name__ == '__main__':
                          and all(s in d.df.smiles.tolist() for s in k)}
             rel_confl = {_ for x in rel_confl for _ in x}
             confl = [smiles in rel_confl for smiles in d.df.smiles]
-        info('done preprocessing. predicting...')
-        if (args.model_type == 'mpn'):
+        info(f'done preprocessing. predicting...')
+        if (args.model_type == 'mpn' or args.model_type == 'rankformer'):
+            # NOTE: for rankformer only works with the `transformer_individual_cls` setting
             graphs = np.concatenate((train_graphs, test_graphs, val_graphs))
-            if (args.export_embeddings):
+            if (not args.model_type == 'rankformer' and args.export_embeddings):
                 preds, embeddings = model.predict(graphs, X, X_sys, batch_size=args.batch_size,
                                                   prog_bar=args.verbose, ret_features=True)
                 embeddings_df = pd.DataFrame({'smiles': d.df.smiles} |
@@ -559,7 +560,8 @@ if __name__ == '__main__':
                                      sep='\t')
             else:
                 preds = model.predict(graphs, X, X_sys, batch_size=args.batch_size,
-                                      prog_bar=args.verbose, ret_features=False)
+                                      **(dict(ret_features=False, prog_bar=args.verbose) if not args.model_type == 'rankformer' else {}))
+                breakpoint()
         elif (args.model_type == 'rankformer_rt'):
             from ranknet_transformer import rankformer_rt_predict
             graphs = np.concatenate((train_graphs, test_graphs, val_graphs))

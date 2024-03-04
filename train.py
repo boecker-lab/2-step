@@ -104,6 +104,7 @@ class TrainArgs(Tap):
     transformer_dropout: float = 0.1
     transformer_rank_hidden_sizes: List[int] = []
     transformer_fake: bool = False # TODO: DEBUG
+    transformer_individual_cls: bool = False
     transformer_rt_hidden_sizes: List[int] = [16]
     # pairs
     epsilon: Union[str, float] = '30s' # difference in evaluation measure below which to ignore falsely predicted pairs
@@ -287,7 +288,8 @@ if __name__ == '__main__':
         graphs = True
     elif ('rankformer' in args.model_type):
         from ranknet_transformer import (RankformerEncoder, Rankformer, RankformerRTPredictor,
-                                         rankformer_train, rankformer_rt_train, FFNEncoder)
+                                         rankformer_train, rankformer_rt_train, FFNEncoder,
+                                         RankformerEncoderSub)
         import torch
         if (args.gpu):
             torch.set_default_device('cuda')
@@ -297,6 +299,8 @@ if __name__ == '__main__':
         import tensorflow as tf
         from LambdaRankNN import RankNetNN
         graphs = True
+    # additional parameters taken from args
+    y_neg = (False if 'rankformer' in args.model_type and not args.transformer_individual_cls else args.mpn_loss == 'margin')
     # caching
     if (args.cache_file is not None and args.feature_type != 'None'):
         features.write_cache = False # flag for reporting changes to cache
@@ -497,7 +501,7 @@ if __name__ == '__main__':
                                 weight_mid=args.weight_mid,
                                 weight_steepness=args.weight_steep,
                                 dynamic_weights=args.dynamic_weights,
-                                y_neg=(False if 'rankformer' in args.model_type else args.mpn_loss == 'margin'),
+                                y_neg=y_neg,
                                 y_float=('rankformer' in args.model_type),
                                 conflicting_smiles_pairs=conflicting_smiles_pairs,
                                 confl_weight=args.confl_weight)
@@ -517,7 +521,7 @@ if __name__ == '__main__':
                               weight_mid=args.weight_mid,
                               weight_steepness=args.weight_steep,
                               dynamic_weights=args.dynamic_weights,
-                              y_neg=(False if 'rankformer' in args.model_type else args.mpn_loss == 'margin'),
+                              y_neg=y_neg,
                               y_float=('rankformer' in args.model_type),
                               conflicting_smiles_pairs=conflicting_smiles_pairs,
                               confl_weight=args.confl_weight)
@@ -591,20 +595,28 @@ if __name__ == '__main__':
                                        dropout_rate_rank=args.dropout_rate_rank,
                                        res_conn_enc=(not args.mpn_no_residual_connections_encoder))
                 elif (args.model_type == 'rankformer'):
-                    if (not args.transformer_fake):
-                        rankformer_encoder = RankformerEncoder(
+                    if (args.transformer_individual_cls):
+                        ranker = RankformerEncoderSub(
                             ninp=args.encoder_size, nhead=args.transformer_nhead, nhid=args.transformer_nhid,
                             nlayers=args.transformer_nlayers, dropout=args.transformer_dropout,
                             nsysf=train_sys.shape[1], gnn_depth=args.mpn_depth,
                             gnn_dropout=args.dropout_rate_encoder,
-                            no_special_tokens=args.transformer_no_special_tokens,
-                            multiple_sys_tokens=args.transformer_multiple_sys_tokens,
-                            one_token_per_graph=args.transformer_one_token_per_graph)
+                            multiple_sys_tokens=args.transformer_multiple_sys_tokens)
                     else:
-                        rankformer_encoder = FFNEncoder(args.encoder_size, train_sys.shape[1],
-                                                        no_special_tokens=args.transformer_no_special_tokens,)
-                    ranker = Rankformer(rankformer_encoder, sigmoid_output=True,
-                                        hidden_dims=args.transformer_rank_hidden_sizes)
+                        if (not args.transformer_fake):
+                            rankformer_encoder = RankformerEncoder(
+                                ninp=args.encoder_size, nhead=args.transformer_nhead, nhid=args.transformer_nhid,
+                                nlayers=args.transformer_nlayers, dropout=args.transformer_dropout,
+                                nsysf=train_sys.shape[1], gnn_depth=args.mpn_depth,
+                                gnn_dropout=args.dropout_rate_encoder,
+                                no_special_tokens=args.transformer_no_special_tokens,
+                                multiple_sys_tokens=args.transformer_multiple_sys_tokens,
+                                one_token_per_graph=args.transformer_one_token_per_graph)
+                        else:
+                            rankformer_encoder = FFNEncoder(args.encoder_size, train_sys.shape[1],
+                                                            no_special_tokens=args.transformer_no_special_tokens,)
+                        ranker = Rankformer(rankformer_encoder, sigmoid_output=True,
+                                            hidden_dims=args.transformer_rank_hidden_sizes)
                 else:
                     raise NotImplementedError(args.model_type)
                 print(ranker)
@@ -637,7 +649,8 @@ if __name__ == '__main__':
                                      learning_rate=args.learning_rate,
                                      sigmoid_loss=False,
                                      no_weights=False, # TODO:
-                                     no_encoder_train=args.no_encoder_train, ep_save=args.ep_save)
+                                     no_encoder_train=args.no_encoder_train, ep_save=args.ep_save,
+                                     margin_loss=args.mpn_margin)
                 else:
                     raise NotImplementedError(args.model_type)
             except KeyboardInterrupt:
