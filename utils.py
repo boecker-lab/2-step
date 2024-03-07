@@ -53,7 +53,7 @@ def pair_weights(smiles1: str, smiles2: str, rt_diff: float,
                  nr_group_pairs: int, nr_group_pairs_max: int,
                  confl_weights_modifier: float, confl_pair_list: Iterable[frozenset]=[],
                  cutoff:float=1e-4, only_confl=False, weight_steepness=20,
-                 weight_mid=0.75, max_rt=None) -> Optional[float]:
+                 weight_mid=0.75, max_rt=None, epsilon:float=0.5, discard_smaller_than_epsilon=False) -> Optional[float]:
     # group (~dataset) size balancing modifier
     base_weight = nr_group_pairs_max / nr_group_pairs # roughly between 1 and 500
     # conflicting (-> important) pair modifier
@@ -62,6 +62,8 @@ def pair_weights(smiles1: str, smiles2: str, rt_diff: float,
     elif only_confl:
         base_weight = 0
     # rt diff weight modifier
+    if discard_smaller_than_epsilon and rt_diff < epsilon:
+        return None
     base_weight = rt_diff_weight_fun(rt_diff, base_weight, a=weight_steepness, b=weight_mid,
                                      max_rt=max_rt)
     # DEBUG

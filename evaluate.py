@@ -561,7 +561,6 @@ if __name__ == '__main__':
             else:
                 preds = model.predict(graphs, X, X_sys, batch_size=args.batch_size,
                                       **(dict(ret_features=False, prog_bar=args.verbose) if not args.model_type == 'rankformer' else {}))
-                breakpoint()
         elif (args.model_type == 'rankformer_rt'):
             from ranknet_transformer import rankformer_rt_predict
             graphs = np.concatenate((train_graphs, test_graphs, val_graphs))
@@ -587,6 +586,7 @@ if __name__ == '__main__':
             info('computing classyfire stats')
             classyfire_stats(d, args, compound_identifier=args.compound_identifier)
         if (args.dataset_stats): # NOTE: DEPRECATED?
+            raise Exception('Deprecated for now')
             info('computing dataset stats')
             dataset_stats(d)
             compound_stats(d, args)

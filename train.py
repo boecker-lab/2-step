@@ -47,6 +47,10 @@ class TrainArgs(Tap):
     balance: bool = False       # balance data by dataset
     no_group_weights: bool = False # don't scale weights by number of dataset pairs
     cluster: bool = False          # cluster datasets with same column params for calculating group weights
+    downsample_groups: bool = False       # min number of pairs will be used as the max pair nr for each group
+    downsample_always_confl: bool = False # include all conflicting pairs also when downsampling
+    downsample_factor: float=1.0          # if greater than 1, some clusters may have less pairs
+    group_weights_only_intra_cluster: bool=False  # group-weights are used, but only for weighing within a cluster
     void_rt: float = 0.0        # void time threshold; used for ALL datasets
     no_metadata_void_rt: bool = False # do not use t0 value from repo metadata (times void_factor)
     remove_void_compounds: bool = False # throw out all compounds eluting in the void volume
@@ -114,6 +118,7 @@ class TrainArgs(Tap):
     weight_steep: float = 20
     weight_mid: float = 0.75
     dynamic_weights: bool = False # adapt epsilon/weights to gradient length
+    discard_smaller_than_epsilon: bool = False # don't weigh by rt diff; simply discard any pairs with rt_diff<epsilon
     inter_pairs: bool = False # use pairs of compounds of different datasets (DEPRECATED)
     no_intra_pairs: bool = False # don't use pairs of compounds of the same dataset
     max_pair_compounds: Optional[int] = None
@@ -492,8 +497,13 @@ if __name__ == '__main__':
                                 void_info=data.void_info,
                                 pair_step=args.pair_step,
                                 pair_stop=args.pair_stop, use_pair_weights=args.use_weights,
+                                discard_smaller_than_epsilon=args.discard_smaller_than_epsilon,
                                 use_group_weights=(not args.no_group_weights),
                                 cluster=args.cluster,
+                                downsample_groups=args.downsample_groups,
+                                downsample_always_confl=args.downsample_always_confl,
+                                downsample_factor=args.downsample_factor,
+                                group_weights_only_intra_cluster=args.group_weights_only_intra_cluster,
                                 no_inter_pairs=(not args.inter_pairs),
                                 no_intra_pairs=args.no_intra_pairs,
                                 max_indices_size=args.max_pair_compounds,
@@ -512,8 +522,13 @@ if __name__ == '__main__':
                               void_info=data.void_info,
                               pair_step=args.pair_step,
                               pair_stop=args.pair_stop, use_pair_weights=args.use_weights,
+                              discard_smaller_than_epsilon=args.discard_smaller_than_epsilon,
                               use_group_weights=(not args.no_group_weights),
                               cluster=args.cluster,
+                              downsample_groups=args.downsample_groups,
+                              downsample_always_confl=args.downsample_always_confl,
+                              downsample_factor=args.downsample_factor,
+                              group_weights_only_intra_cluster=args.group_weights_only_intra_cluster,
                               no_inter_pairs=(not args.inter_pairs),
                               no_intra_pairs=args.no_intra_pairs,
                               max_indices_size=args.max_pair_compounds,

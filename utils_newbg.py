@@ -11,6 +11,7 @@ from random import sample, shuffle
 from utils import pair_weights
 import pandas as pd
 from collections import Counter, defaultdict
+from pprint import pprint
 
 logger = logging.getLogger('rtranknet.utils')
 info = logger.info
@@ -27,9 +28,14 @@ class RankDataset(Dataset):
     x_sys_global_num: Optional[int] = None        # which (exclusive max slice index) of the x_sys features are global for the whole dataset
     use_pair_weights: bool=True                   # use pair weights (epsilon)
     epsilon: float=0.5                                  # soft threshold for retention time difference
+    discard_smaller_than_epsilon: bool=False      # don't weigh by rt diff; simply discard any pairs with rt_diff<epsilon
     use_group_weights: bool=True                  # weigh number of samples per group
     cluster: bool=False                           # cluster datasets with same column params for calculating
                                                   # group weights
+    downsample_groups: bool=False                 # min number of pairs will be used as the max pair nr for each group
+    downsample_always_confl: bool=False           # include all conflicting pairs also when downsampling
+    downsample_factor: float=1.0                  # if greater than 1, some clusters may have less pairs
+    group_weights_only_intra_cluster: bool=False  # group-weights are used, but only for weighing within a cluster
     weight_steepness: float=20                    # steepness of the pair_weight_fn
     weight_mid: float=0.75                        # mid-factor of the weight_mid
     dynamic_weights: bool=True                    # adapt epsilon to gradient length
@@ -201,38 +207,76 @@ class RankDataset(Dataset):
             info(f'done ({str(timedelta(seconds=time() - t0))} elapsed)')
         info(f'{inter_pair_nr=}, {intra_pair_nr=}')
         # cluster groups by system params
+        if (len(pair_nrs) > 0):
+            print(f'number of pairs per dataset ({len(pair_nrs)}): min={min(pair_nrs.values())}, max={max(pair_nrs.values())}')
+        pair_nrs_precluster = pair_nrs.copy()
+        pair_nrs_cluster_min = {}
         if (self.cluster):
             cluster_sys = {g: self.x_sys[x1_indices[group_index_start[g]]][:self.x_sys_global_num] for g in pair_nrs
                            if group_index_end[g] != group_index_start[g]} # empty group
             clusters = {}
             for g, sysf in cluster_sys.items():
                 clusters.setdefault(tuple(sysf), []).append(g)
-            from pprint import pprint
             pprint(clusters)
             clusters = list(clusters.values())
             pprint(pair_nrs)
             for c in clusters:
                 pair_num_sum = sum([pair_nrs[g] for g in c])
+                pair_num_min = min([pair_nrs[g] for g in c])
                 for g in c:
                     pair_nrs[g] = pair_num_sum
-            pprint(pair_nrs)
-        all_groups_list = list(pair_nrs)
+                    pair_nrs_cluster_min[g] = pair_num_min
+            if (len(pair_nrs) > 0):
+                print(f'number of pairs per cluster ({len(clusters)}): min={min(pair_nrs.values())}, max={max(pair_nrs.values())}')
         nr_group_pairs_max = max(list(pair_nrs.values()) + [0])
+        downsample_nr = min(list(pair_nrs.values()) + [np.infty]) * self.downsample_factor
+        pprint(pair_nrs)
         info('computing pair weights')
         for g in pair_nrs:
             weight_modifier = self.confl_weight # confl pairs are already balanced by weight; here they can be boosted additionally
+            print_some = 5                      # >= 5: don't print anything (DEBUG anyways)
+            downsample_nr_g = int(np.ceil(downsample_nr / (pair_nrs[g] / pair_nrs_precluster[g])))
+            actual_downsample_nr_g = min([downsample_nr_g, group_index_end[g] - group_index_start[g]])
+            print(f'{g}: {actual_downsample_nr_g=} = {downsample_nr=} / ({pair_nrs[g]=} / {pair_nrs_precluster[g]=})'
+                  + (f' [SHOULD BE {downsample_nr_g} ({actual_downsample_nr_g/downsample_nr_g:.0%})]'
+                     if downsample_nr_g != actual_downsample_nr_g else ''))
+            downsample_whitelist = (set(sample(range(group_index_start[g], group_index_end[g]), actual_downsample_nr_g))
+                                    if self.downsample_groups else set())
+            # TODO: make sure many conflicting pairs are included in the sample
             for i in range(group_index_start[g], group_index_end[g]):
+                if self.downsample_groups and i not in downsample_whitelist:
+                    if self.downsample_always_confl and frozenset([self.x_ids[x1_indices[i]], self.x_ids[x2_indices[i]]]) in self.conflicting_smiles_pairs:
+                        pass    # with this option, conflicting pairs are never removed in downsampling
+                    else:
+                        weights[i] = None
+                        continue
                 rt_diff = (np.infty if isinstance(g, tuple) # no statement can be made for inter-group pairs
                            or not self.use_pair_weights
                            else np.abs(self.y[x1_indices[i]] - self.y[x2_indices[i]]))
-                weights_mod = pair_weights(self.x_ids[x1_indices[i]], self.x_ids[x2_indices[i]], rt_diff,
-                                           pair_nrs[g] if self.use_group_weights else nr_group_pairs_max,
-                                           nr_group_pairs_max, weight_modifier, self.conflicting_smiles_pairs,
+                if self.use_group_weights:
+                    if self.group_weights_only_intra_cluster:
+                        nr_group_pairs = pair_nrs_precluster[g]
+                        nr_group_pairs_max = pair_nrs_cluster_min[g]
+                    else:
+                        nr_group_pairs = pair_nrs[g]
+                        nr_group_pairs_max = nr_group_pairs_max
+                else:
+                    nr_group_pairs = nr_group_pairs_max
+                weights_mod = pair_weights(smiles1=self.x_ids[x1_indices[i]], smiles2=self.x_ids[x2_indices[i]],
+                                           rt_diff=rt_diff,
+                                           nr_group_pairs=nr_group_pairs, nr_group_pairs_max=nr_group_pairs_max,
+                                           confl_weights_modifier=weight_modifier, confl_pair_list=self.conflicting_smiles_pairs,
                                            only_confl=self.only_confl,
                                            weight_steepness=self.weight_steepness,
                                            weight_mid=self.weight_mid,
-                                           max_rt=groups_max_rts[g] if self.dynamic_weights else None)
+                                           max_rt=groups_max_rts[g] if self.dynamic_weights else None,
+                                           epsilon=self.epsilon, discard_smaller_than_epsilon=self.discard_smaller_than_epsilon)
+                if (rt_diff < self.epsilon and weights_mod is not None):
+                    print(rt_diff, 'should this pair not have been discarded?')
                 weights[i] = (weights_mod * weights[i]) if weights_mod is not None else None
+                if print_some < 5:
+                    print(g, weights[i])
+                    print_some += 1
         # NOTE: pair weights can be "None"
         info('done. removing None weights')
         # remove Nones
