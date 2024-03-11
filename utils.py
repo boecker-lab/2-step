@@ -403,9 +403,9 @@ class Data:
         fields.append((self.df[field_names].astype(float).values - means) / scales)
         names.extend(field_names)
         if (use_usp_codes):
-            codes = ['L1', 'L10', 'L11', 'L43', 'L109']
-            codes_vector = (lambda code: np.eye(len(codes))[codes.index(code)]
-                            if code in codes else np.zeros(len(codes)))
+            codes = ['L1', 'L10', 'L7', 'L11', 'L43', 'L109'] # last one for nan/other
+            codes_vector = (lambda code: np.eye(len(codes) + 1)[codes.index(code)]
+                            if code in codes else np.eye(len(codes) + 1)[len(codes)])
             code_fields = np.array([codes_vector(c) for c in self.df['column.usp.code']])
             # NOTE: not scaled!
             fields.append(code_fields)
