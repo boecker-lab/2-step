@@ -234,14 +234,13 @@ class RankDataset(Dataset):
         info('computing pair weights')
         for g in pair_nrs:
             weight_modifier = self.confl_weight # confl pairs are already balanced by weight; here they can be boosted additionally
-            print_some = 5                      # >= 5: don't print anything (DEBUG anyways)
-            downsample_nr_g = int(np.ceil(downsample_nr / (pair_nrs[g] / pair_nrs_precluster[g])))
-            actual_downsample_nr_g = min([downsample_nr_g, group_index_end[g] - group_index_start[g]])
-            print(f'{g}: {actual_downsample_nr_g=} = {downsample_nr=} / ({pair_nrs[g]=} / {pair_nrs_precluster[g]=})'
-                  + (f' [SHOULD BE {downsample_nr_g} ({actual_downsample_nr_g/downsample_nr_g:.0%})]'
-                     if downsample_nr_g != actual_downsample_nr_g else ''))
-            downsample_whitelist = (set(sample(range(group_index_start[g], group_index_end[g]), actual_downsample_nr_g))
-                                    if self.downsample_groups else set())
+            if (self.downsample_groups):
+                downsample_nr_g = int(np.ceil(downsample_nr / (pair_nrs[g] / pair_nrs_precluster[g])))
+                actual_downsample_nr_g = min([downsample_nr_g, group_index_end[g] - group_index_start[g]])
+                print(f'{g}: {actual_downsample_nr_g=} = {downsample_nr=} / ({pair_nrs[g]=} / {pair_nrs_precluster[g]=})'
+                      + (f' [SHOULD BE {downsample_nr_g} ({actual_downsample_nr_g/downsample_nr_g:.0%})]'
+                         if downsample_nr_g != actual_downsample_nr_g else ''))
+                downsample_whitelist = set(sample(range(group_index_start[g], group_index_end[g]), actual_downsample_nr_g))
             # TODO: make sure many conflicting pairs are included in the sample
             for i in range(group_index_start[g], group_index_end[g]):
                 if self.downsample_groups and i not in downsample_whitelist:
@@ -274,9 +273,6 @@ class RankDataset(Dataset):
                 if (rt_diff < self.epsilon and weights_mod is not None):
                     print(rt_diff, 'should this pair not have been discarded?')
                 weights[i] = (weights_mod * weights[i]) if weights_mod is not None else None
-                if print_some < 5:
-                    print(g, weights[i])
-                    print_some += 1
         # NOTE: pair weights can be "None"
         info('done. removing None weights')
         # remove Nones
