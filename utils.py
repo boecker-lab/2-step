@@ -335,6 +335,7 @@ class Data:
             return pd.concat([matches[self.hsm_fields].mean(), pd.Series({'hsm_how': 'multi_matches_mean'})])
 
 
+    """computes and sets all kinds of chr. system features; order is fixed and saved in Data.system_features"""
     def compute_system_information(self, onehot_ids=False, other_dataset_ids=None,
                                    use_usp_codes=False, use_hsm=False, use_tanaka=False, use_newonehot=False, use_ph=False,
                                    use_gradient=False, custom_column_fields=None, remove_na=True,
@@ -342,6 +343,7 @@ class Data:
                                    col_fields_fallback=True, fallback_metadata='0045'):
         # NOTE: global system features, then compound-specific features (e.g., based on position in gradient)
         global REL_COLUMNS
+        system_features = []
         if (onehot_ids):
             if (other_dataset_ids is None):
                 self.sorted_dataset_ids = sorted(set(_.split('_')[0] for _ in self.df.id))
@@ -349,6 +351,8 @@ class Data:
                 self.sorted_dataset_ids = other_dataset_ids
             eye = np.eye(len(self.sorted_dataset_ids))
             self.x_info = eye[list(map(self.sorted_dataset_ids.index, (_.split('_')[0] for _ in self.df.id)))]
+            system_features.extend([f'onehotids_{i}' for i in range(len(self.sorted_dataset_ids))])
+            self.system_features = system_features
             return
         fields = []
         names = []
@@ -363,6 +367,7 @@ class Data:
             # store the "hsm_how" in data, but not the redundant hsm values
             self.df = data_with_hsm[[c for c in data_with_hsm.columns.tolist() if c not in self.hsm_fields]]
             fields.append((data_with_hsm[self.hsm_fields].astype(float).values - means) / scales)
+            system_features.extend(self.hsm_fields)
         if (use_tanaka):
             to_get = self.df[['column.name', 'column.particle.size']].drop_duplicates().reset_index(drop=True).copy()
             tanaka = to_get.join(pd.DataFrame.from_records([{'id': i} | dict(self.get_tanaka_params(
@@ -375,6 +380,7 @@ class Data:
             # store the "tanaka_how" in data, but not the redundant tanaka values
             self.df = data_with_tanaka[[c for c in data_with_tanaka.columns.tolist() if c not in self.tanaka_fields]]
             fields.append((data_with_tanaka[self.tanaka_fields].astype(float).values - means) / scales)
+            system_features.extend(self.tanaka_fields)
         field_names = custom_column_fields if custom_column_fields is not None else REL_COLUMNS
         na_columns = [col for col in field_names if self.df[col].isna().any()]
         if (len(na_columns) > 0):
@@ -402,6 +408,7 @@ class Data:
                                            scale_dict=self.sys_scales)
         fields.append((self.df[field_names].astype(float).values - means) / scales)
         names.extend(field_names)
+        system_features.extend(field_names)
         if (use_usp_codes):
             codes = ['L1', 'L10', 'L7', 'L11', 'L43', 'L109'] # last one for nan/other
             codes_vector = (lambda code: np.eye(len(codes) + 1)[codes.index(code)]
@@ -409,16 +416,19 @@ class Data:
             code_fields = np.array([codes_vector(c) for c in self.df['column.usp.code']])
             # NOTE: not scaled!
             fields.append(code_fields)
+            system_features.extend([f'usp_{usp}' for usp in codes] + ['usp_nan'])
         if (use_newonehot):
             onehot_fields = [c for c in self.df if any(
                 c.startswith(prefix + '_') for prefix in REL_ONEHOT_COLUMNS)]
             print('using onehot fields', ', '.join(onehot_fields))
             fields.append(self.df[onehot_fields].astype(float).values)
+            system_features.extend(onehot_fields)
             # NOTE: not scaled!
         if (use_ph):
             means, scales = get_column_scaling(['ph'], repo_root_folder=self.repo_root_folder,
                                            scale_dict=self.sys_scales)
             fields.append((self.df[['ph']].astype(float).values - means) / scales)
+            system_features.extend(['ph'])
         # NOTE: gradient (or other compound-specific system features) HAVE TO BE LAST!
         self.x_info_global_num = np.concatenate(fields, axis=1).shape[1]
         print(f'{self.x_info_global_num=}')
@@ -431,9 +441,12 @@ class Data:
             fields.append(self.df[solvent_cols])
             # TODO: save solvents order!
             self.solvent_order = solvent_cols
+            system_features.extend(solvent_cols)
         # np.savetxt('/tmp/sys_array.txt', np.concatenate(fields, axis=1), fmt='%.2f')
         self.x_info = np.concatenate(fields, axis=1)
+        assert self.x_info.shape[1] == len(system_features)
         self.custom_column_fields = names
+        self.system_features = system_features
 
     def get_y(self):
         return np.array(self.df.rt)
