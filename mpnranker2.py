@@ -51,6 +51,8 @@ class MPNranker(nn.Module):
         self.sys_features_dim = sys_features_dim
         self.encextra_size = encoder_size + extra_features_dim + sys_features_dim
         self.res_conn_enc = res_conn_enc
+        self.add_sys_features = add_sys_features
+        self.add_sys_features_mode = add_sys_features_mode
         # System x molecule preference encoding
         self.hidden_pv = nn.ModuleList()
         for i, u in enumerate(hidden_units_pv):

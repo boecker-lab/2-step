@@ -553,6 +553,20 @@ if __name__ == '__main__':
         if (args.model_type == 'mpn' or args.model_type == 'rankformer'):
             # NOTE: for rankformer only works with the `transformer_individual_cls` setting
             graphs = np.concatenate((train_graphs, test_graphs, val_graphs))
+            if (model.add_sys_features):
+                from utils_newbg import sysfeature_graph
+                info('add system features to graphs')
+                smiles_list = d.df.iloc[np.concatenate((d.train_indices, d.test_indices, d.val_indices))]['smiles'].tolist()
+                assert len(graphs) == len(smiles_list)
+                assert np.isclose(Y, d.df.iloc[np.concatenate((d.train_indices, d.test_indices, d.val_indices))]['rt'].tolist()).all()
+                from chemprop.features import set_extra_atom_fdim, set_extra_bond_fdim
+                if (model.add_sys_features_mode == 'bond'):
+                    set_extra_bond_fdim(train_sys.shape[1])
+                elif (model.add_sys_features_mode == 'atom'):
+                    set_extra_atom_fdim(train_sys.shape[1])
+                for i in range(len(graphs)):
+                    graphs[i] = sysfeature_graph(smiles_list[i], graphs[i], X_sys[i],
+                                                 bond_or_atom=model.add_sys_features_mode)
             if (not args.model_type == 'rankformer' and args.export_embeddings):
                 preds, embeddings = model.predict(graphs, X, X_sys, batch_size=args.batch_size,
                                                   prog_bar=args.verbose, ret_features=True)
