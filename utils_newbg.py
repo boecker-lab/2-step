@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from typing import Dict, Iterable, List, Optional, Union, Any
+from typing import Dict, Iterable, List, Optional, Union, Any, Literal
 from torch.utils.data import Dataset
 import numpy as np
 import logging
@@ -17,6 +17,12 @@ logger = logging.getLogger('rtranknet.utils')
 info = logger.info
 warning = logger.warning
 
+def sysfeature_graph(smiles, graph, sysfeatures, bond_or_atom='bond'):
+    from dmpnn_graph import dmpnn_graph as mol2graph
+    if bond_or_atom == 'bond':
+        return mol2graph(smiles, bond_features_extra=np.array([sysfeatures] * int(graph.n_bonds / 2)))
+    elif bond_or_atom == 'atom':
+        return mol2graph(smiles, atom_features_extra=np.array([sysfeatures] * graph.n_atoms))
 
 @dataclass
 class RankDataset(Dataset):
@@ -53,6 +59,8 @@ class RankDataset(Dataset):
     conflicting_smiles_pairs:dict = field(default_factory=dict) # conflicting pairs (smiles)
     only_confl: bool=False                                          # gather only conflicting pairs
     confl_weight: float=1.                                          # weight modifier for conflicting pairs
+    add_sysfeatures_to_graphs: bool=False
+    sysfeatures_graphs_mode: Literal['bond', 'atom']='bond'
 
     def __post_init__(self):
         if (isinstance(self.x_extra, np.ndarray)):
@@ -76,6 +84,12 @@ class RankDataset(Dataset):
             self.y_trans = self.y_trans.astype('float32')
         self.weights = transformed['weights']
         self.is_confl = transformed['is_confl']
+        # for including sysfeatures into graphs, graphs have to be recomputed
+        if (self.add_sysfeatures_to_graphs):
+            print('add system features to graphs')
+            for i in range(len(self.x_mols)):
+                self.x_mols[i] = sysfeature_graph(self.x_ids[i], self.x_mols[i], self.x_sys[i],
+                                                  bond_or_atom=self.sysfeatures_graphs_mode)
 
     def _transform_pairwise(self):
         x1_indices = []

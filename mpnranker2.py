@@ -24,11 +24,14 @@ class MPNranker(nn.Module):
     def __init__(self, encoder='dmpnn', extra_features_dim=0, sys_features_dim=0,
                  hidden_units=[16, 8], hidden_units_pv=[16, 2], encoder_size=300,
                  depth=3, dropout_rate_encoder=0.0, dropout_rate_pv=0.0,
-                 dropout_rate_rank=0.0, res_conn_enc=True):
+                 dropout_rate_rank=0.0, res_conn_enc=True, add_sys_features=False,
+                 add_sys_features_mode=None):
         super(MPNranker, self).__init__()
         if (encoder == 'dmpnn'):
             from dmpnn import dmpnn
-            self.encoder = dmpnn(encoder_size=encoder_size, depth=depth, dropout_rate=dropout_rate_encoder)
+            self.encoder = dmpnn(encoder_size=encoder_size, depth=depth, dropout_rate=dropout_rate_encoder,
+                                 add_sys_features=add_sys_features, add_sys_features_mode=add_sys_features_mode,
+                                 add_sys_features_dim=sys_features_dim)
         elif (encoder.lower() in ['dualmpnnplus', 'dualmpnn']):
             from cdmvgnn import cdmvgnn
             self.encoder = cdmvgnn(encoder, encoder_size=encoder_size,

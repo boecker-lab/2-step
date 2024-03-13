@@ -97,6 +97,8 @@ class TrainArgs(Tap):
     mpn_encoder: Literal['dmpnn', 'dualmpnnplus', 'dualmpnn', 'deepgcnrt', 'graphformer', 'deepergcn'] = 'dmpnn'
     smiles_for_graphs: bool = False # always use SMILES internally, compute graphs only on demand
     mpn_no_residual_connections_encoder: bool = False # last stack for mpn model only takes the encoding convolved with sys features
+    mpn_add_sys_features: bool = False
+    mpn_add_sys_features_mode: Literal['bond', 'atom'] = 'bond'
     # rankformer model
     # TODO: all the hyperparams
     transformer_nhead: int = 4
@@ -432,6 +434,12 @@ if __name__ == '__main__':
         else:
             from mpnranker2 import custom_collate
         from dmpnn_graph import dmpnn_batch
+        if (args.mpn_add_sys_features):
+            from chemprop.features import set_extra_atom_fdim, set_extra_bond_fdim
+            if (args.mpn_add_sys_features_mode == 'bond'):
+                set_extra_bond_fdim(train_sys.shape[1])
+            elif (args.mpn_add_sys_features_mode == 'atom'):
+                set_extra_atom_fdim(train_sys.shape[1])
         custom_collate.graph_batch = dmpnn_batch
     elif (args.mpn_encoder == 'graphformer'):
         from mpnranker2 import custom_collate
@@ -514,7 +522,9 @@ if __name__ == '__main__':
                                 y_neg=y_neg,
                                 y_float=('rankformer' in args.model_type),
                                 conflicting_smiles_pairs=conflicting_smiles_pairs,
-                                confl_weight=args.confl_weight)
+                                confl_weight=args.confl_weight,
+                                add_sysfeatures_to_graphs=args.mpn_add_sys_features,
+                                sysfeatures_graphs_mode=args.mpn_add_sys_features_mode)
         valdata = RankDataset(x_mols=val_graphs, x_extra=val_x, x_sys=val_sys,
                               x_ids=data.df.iloc[data.val_indices].smiles.tolist(),
                               y=val_y, x_sys_global_num=data.x_info_global_num,
@@ -539,7 +549,9 @@ if __name__ == '__main__':
                               y_neg=y_neg,
                               y_float=('rankformer' in args.model_type),
                               conflicting_smiles_pairs=conflicting_smiles_pairs,
-                              confl_weight=args.confl_weight)
+                              confl_weight=args.confl_weight,
+                              add_sysfeatures_to_graphs=args.mpn_add_sys_features,
+                              sysfeatures_graphs_mode=args.mpn_add_sys_features_mode)
         if (args.clean_data or args.check_data):
             print('training data check:')
             stats_train, clean_train, _ = check_integrity(traindata, clean=args.clean_data)
@@ -608,7 +620,9 @@ if __name__ == '__main__':
                                        dropout_rate_encoder=args.dropout_rate_encoder,
                                        dropout_rate_pv=args.dropout_rate_pv,
                                        dropout_rate_rank=args.dropout_rate_rank,
-                                       res_conn_enc=(not args.mpn_no_residual_connections_encoder))
+                                       res_conn_enc=(not args.mpn_no_residual_connections_encoder),
+                                       add_sys_features=args.mpn_add_sys_features,
+                                       add_sys_features_mode=args.mpn_add_sys_features_mode)
                 elif (args.model_type == 'rankformer'):
                     if (args.transformer_individual_cls):
                         ranker = RankformerEncoderSub(
