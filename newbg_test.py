@@ -305,3 +305,34 @@ def test_new_ranker_single():
                                                  '../../Uni/RTpred/pairs2b.pkl',
                                                  '../../Uni/RTpred/pairs2.pkl',
                                                  '../../Uni/RTpred/pairs3.pkl']}
+
+def test_standardization():
+    # train data
+    data_train = Data(use_hsm=True,
+                      use_ph=True)
+    for did in ['0068', '0138']:
+        data_train.add_dataset_id(did, isomeric=True)
+    data_train.compute_features(mode=None)
+    data_train.compute_graphs()
+    data_train.split_data()
+    print(data_train.train_x[0])
+    print(data_train.train_sys[0])
+    data_train.standardize()
+    print(data_train.train_x[0])
+    print(data_train.train_sys[0])
+    # test data
+    data_test = Data(use_hsm=True,
+                     use_ph=True)
+    for did in ['0069', '0139']:
+        data_test.add_dataset_id(did, isomeric=True)
+    data_test.compute_features(mode=None)
+    data_test.compute_graphs()
+    data_test.split_data((0., 0.))
+    print(data_test.train_x[0])
+    print(data_test.train_sys[0])
+    desc_scaler = data_train.descriptor_scaler if hasattr(data_train, 'descriptor_scaler') else None
+    sys_scaler = data_train.sysfeature_scaler if hasattr(data_train, 'sysfeature_scaler') else None
+    data_test.standardize(other_descriptor_scaler=desc_scaler, other_sysfeature_scaler=sys_scaler,
+                          can_create_new_scaler=False)
+    print(data_test.train_x[0])
+    print(data_test.train_sys[0])

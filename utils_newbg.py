@@ -270,7 +270,7 @@ class RankDataset(Dataset):
                                            weight_mid=self.weight_mid,
                                            max_rt=groups_max_rts[g] if self.dynamic_weights else None,
                                            epsilon=self.epsilon, discard_smaller_than_epsilon=self.discard_smaller_than_epsilon)
-                if (rt_diff < self.epsilon and weights_mod is not None):
+                if (rt_diff < self.epsilon and weights_mod is not None and self.discard_smaller_than_epsilon):
                     print(rt_diff, 'should this pair not have been discarded?')
                 weights[i] = (weights_mod * weights[i]) if weights_mod is not None else None
         # NOTE: pair weights can be "None"

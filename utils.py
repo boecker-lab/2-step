@@ -31,6 +31,16 @@ REL_COLUMNS = ['column.length', 'column.id', 'column.particle.size', 'column.tem
 REL_ONEHOT_COLUMNS = ['class.pH.A', 'class.pH.B', 'class.solvent']
 
 
+class Standardizer(StandardScaler):
+    def __init__(self):
+        super(Standardizer, self).__init__()
+    def fit_with_names(self, values, names):
+        self.fit(pd.DataFrame(values, columns=names))
+        self.names = names
+    def transform_with_names(self, values, names):
+        assert set(names) == set(self.names), f'different set of features: {sorted(set(names))} vs. {sorted(set(self.names))}'
+        # if other order, adapt
+        return pd.DataFrame(self.transform(pd.DataFrame(values, columns=names)[self.names]), columns=self.names)[names].values
 
 def weight_stats(pkl, confl=[]):
     x = pickle.load(open(pkl, 'rb'))
@@ -360,26 +370,22 @@ class Data:
             to_get = self.df[['column.name', 'column.particle.size']].drop_duplicates().reset_index(drop=True).copy()
             hsm = to_get.join(pd.DataFrame.from_records([{'id': i} | dict(self.get_hsm_params(r))
                                                          for i, r in to_get.iterrows()]).set_index('id'))
-            means, scales = get_column_scaling(self.hsm_fields, repo_root_folder=self.repo_root_folder,
-                                               scale_dict=self.sys_scales)
             data_with_hsm = pd.merge(self.df, hsm, how='left', on=['column.name', 'column.particle.size'])
             print('HSM parameters matching:\n' + data_with_hsm.drop_duplicates('dataset_id')['hsm_how'].value_counts().to_string())
             # store the "hsm_how" in data, but not the redundant hsm values
             self.df = data_with_hsm[[c for c in data_with_hsm.columns.tolist() if c not in self.hsm_fields]]
-            fields.append((data_with_hsm[self.hsm_fields].astype(float).values - means) / scales)
+            fields.append(data_with_hsm[self.hsm_fields].astype(float).values)
             system_features.extend(self.hsm_fields)
         if (use_tanaka):
             to_get = self.df[['column.name', 'column.particle.size']].drop_duplicates().reset_index(drop=True).copy()
             tanaka = to_get.join(pd.DataFrame.from_records([{'id': i} | dict(self.get_tanaka_params(
                 r, how=tanaka_match, ignore_spp_particle_size=tanaka_ignore_spp_particle_size))
                                                             for i, r in to_get.iterrows()]).set_index('id'))
-            means, scales = get_column_scaling(self.tanaka_fields, repo_root_folder=self.repo_root_folder,
-                                               scale_dict=self.sys_scales)
             data_with_tanaka = pd.merge(self.df, tanaka, how='left', on=['column.name', 'column.particle.size'])
             print('Tanaka parameters matching:\n' + data_with_tanaka.drop_duplicates('dataset_id')['tanaka_how'].value_counts().to_string())
             # store the "tanaka_how" in data, but not the redundant tanaka values
             self.df = data_with_tanaka[[c for c in data_with_tanaka.columns.tolist() if c not in self.tanaka_fields]]
-            fields.append((data_with_tanaka[self.tanaka_fields].astype(float).values - means) / scales)
+            fields.append(data_with_tanaka[self.tanaka_fields].astype(float).values)
             system_features.extend(self.tanaka_fields)
         field_names = custom_column_fields if custom_column_fields is not None else REL_COLUMNS
         na_columns = [col for col in field_names if self.df[col].isna().any()]
@@ -404,9 +410,7 @@ class Data:
             else:
                 print('WARNING: system data contains NA values, the option to remove these columns was disabled though! '
                       + ', '.join(na_columns))
-        means, scales = get_column_scaling(field_names, repo_root_folder=self.repo_root_folder,
-                                           scale_dict=self.sys_scales)
-        fields.append((self.df[field_names].astype(float).values - means) / scales)
+        fields.append(self.df[field_names].astype(float).values)
         names.extend(field_names)
         system_features.extend(field_names)
         if (use_usp_codes):
@@ -414,7 +418,6 @@ class Data:
             codes_vector = (lambda code: np.eye(len(codes) + 1)[codes.index(code)]
                             if code in codes else np.eye(len(codes) + 1)[len(codes)])
             code_fields = np.array([codes_vector(c) for c in self.df['column.usp.code']])
-            # NOTE: not scaled!
             fields.append(code_fields)
             system_features.extend([f'usp_{usp}' for usp in codes] + ['usp_nan'])
         if (use_newonehot):
@@ -423,23 +426,18 @@ class Data:
             print('using onehot fields', ', '.join(onehot_fields))
             fields.append(self.df[onehot_fields].astype(float).values)
             system_features.extend(onehot_fields)
-            # NOTE: not scaled!
         if (use_ph):
-            means, scales = get_column_scaling(['ph'], repo_root_folder=self.repo_root_folder,
-                                           scale_dict=self.sys_scales)
-            fields.append((self.df[['ph']].astype(float).values - means) / scales)
+            fields.append(self.df[['ph']].astype(float).values)
             system_features.extend(['ph'])
         # NOTE: gradient (or other compound-specific system features) HAVE TO BE LAST!
         self.x_info_global_num = np.concatenate(fields, axis=1).shape[1]
         print(f'{self.x_info_global_num=}')
         if (use_gradient):
-            # NOTE: not scaled!
             if self.solvent_order is not None:
                 solvent_cols = self.solvent_order
             else:
                 solvent_cols = [c for c in self.df.columns if c.startswith('gradient_conc_')]
             fields.append(self.df[solvent_cols])
-            # TODO: save solvents order!
             self.solvent_order = solvent_cols
             system_features.extend(solvent_cols)
         # np.savetxt('/tmp/sys_array.txt', np.concatenate(fields, axis=1), fmt='%.2f')
@@ -624,29 +622,38 @@ class Data:
         else:
             raise Exception('could not load cache!')
 
-    def standardize(self, other_scaler=None):
-        if (self.train_x is None):
-            raise Exception('feature standardization should only be applied '
-                            'after data splitting')
-        # standardize data, but only `features`, NaNs can be transformed to 0
-        if (self.features_indices[1] - self.features_indices[0] + 1) == 0:
-            # no features, don't do anything
-            return
-        if (other_scaler is None):
-            scaler = StandardScaler()
-            scaler.fit(self.train_x[:, :self.features_indices[1]+1])
-            self.scaler = scaler
-        else:
-            scaler = other_scaler
-        if (len(self.train_x) > 0):
-            self.train_x[:, :self.features_indices[1]+1] = np.nan_to_num(scaler.transform(
-                self.train_x[:, :self.features_indices[1]+1]))
-        if (len(self.val_x) > 0):
-            self.val_x[:, :self.features_indices[1]+1] = np.nan_to_num(scaler.transform(
-                self.val_x[:, :self.features_indices[1]+1]))
-        if (len(self.test_x) > 0):
-            self.test_x[:, :self.features_indices[1]+1] = np.nan_to_num(scaler.transform(
-                self.test_x[:, :self.features_indices[1]+1]))
+    def standardize(self, other_descriptor_scaler=None, other_sysfeature_scaler=None, can_create_new_scaler=True):
+        if (self.train_x is None or self.train_sys is None):
+            raise Exception('feature standardization should only be applied after data splitting')
+        # standardize descriptors
+        if (self.features_indices[1] - self.features_indices[0] + 1) > 0:
+            # otherwise no features, no need to create scalers
+            if (other_descriptor_scaler is None and can_create_new_scaler):
+                desc_scaler = Standardizer()
+                desc_scaler.fit_with_names(self.train_x[:, :self.features_indices[1]+1],
+                                           self.descriptors)
+                self.descriptor_scaler = desc_scaler
+            else:
+                desc_scaler = other_descriptor_scaler
+            if (desc_scaler is not None):
+                for a in (self.train_x, self.val_x, self.test_x):
+                    if (len(a) > 0):
+                        a[:, :self.features_indices[1]+1] = np.nan_to_num(desc_scaler.transform_with_names(
+                            a[:, :self.features_indices[1]+1], self.descriptors))
+        # standardize system features
+        if (self.train_sys.shape[1] > 0):
+            # otherwise no features, no need to create scalers
+            if (other_sysfeature_scaler is None and can_create_new_scaler):
+                sys_scaler = Standardizer()
+                sys_scaler.fit_with_names(self.train_sys,
+                                          self.system_features)
+                self.sysfeature_scaler = sys_scaler
+            else:
+                sys_scaler = other_sysfeature_scaler
+            if (sys_scaler is not None):
+                for a in (self.train_sys, self.val_sys, self.test_sys):
+                    if (len(a) > 0):
+                        a[:, :] = np.nan_to_num(sys_scaler.transform_with_names(a, self.system_features))
 
     def nan_columns_to_average(self):
         nan_indices = np.where(np.isnan(self.train_x).any(axis=0))[0]

@@ -530,9 +530,13 @@ if __name__ == '__main__':
             d.compute_graphs()
         info('(fake) splitting data')
         d.split_data((0, 0))
-        if (hasattr(data, 'scaler')):
+        if (hasattr(data, 'descriptor_scaler') or hasattr(data, 'sysfeature_scaler')):
             info('standardize data')
-            d.standardize(data.scaler)
+            # perhaps only feature scale and no sysf scaler or vice-versa
+            desc_scaler = data.descriptor_scaler if hasattr(data, 'descriptor_scaler') else None
+            sys_scaler = data.sysfeature_scaler if hasattr(data, 'sysfeature_scaler') else None
+            d.standardize(other_descriptor_scaler=desc_scaler, other_sysfeature_scaler=sys_scaler,
+                          can_create_new_scaler=False)
         ((train_graphs, train_x, train_sys, train_y),
          (val_graphs, val_x, val_sys, val_y),
          (test_graphs, test_x, test_sys, test_y)) = d.get_split_data()
