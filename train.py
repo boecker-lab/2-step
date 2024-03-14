@@ -97,8 +97,9 @@ class TrainArgs(Tap):
     mpn_encoder: Literal['dmpnn', 'dualmpnnplus', 'dualmpnn', 'deepgcnrt', 'graphformer', 'deepergcn'] = 'dmpnn'
     smiles_for_graphs: bool = False # always use SMILES internally, compute graphs only on demand
     mpn_no_residual_connections_encoder: bool = False # last stack for mpn model only takes the encoding convolved with sys features
-    mpn_add_sys_features: bool = False
-    mpn_add_sys_features_mode: Literal['bond', 'atom'] = 'bond'
+    mpn_add_sys_features: bool = False                # add sys features to the graphs themselves
+    mpn_add_sys_features_mode: Literal['bond', 'atom'] = 'bond' # whether to add sys featues as 'bond' and 'atom' features
+    mpn_no_sys_layers: bool = False # don't add any layers for sys features to the MPN (for example when sys features are already part of the graphs)
     # rankformer model
     # TODO: all the hyperparams
     transformer_nhead: int = 4
@@ -622,7 +623,8 @@ if __name__ == '__main__':
                                        dropout_rate_rank=args.dropout_rate_rank,
                                        res_conn_enc=(not args.mpn_no_residual_connections_encoder),
                                        add_sys_features=args.mpn_add_sys_features,
-                                       add_sys_features_mode=args.mpn_add_sys_features_mode)
+                                       add_sys_features_mode=args.mpn_add_sys_features_mode,
+                                       no_sys_layers=args.mpn_no_sys_layers)
                 elif (args.model_type == 'rankformer'):
                     if (args.transformer_individual_cls):
                         ranker = RankformerEncoderSub(

@@ -25,7 +25,7 @@ class MPNranker(nn.Module):
                  hidden_units=[16, 8], hidden_units_pv=[16, 2], encoder_size=300,
                  depth=3, dropout_rate_encoder=0.0, dropout_rate_pv=0.0,
                  dropout_rate_rank=0.0, res_conn_enc=True, add_sys_features=False,
-                 add_sys_features_mode=None):
+                 add_sys_features_mode=None, no_sys_layers=False):
         super(MPNranker, self).__init__()
         if (encoder == 'dmpnn'):
             from dmpnn import dmpnn
@@ -49,21 +49,26 @@ class MPNranker(nn.Module):
             raise NotImplementedError(f'{encoder} encoder')
         self.extra_features_dim = extra_features_dim
         self.sys_features_dim = sys_features_dim
-        self.encextra_size = encoder_size + extra_features_dim + sys_features_dim
         self.res_conn_enc = res_conn_enc
         self.add_sys_features = add_sys_features
         self.add_sys_features_mode = add_sys_features_mode
-        # System x molecule preference encoding
-        self.hidden_pv = nn.ModuleList()
-        for i, u in enumerate(hidden_units_pv):
-            self.hidden_pv.append(Linear(self.encextra_size if i == 0 else hidden_units_pv[i - 1], u))
-        # pv dropout layer
-        self.dropout_pv = nn.Dropout(dropout_rate_pv)
+        self.no_sys_layers = no_sys_layers
+        if (not self.no_sys_layers):
+            # System x molecule preference encoding
+            self.encextra_size = encoder_size + extra_features_dim + sys_features_dim
+            self.hidden_pv = nn.ModuleList()
+            for i, u in enumerate(hidden_units_pv):
+                self.hidden_pv.append(Linear(self.encextra_size if i == 0 else hidden_units_pv[i - 1], u))
+            # pv dropout layer
+            self.dropout_pv = nn.Dropout(dropout_rate_pv)
+            last_dim = (encoder_size if res_conn_enc else 0) + extra_features_dim + hidden_units_pv[-1]
+        else:
+            self.encextra_size = encoder_size + extra_features_dim
+            last_dim = self.encextra_size
         # actual ranking layers
         self.hidden = nn.ModuleList()
         for i, u in enumerate(hidden_units):
-            self.hidden.append(Linear((encoder_size if res_conn_enc else 0) + extra_features_dim + hidden_units_pv[-1]
-                                      if i == 0 else hidden_units[i - 1], u))
+            self.hidden.append(Linear(last_dim if i == 0 else hidden_units[i - 1], u))
         # ranking dropout layer
         self.dropout_rank = nn.Dropout(dropout_rate_rank)
         # One ROI value for (graph,extr,sys) sample
@@ -93,18 +98,21 @@ class MPNranker(nn.Module):
                 enc = self.encoder(graphs)
             else:
                 raise NotImplementedError(f'{self.encoder} encoder')
-            # encode system x molecule relationships
-            enc_pv = torch.cat([enc, extra, sysf], 1)
-            for h in self.hidden_pv:
-                enc_pv = F.relu(h(enc_pv))
-            # apply dropout to last pv layer
-            enc_pv = self.dropout_pv(enc_pv)
-            # now ranking layers: [enc, enc_pv] -> ROI
-            # TODO: backwards compatibility: this did not use to be an option
-            if not hasattr(self, 'res_conn_enc') or self.res_conn_enc:
-                enc = torch.cat([enc, extra, enc_pv], 1)
+            if (not self.no_sys_layers):
+                # encode system x molecule relationships
+                enc_pv = torch.cat([enc, extra, sysf], 1)
+                for h in self.hidden_pv:
+                    enc_pv = F.relu(h(enc_pv))
+                # apply dropout to last pv layer
+                enc_pv = self.dropout_pv(enc_pv)
+                # now ranking layers: [enc, enc_pv] -> ROI
+                # TODO: backwards compatibility: this did not use to be an option
+                if not hasattr(self, 'res_conn_enc') or self.res_conn_enc:
+                    enc = torch.cat([enc, extra, enc_pv], 1)
+                else:
+                    enc = torch.cat([extra, enc_pv], 1)
             else:
-                enc = torch.cat([extra, enc_pv], 1)
+                enc = torch.cat([extra, enc], 1)
             for h in self.hidden:
                 enc = F.relu(h(enc))
             # apply dropout to last ranking layer
