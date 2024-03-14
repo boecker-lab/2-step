@@ -25,7 +25,7 @@ info = logger.info
 
 class TrainArgs(Tap):
     input: List[str]            # Either CSV or dataset ids
-    model_type: Literal['ranknet', 'mpn', 'rankformer', 'rankformer_rt'] = 'mpn'
+    model_type: Literal['ranknet', 'mpn', 'rankformer', 'rankformer_sep', 'rankformer_rt'] = 'mpn'
     feature_type: Literal['None', 'rdkall', 'rdk2d', 'rdk3d'] = 'None' # type of features to use
     # training
     gpu: bool = False
@@ -113,6 +113,8 @@ class TrainArgs(Tap):
     transformer_fake: bool = False # TODO: DEBUG
     transformer_individual_cls: bool = False
     transformer_rt_hidden_sizes: List[int] = [16]
+    transformer_no_sqrt: bool=False
+    transformer_no_sigmoid: bool=False
     # pairs
     epsilon: Union[str, float] = '30s' # difference in evaluation measure below which to ignore falsely predicted pairs
     pair_step: int = 3
@@ -297,7 +299,8 @@ if __name__ == '__main__':
     elif ('rankformer' in args.model_type):
         from ranknet_transformer import (RankformerEncoder, Rankformer, RankformerRTPredictor,
                                          rankformer_train, rankformer_rt_train, FFNEncoder,
-                                         RankformerEncoderSub)
+                                         RankformerEncoderSub, RankformerEncoderPart, RankformerSeparate,
+                                         rankformer_separate_train)
         import torch
         if (args.gpu):
             torch.set_default_device('cuda')
@@ -308,7 +311,8 @@ if __name__ == '__main__':
         from LambdaRankNN import RankNetNN
         graphs = True
     # additional parameters taken from args
-    y_neg = (False if 'rankformer' in args.model_type and not args.transformer_individual_cls else args.mpn_loss == 'margin')
+    y_neg = (False if 'rankformer' in args.model_type and args.model_type != 'rankformer_sep'
+             and not args.transformer_individual_cls else args.mpn_loss == 'margin')
     # caching
     if (args.cache_file is not None and args.feature_type != 'None'):
         features.write_cache = False # flag for reporting changes to cache
@@ -648,6 +652,19 @@ if __name__ == '__main__':
                                                             no_special_tokens=args.transformer_no_special_tokens,)
                         ranker = Rankformer(rankformer_encoder, sigmoid_output=True,
                                             hidden_dims=args.transformer_rank_hidden_sizes)
+                elif (args.model_type == 'rankformer_sep'):
+                    rankformer_encoder = RankformerEncoderPart(
+                                ninp=args.encoder_size, nhead=args.transformer_nhead, nhid=args.transformer_nhid,
+                                nlayers=args.transformer_nlayers, dropout=args.transformer_dropout,
+                                nsysf=train_sys.shape[1], gnn_depth=args.mpn_depth,
+                                gnn_dropout=args.dropout_rate_encoder,
+                                gnn_add_sys_features=args.mpn_add_sys_features,
+                                gnn_add_sys_features_mode=args.mpn_add_sys_features_mode,
+                                no_special_tokens=args.transformer_no_special_tokens,
+                                multiple_sys_tokens=args.transformer_multiple_sys_tokens,
+                                one_token_per_graph=args.transformer_one_token_per_graph,
+                                use_sqrt=(not args.transformer_no_sqrt))
+                    ranker = RankformerSeparate(rankformer_encoder, sigmoid=(not args.transformer_no_sigmoid))
                 else:
                     raise NotImplementedError(args.model_type)
                 print(ranker)
@@ -682,6 +699,18 @@ if __name__ == '__main__':
                                      no_weights=False, # TODO:
                                      no_encoder_train=args.no_encoder_train, ep_save=args.ep_save,
                                      margin_loss=args.mpn_margin)
+                elif (args.model_type == 'rankformer_sep'):
+                    rankformer_separate_train(rankformer=ranker, bg=trainloader, epochs=args.epochs,
+                                              epochs_start=ranker.max_epoch,
+                                              writer=writer, val_g=valloader, val_writer=val_writer,
+                                              confl_writer=confl_writer,
+                                              steps_train_loss=np.ceil(len(trainloader) / 100).astype(int),
+                                              steps_val_loss=np.ceil(len(trainloader) / 5).astype(int),
+                                              early_stopping_patience=args.early_stopping_patience,
+                                              learning_rate=args.learning_rate,
+                                              no_weights=False, # TODO:
+                                              no_encoder_train=args.no_encoder_train, ep_save=args.ep_save,
+                                              margin_loss=args.mpn_margin)
                 else:
                     raise NotImplementedError(args.model_type)
             except KeyboardInterrupt:

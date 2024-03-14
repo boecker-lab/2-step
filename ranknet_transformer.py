@@ -15,6 +15,7 @@ from dataclasses import dataclass, field
 
 from chemprop.args import TrainArgs
 from chemprop.models.mpn import MPN
+from chemprop.features import set_extra_atom_fdim, set_extra_bond_fdim
 
 @dataclass
 class RTDataset(Dataset):
@@ -29,7 +30,8 @@ class RTDataset(Dataset):
         return (self.x_mols[index], None, self.x_sys[index]), self.y[index], self.weights[index]
 
 
-def dmpnn(encoder_size, depth, dropout_rate, no_reduce=True):
+def dmpnn(encoder_size, depth, dropout_rate, no_reduce=True,
+          add_sys_features=False, add_sys_features_mode='bond'):
     args = TrainArgs()
     args.from_dict({'dataset_type': 'classification',
                     'data_path': None,
@@ -37,18 +39,30 @@ def dmpnn(encoder_size, depth, dropout_rate, no_reduce=True):
                     'depth': depth,
                     'dropout': dropout_rate,
                     'is_atom_bond_targets': no_reduce})
+    if (add_sys_features):
+        if (add_sys_features_mode == 'bond'):
+            set_extra_bond_fdim(add_sys_features_dim)
+        elif (add_sys_features_mode == 'atom'):
+            set_extra_atom_fdim(add_sys_features_dim)
+        else:
+            raise NotImplementedError(f'{add_sys_features_mode=}')
     model = MPN(args)
     model.name = 'dmpnn'
     return model
 
 
 class RankformerGNNEmbedding(nn.Module):
-    def __init__(self, ninp, nsysf, gnn_depth=3, gnn_dropout=0.0,
+    def __init__(self, ninp, nsysf, gnn=None, gnn_depth=3, gnn_dropout=0.0,
+                 gnn_add_sys_features=False, gnn_add_sys_features_mode='bond',
                  multiple_sys_tokens=False, one_token_per_graph=False):
         super(RankformerGNNEmbedding, self).__init__()
         self.one_token_per_graph = one_token_per_graph
         self.gnn = dmpnn(ninp, gnn_depth, gnn_dropout,
-                         no_reduce=not one_token_per_graph)
+                         no_reduce=not one_token_per_graph,
+                         add_sys_features=gnn_add_sys_features,
+                         add_sys_features_mode=gnn_add_sys_features_mode)
+        self.gnn_add_sys_features = gnn_add_sys_features
+        self.gnn_add_sys_features_mode = gnn_add_sys_features_mode
         self.pad_token = nn.Parameter(torch.randn(1, ninp))
         self.multiple_sys_tokens = multiple_sys_tokens
         if multiple_sys_tokens:
@@ -197,6 +211,86 @@ class RankformerEncoderSub(nn.Module):
                 preds.append(self((batch, ))[0].cpu().detach().numpy())
         return np.concatenate(preds)
 
+
+class RankformerEncoderPart(nn.Module):
+    def __init__(self, ninp, nhead, nhid, nlayers, nsysf, dropout=0.1, gnn_depth=3, gnn_dropout=0.0,
+                 gnn_add_sys_features=False, gnn_add_sys_features_mode='bond',
+                 no_special_tokens=False, one_token_per_graph=False, use_sqrt=True,
+                 multiple_sys_tokens=False):
+        super(RankformerEncoderPart, self).__init__()
+        encoder_layers = nn.TransformerEncoderLayer(
+            d_model=ninp, nhead=nhead, dim_feedforward=nhid,
+            dropout=dropout,
+            batch_first=True # might be better to not use batch_first, perhaps dmpnn output already is the not-batch_first way
+        )
+        self.embedding = RankformerGNNEmbedding(ninp=ninp, gnn_depth=gnn_depth, gnn_dropout=gnn_dropout,
+                                                gnn_add_sys_features=gnn_add_sys_features,
+                                                gnn_add_sys_features_mode=gnn_add_sys_features_mode,
+                                                nsysf=nsysf, multiple_sys_tokens=multiple_sys_tokens,
+                                                one_token_per_graph=one_token_per_graph)
+        self.encoder = nn.TransformerEncoder(encoder_layers, nlayers)
+        self.no_special = no_special_tokens
+        if (not no_special_tokens):
+            self.cls_token = nn.Parameter(torch.randn(1, ninp))
+        self.ninp = ninp
+        self.use_sqrt = use_sqrt
+        # self.init_weights()
+    def forward(self, batch, verbose=False):
+        batch_size = batch[2].shape[0]
+        if (self.no_special):
+            sentence = []
+            sentence_order = []
+        else:
+            cls_token = torch.stack([self.cls_token] * batch_size)
+            sentence = [cls_token]
+        graphs, extra, sysf = batch
+        sysf_emb, graph_emb = self.embedding((graphs, sysf), encode_sys=True)
+        extension = [sysf_emb] + [graph_emb]
+        sentence.extend(extension)
+        if verbose:
+            print('sentence:', [token.shape for token in sentence])
+        encoding = torch.cat(sentence, 1)
+        if (self.use_sqrt):
+            encoding *= math.sqrt(self.ninp)
+        encoding = self.encoder(encoding) # (N, S, E)
+        return encoding
+
+class RankformerSeparate(nn.Module):
+    def __init__(self, rankformer_encoder_part, sigmoid=True):
+        super(RankformerSeparate, self).__init__()
+        self.rankformer_part = rankformer_encoder_part
+        self.add_sys_features = rankformer_encoder_part.embedding.gnn_add_sys_features
+        self.add_sys_features_mode = rankformer_encoder_part.embedding.gnn_add_sys_features_mode
+        self.roi = nn.Linear(rankformer_encoder_part.ninp, 1)
+        self.use_sigmoid = sigmoid
+        self.max_epoch = 0
+    def forward(self, batch):
+        # get first token for each mol (can be [CLS] or [SYS])
+        mol_embs = torch.stack([self.rankformer_part(part)[:, 0, :] for part in batch]) # (2|1, N, E)
+        rois = torch.sigmoid(self.roi(mol_embs))                                                       # (2|1, N, 1)
+        if (self.use_sigmoid):
+            rois = torch.sigmoid(rois)
+        return rois.squeeze(2)
+    def predict(self, graphs, extra, sysf, batch_size=8192,
+                prog_bar=False, ret_features=False):
+        if ret_features:
+            raise NotImplementedError('ret_features')
+        self.eval()
+        preds = []
+        with torch.no_grad():
+            it = range(np.ceil(len(graphs) / batch_size).astype(int))
+            if prog_bar:
+                it = tqdm(it)
+            for i in it:
+                start = i * batch_size
+                end = i * batch_size + batch_size
+                graphs_batch = graphs[start:end]
+                from dmpnn_graph import dmpnn_batch
+                graphs_batch = dmpnn_batch(graphs_batch)
+                batch = (graphs_batch, default_convert(extra[start:end]),
+                         default_convert(sysf[start:end]))
+                preds.append(self((batch, ))[0].cpu().detach().numpy())
+        return np.concatenate(preds)
 
 class FFNEncoder(nn.Module):
     def __init__(self, ninp, nsysf, gnn_depth=3, gnn_dropout=0.0,
@@ -471,6 +565,122 @@ def rankformer_rt_train(rankformer_rt: RankformerRTPredictor, bg: DataLoader, ep
             torch.save(rankformer_rt, f'{save_name}_ep{epoch + 1}.pt')
         rankformer_rt.train()
 
+def rankformer_separate_train(rankformer: RankformerSeparate, bg: DataLoader, epochs=2,
+                              epochs_start=0, writer:SummaryWriter=None, val_g: DataLoader=None,
+                              val_writer:SummaryWriter=None,
+                              confl_writer:SummaryWriter=None,
+                              steps_train_loss=10, steps_val_loss=100,
+                              no_weights=False,
+                              early_stopping_patience=None,
+                              ep_save=False, learning_rate=1e-3,
+                              no_encoder_train=False, calc_acc=True,
+                              clip_gradient=1., margin_loss=0.2):
+    save_name = ('rankformer_sep' if writer is None else
+                 writer.get_logdir().split('/')[-1].replace('_train', ''))
+    if (no_encoder_train):
+        for p in rankformer.ranknet_encoder.parameters():
+            p.requires_grad = False
+    # optimizer = optim.Adam(rankformer.parameters(), lr=learning_rate)
+    optimizer = optim.RAdam(rankformer.parameters(), lr=learning_rate)
+    # optimizer = optim.SGD(rankformer.parameters(), lr=learning_rate)
+    # scheduler = optim.lr_scheduler.StepLR(optimizer, 1, gamma=0.95)
+    loss_kwargs = dict(reduction='none')
+    # if isinstance(rankformer, Rankformer):
+    #     loss_fun = nn.BCEWithLogitsLoss(**loss_kwargs) if sigmoid_loss else nn.BCELoss(**loss_kwargs)
+    # else:
+    loss_fun = nn.MarginRankingLoss(margin_loss, reduction='none')
+    # loss_fun = nn.L1Loss(reduction='none')
+    rankformer.train()
+    loss_sum = iter_count = val_loss_sum = val_iter_count = val_pat = confl_loss_sum = 0
+    train_acc = val_acc = confl_acc = np.nan
+    train_acc_sum = val_acc_sum = confl_acc_sum = 0
+    last_val_step = np.infty
+    stop = False
+    for epoch in range(epochs_start, epochs_start + epochs):
+        if stop:                # CTRL+C
+            break
+        loop = tqdm(bg)
+        for x, y, weights, is_confl in loop:
+            rankformer.zero_grad()
+            pred = rankformer(x)
+            loss_all = loss_fun(pred[0], pred[1], y)
+            if not (no_weights):
+                loss_all *= weights
+            if (calc_acc):
+                train_acc = rankformer_calc_acc(pred, y, margin=isinstance(loss_fun, nn.MarginRankingLoss))
+                train_acc_sum += train_acc
+                if writer is not None:
+                    writer.add_scalar('acc', train_acc_sum/iter_count
+                                      if iter_count > 0 else np.nan, iter_count)
+            loss = loss_all.mean()
+            loss_sum += loss.item()
+            iter_count += 1
+            loss.backward()
+            if (clip_gradient is not None):
+                nn.utils.clip_grad_norm_(rankformer.parameters(), clip_gradient)
+            optimizer.step()
+            if (is_confl.sum() > 0):
+                confl_loss_sum += loss_all[is_confl].mean().item()
+                if (calc_acc):
+                    # print(is_confl.sum())
+                    # if (is_confl.sum() > 0):
+                    #     breakpoint()
+                    confl_acc = rankformer_calc_acc([pred[0][is_confl], pred[1][is_confl]], y[is_confl],
+                                                    margin=isinstance(loss_fun, nn.MarginRankingLoss))
+                    confl_acc_sum += confl_acc
+                    if confl_writer is not None:
+                        confl_writer.add_scalar('acc', confl_acc_sum/iter_count
+                                                if iter_count > 0 else np.nan, iter_count)
+            if (iter_count % steps_train_loss == (steps_train_loss - 1) and writer is not None):
+                loss_avg = loss_sum / iter_count
+                if writer is not None:
+                    writer.add_scalar('loss', loss_avg, iter_count)
+                else:
+                    print(f'Loss = {loss_avg:.4f}')
+                if (confl_writer is not None):
+                    confl_writer.add_scalar('loss', confl_loss_sum / iter_count, iter_count)
+            if (val_writer is not None and len(val_g) > 0
+                and iter_count % steps_val_loss == (steps_val_loss - 1)):
+                rankformer.eval()
+                with torch.no_grad():
+                    for x, y, weights, is_confl in val_g:
+                        pred = rankformer(x)
+                        val_loss_all = loss_fun(pred[0], pred[1], y)
+                        if not (no_weights):
+                            val_loss_all *= weights
+                        val_loss_sum += val_loss_all.mean().item()
+                        if (calc_acc):
+                            val_acc = rankformer_calc_acc(pred, y, margin=isinstance(loss_fun, nn.MarginRankingLoss))
+                            val_acc_sum += val_acc
+                            if val_writer is not None:
+                                val_writer.add_scalar('acc', val_acc_sum/val_iter_count
+                                                      if val_iter_count > 0 else np.nan, iter_count)
+                        val_iter_count += 1
+                val_step = val_loss_sum / val_iter_count
+                val_writer.add_scalar('loss', val_step, iter_count)
+                if (early_stopping_patience is not None and val_step > last_val_step):
+                    if (val_pat >= early_stopping_patience):
+                        print(f'early stopping; patience_count={val_pat}, {val_step=} > {last_val_step=}')
+                        stop = True
+                        break
+                    val_pat += 1
+                last_val_step = min(val_step, last_val_step)
+                rankformer.train()
+            loop.set_description(f'Epoch [{epoch+1}/{epochs_start + epochs}]')
+            loop.set_postfix(loss=loss_sum/iter_count if iter_count > 0 else np.nan,
+                             val_loss=val_loss_sum/val_iter_count if val_iter_count > 0 else np.nan,
+                             confl_loss=confl_loss_sum/iter_count,
+                             **(dict(train_acc=train_acc_sum/iter_count if iter_count > 0 else np.nan,
+                                     val_acc=val_acc_sum/val_iter_count if val_iter_count > 0 else np.nan,
+                                     confl_acc=confl_acc_sum/iter_count if iter_count > 0 else np.nan)
+                                if calc_acc else dict()))
+        # scheduler.step()
+        rankformer.max_epoch = epoch + 1
+        if (ep_save):
+            torch.save(rankformer, f'{save_name}_ep{epoch + 1}.pt')
+        rankformer.train()
+
+
 def rankformer_rt_predict(model: RankformerRTPredictor, graphs, extra, sysf, batch_size=8192,
                           prog_bar=False):
     model.eval()
@@ -572,6 +782,14 @@ def test_rankformer_sub():
     x, y, weights, is_confl = sample1_batch
     y[1] = -1.
     pred = encoder(x, verbose=True)
+
+def test_rankformer_separate():
+    rankformer_part = RankformerEncoderPart(300, 4, 16, 2, 12)
+    with open('/home/fleming/Documents/Projects/rtranknet/dataloader_dump.pkl', 'rb') as f:
+        batch = pickle.load(f)
+    ((graphs1, extra1, sysf1), (graphs2, extra2, sysf2)), y, weights, is_confl = batch
+    rankformer_sep = RankformerSeparate(rankformer_part, sigmoid=True)
+
 
 
 def construct_sample(g1, g2, y, sysf=0):
