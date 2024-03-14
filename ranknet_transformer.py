@@ -31,7 +31,8 @@ class RTDataset(Dataset):
 
 
 def dmpnn(encoder_size, depth, dropout_rate, no_reduce=True,
-          add_sys_features=False, add_sys_features_mode='bond'):
+          add_sys_features=False, add_sys_features_mode='bond',
+          add_sys_features_dim=0):
     args = TrainArgs()
     args.from_dict({'dataset_type': 'classification',
                     'data_path': None,
@@ -54,15 +55,18 @@ def dmpnn(encoder_size, depth, dropout_rate, no_reduce=True,
 class RankformerGNNEmbedding(nn.Module):
     def __init__(self, ninp, nsysf, gnn=None, gnn_depth=3, gnn_dropout=0.0,
                  gnn_add_sys_features=False, gnn_add_sys_features_mode='bond',
+                 gnn_add_sys_features_dim=0,
                  multiple_sys_tokens=False, one_token_per_graph=False):
         super(RankformerGNNEmbedding, self).__init__()
         self.one_token_per_graph = one_token_per_graph
         self.gnn = dmpnn(ninp, gnn_depth, gnn_dropout,
                          no_reduce=not one_token_per_graph,
                          add_sys_features=gnn_add_sys_features,
-                         add_sys_features_mode=gnn_add_sys_features_mode)
+                         add_sys_features_mode=gnn_add_sys_features_mode,
+                         add_sys_features_dim=gnn_add_sys_features_dim)
         self.gnn_add_sys_features = gnn_add_sys_features
         self.gnn_add_sys_features_mode = gnn_add_sys_features_mode
+        self.gnn_add_sys_features_dim = gnn_add_sys_features_dim
         self.pad_token = nn.Parameter(torch.randn(1, ninp))
         self.multiple_sys_tokens = multiple_sys_tokens
         if multiple_sys_tokens:
@@ -226,6 +230,7 @@ class RankformerEncoderPart(nn.Module):
         self.embedding = RankformerGNNEmbedding(ninp=ninp, gnn_depth=gnn_depth, gnn_dropout=gnn_dropout,
                                                 gnn_add_sys_features=gnn_add_sys_features,
                                                 gnn_add_sys_features_mode=gnn_add_sys_features_mode,
+                                                gnn_add_sys_features_dim=nsysf,
                                                 nsysf=nsysf, multiple_sys_tokens=multiple_sys_tokens,
                                                 one_token_per_graph=one_token_per_graph)
         self.encoder = nn.TransformerEncoder(encoder_layers, nlayers)
@@ -261,6 +266,7 @@ class RankformerSeparate(nn.Module):
         self.rankformer_part = rankformer_encoder_part
         self.add_sys_features = rankformer_encoder_part.embedding.gnn_add_sys_features
         self.add_sys_features_mode = rankformer_encoder_part.embedding.gnn_add_sys_features_mode
+        self.add_sys_features_dim = rankformer_encoder_part.embedding.gnn_add_sys_features_dim
         self.roi = nn.Linear(rankformer_encoder_part.ninp, 1)
         self.use_sigmoid = sigmoid
         self.max_epoch = 0
