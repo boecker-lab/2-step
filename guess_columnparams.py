@@ -149,9 +149,21 @@ if __name__ == '__main__':
         data_graphs = data.get_graphs()
         data_x_features = data.get_x()[0]
         data_x_sys = data.get_x()[1]
+        if (m.add_sys_features):
+            from utils_newbg import sysfeature_graph
+            from chemprop.features import set_extra_atom_fdim, set_extra_bond_fdim
+            if (m.add_sys_features_mode == 'bond'):
+                set_extra_bond_fdim(data_x_sys.shape[1])
+            elif (m.add_sys_features_mode == 'atom'):
+                set_extra_atom_fdim(data_x_sys.shape[1])
         for i, r in df.iterrows():
             if (input_:=(r.dataset_id, r.smiles)) in to_predict:
-                to_predict_data['graphs'].append(data_graphs[i])
+                if (m.add_sys_features):
+                    to_predict_data['graphs'].append(sysfeature_graph(
+                        r.smiles, data_graphs[i], data_x_sys[i],
+                        bond_or_atom=m.add_sys_features_mode))
+                else:
+                    to_predict_data['graphs'].append(data_graphs[i])
                 to_predict_data['extra'].append(data_x_features[i])
                 to_predict_data['sysf'].append(data_x_sys[i])
                 to_predict_data_info['input'].append(input_)
