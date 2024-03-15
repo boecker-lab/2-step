@@ -15,7 +15,7 @@ class CustomWeightedRandomSampler(WeightedRandomSampler):
                                        size=self.num_samples,
                                        p=self.weights.numpy() / torch.sum(self.weights).numpy(),
                                        replace=self.replacement)
-        rand_tensor = torch.from_numpy(rand_tensor)
+        rand_tensor = torch.tensor(rand_tensor)
         return iter(rand_tensor.tolist())
 
 def calc_sampling_weights(td: RankDataset, method: Literal['compounds', 'pairs'],
@@ -63,5 +63,10 @@ if __name__ == '__main__':
         print(df.cluster.value_counts())
 
     weights = calc_sampling_weights(td, 'pairs', True, False)
-    s = CustomWeightedRandomSampler(weights, 100, replacement=True)
+    s = CustomWeightedRandomSampler(weights, 32, replacement=True)
+    from torch.utils.data.dataloader import DataLoader
     tl = DataLoader(td, 8, sampler=s, collate_fn=custom_collate)
+    for epoch in range(4):
+        print('epoch', epoch+1)
+        for batch in tl:
+            print(batch[0][0][2])
