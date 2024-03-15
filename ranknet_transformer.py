@@ -582,7 +582,7 @@ def rankformer_separate_train(rankformer: RankformerSeparate, bg: DataLoader, ep
                               ep_save=False, learning_rate=1e-3,
                               no_encoder_train=False, calc_acc=True,
                               clip_gradient=1., margin_loss=0.2,
-                              running_mean_window=10):
+                              running_mean_window=50):
     save_name = ('rankformer_sep' if writer is None else
                  writer.get_logdir().split('/')[-1].replace('_train', ''))
     if (no_encoder_train):
