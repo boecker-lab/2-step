@@ -13,9 +13,9 @@ class CustomWeightedRandomSampler(WeightedRandomSampler):
     def __iter__(self):
         rand_tensor = np.random.choice(range(0, len(self.weights)),
                                        size=self.num_samples,
-                                       p=self.weights.numpy() / torch.sum(self.weights).numpy(),
+                                       p=self.weights.cpu().numpy() / torch.sum(self.weights).cpu().numpy(),
                                        replace=self.replacement)
-        rand_tensor = torch.tensor(rand_tensor)
+        rand_tensor = torch.from_numpy(rand_tensor)
         return iter(rand_tensor.tolist())
 
 def calc_sampling_weights(td: RankDataset, method: Literal['compounds', 'pairs'],
