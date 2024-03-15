@@ -119,7 +119,7 @@ class TrainArgs(Tap):
     epsilon: Union[str, float] = '30s' # difference in evaluation measure below which to ignore falsely predicted pairs
     pair_step: int = 3
     pair_stop: Optional[int] = 128
-    use_weights: bool = True    # weight pairs by rt difference
+    no_rtdiff_pair_weights: bool=False            # don't weigh pairs according to rt difference
     weight_steep: float = 20
     weight_mid: float = 0.75
     dynamic_weights: bool = False # adapt epsilon/weights to gradient length
@@ -509,7 +509,7 @@ if __name__ == '__main__':
                                 dataset_info=data.df.dataset_id.iloc[data.train_indices].tolist(),
                                 void_info=data.void_info,
                                 pair_step=args.pair_step,
-                                pair_stop=args.pair_stop, use_pair_weights=args.use_weights,
+                                pair_stop=args.pair_stop, use_pair_weights=(not args.no_rtdiff_pair_weights),
                                 discard_smaller_than_epsilon=args.discard_smaller_than_epsilon,
                                 use_group_weights=(not args.no_group_weights),
                                 cluster=args.cluster,
@@ -536,7 +536,7 @@ if __name__ == '__main__':
                               dataset_info=data.df.dataset_id.iloc[data.val_indices].tolist(),
                               void_info=data.void_info,
                               pair_step=args.pair_step,
-                              pair_stop=args.pair_stop, use_pair_weights=args.use_weights,
+                              pair_stop=args.pair_stop, use_pair_weights=(not args.no_rtdiff_pair_weights),
                               discard_smaller_than_epsilon=args.discard_smaller_than_epsilon,
                               use_group_weights=(not args.no_group_weights),
                               cluster=args.cluster,
