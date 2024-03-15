@@ -12,6 +12,7 @@ from torch.utils.data.dataloader import DataLoader
 from torch.utils.tensorboard.writer import SummaryWriter
 from torch.utils.data import Dataset
 from dataclasses import dataclass, field
+from torchmetrics.aggregation import RunningMean
 
 from chemprop.args import TrainArgs
 from chemprop.models.mpn import MPN
@@ -580,7 +581,8 @@ def rankformer_separate_train(rankformer: RankformerSeparate, bg: DataLoader, ep
                               early_stopping_patience=None,
                               ep_save=False, learning_rate=1e-3,
                               no_encoder_train=False, calc_acc=True,
-                              clip_gradient=1., margin_loss=0.2):
+                              clip_gradient=1., margin_loss=0.2,
+                              running_mean_window=10):
     save_name = ('rankformer_sep' if writer is None else
                  writer.get_logdir().split('/')[-1].replace('_train', ''))
     if (no_encoder_train):
@@ -598,8 +600,9 @@ def rankformer_separate_train(rankformer: RankformerSeparate, bg: DataLoader, ep
     # loss_fun = nn.L1Loss(reduction='none')
     rankformer.train()
     loss_sum = iter_count = val_loss_sum = val_iter_count = val_pat = confl_loss_sum = 0
-    train_acc = val_acc = confl_acc = np.nan
-    train_acc_sum = val_acc_sum = confl_acc_sum = 0
+    train_acc = RunningMean(running_mean_window)
+    val_acc = RunningMean(running_mean_window)
+    confl_acc = RunningMean(running_mean_window)
     last_val_step = np.infty
     stop = False
     for epoch in range(epochs_start, epochs_start + epochs):
@@ -613,11 +616,9 @@ def rankformer_separate_train(rankformer: RankformerSeparate, bg: DataLoader, ep
             if not (no_weights):
                 loss_all *= weights
             if (calc_acc):
-                train_acc = rankformer_calc_acc(pred, y, margin=isinstance(loss_fun, nn.MarginRankingLoss))
-                train_acc_sum += train_acc
+                train_acc(rankformer_calc_acc(pred, y, margin=isinstance(loss_fun, nn.MarginRankingLoss)))
                 if writer is not None:
-                    writer.add_scalar('acc', train_acc_sum/iter_count
-                                      if iter_count > 0 else np.nan, iter_count)
+                    writer.add_scalar('acc', train_acc.compute().item() if iter_count > 0 else np.nan, iter_count)
             loss = loss_all.mean()
             loss_sum += loss.item()
             iter_count += 1
@@ -631,12 +632,10 @@ def rankformer_separate_train(rankformer: RankformerSeparate, bg: DataLoader, ep
                     # print(is_confl.sum())
                     # if (is_confl.sum() > 0):
                     #     breakpoint()
-                    confl_acc = rankformer_calc_acc([pred[0][is_confl], pred[1][is_confl]], y[is_confl],
-                                                    margin=isinstance(loss_fun, nn.MarginRankingLoss))
-                    confl_acc_sum += confl_acc
+                    confl_acc(rankformer_calc_acc([pred[0][is_confl], pred[1][is_confl]], y[is_confl],
+                                                  margin=isinstance(loss_fun, nn.MarginRankingLoss)))
                     if confl_writer is not None:
-                        confl_writer.add_scalar('acc', confl_acc_sum/iter_count
-                                                if iter_count > 0 else np.nan, iter_count)
+                        confl_writer.add_scalar('acc', confl_acc.compute().item() if iter_count > 0 else np.nan, iter_count)
             if (iter_count % steps_train_loss == (steps_train_loss - 1) and writer is not None):
                 loss_avg = loss_sum / iter_count
                 if writer is not None:
@@ -656,11 +655,9 @@ def rankformer_separate_train(rankformer: RankformerSeparate, bg: DataLoader, ep
                             val_loss_all *= weights
                         val_loss_sum += val_loss_all.mean().item()
                         if (calc_acc):
-                            val_acc = rankformer_calc_acc(pred, y, margin=isinstance(loss_fun, nn.MarginRankingLoss))
-                            val_acc_sum += val_acc
+                            val_acc(rankformer_calc_acc(pred, y, margin=isinstance(loss_fun, nn.MarginRankingLoss)))
                             if val_writer is not None:
-                                val_writer.add_scalar('acc', val_acc_sum/val_iter_count
-                                                      if val_iter_count > 0 else np.nan, iter_count)
+                                val_writer.add_scalar('acc', val_acc.compute().item() if val_iter_count > 0 else np.nan, iter_count)
                         val_iter_count += 1
                 val_step = val_loss_sum / val_iter_count
                 val_writer.add_scalar('loss', val_step, iter_count)
@@ -676,9 +673,9 @@ def rankformer_separate_train(rankformer: RankformerSeparate, bg: DataLoader, ep
             loop.set_postfix(loss=loss_sum/iter_count if iter_count > 0 else np.nan,
                              val_loss=val_loss_sum/val_iter_count if val_iter_count > 0 else np.nan,
                              confl_loss=confl_loss_sum/iter_count,
-                             **(dict(train_acc=train_acc_sum/iter_count if iter_count > 0 else np.nan,
-                                     val_acc=val_acc_sum/val_iter_count if val_iter_count > 0 else np.nan,
-                                     confl_acc=confl_acc_sum/iter_count if iter_count > 0 else np.nan)
+                             **(dict(train_acc=train_acc.compute().item() if iter_count > 0 else np.nan,
+                                     val_acc=val_acc.compute().item() if val_iter_count > 0 else np.nan,
+                                     confl_acc=confl_acc.compute().item() if iter_count > 0 else np.nan)
                                 if calc_acc else dict()))
         # scheduler.step()
         rankformer.max_epoch = epoch + 1
