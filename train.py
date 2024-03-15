@@ -19,6 +19,7 @@ from utils import Data
 from features import features, parse_feature_spec
 from evaluate import predict, export_predictions, load_model
 from utils_newbg import RankDataset, check_integrity
+from sampling import CustomWeightedRandomSampler, calc_sampling_weights
 
 logger = logging.getLogger('rtranknet')
 info = logger.info
@@ -51,6 +52,10 @@ class TrainArgs(Tap):
     downsample_always_confl: bool = False # include all conflicting pairs also when downsampling
     downsample_factor: float=1.0          # if greater than 1, some clusters may have less pairs
     group_weights_only_intra_cluster: bool=False  # group-weights are used, but only for weighing within a cluster
+    sample: bool=False                            # sample the RankDataset based on group weights
+    sampling_count: int=100_000                      # how many pairs per epoch when using the `sample` option
+    sampling_mode: Literal['compounds', 'pairs']='pairs' # compute sampling probabilities based on dataset compounds or pairs
+    sampling_sqrt_weights: bool=False                    # use sqrt on compounds/pair counts to prevent extreme probability distributions
     void_rt: float = 0.0        # void time threshold; used for ALL datasets
     no_metadata_void_rt: bool = False # do not use t0 value from repo metadata (times void_factor)
     remove_void_compounds: bool = False # throw out all compounds eluting in the void volume
@@ -118,7 +123,7 @@ class TrainArgs(Tap):
     # pairs
     epsilon: Union[str, float] = '30s' # difference in evaluation measure below which to ignore falsely predicted pairs
     pair_step: int = 3
-    pair_stop: Optional[int] = 128
+    pair_stop: Optional[Union[int, str]] = 128
     no_rtdiff_pair_weights: bool=False            # don't weigh pairs according to rt difference
     weight_steep: float = 20
     weight_mid: float = 0.75
@@ -162,9 +167,18 @@ class TrainArgs(Tap):
             self.epsilon = float(self.epsilon.strip())
         else:
             raise ValueError(f'wrong format for epsilon ({self.epsilon})')
+        # process pair stop
+        if (self.pair_stop is None or str(self.pair_stop).lower() == 'none'):
+            self.pair_stop = None
+        else:
+            try:
+                self.pair_stop = int(self.pair_stop)
+            except:
+                raise ValueError(f'{self.pair_stop=}')
 
     def configure(self) -> None:
         self.add_argument('--epsilon', type=str)
+        self.add_argument('--pair_stop', type=str)
 
 def generic_run_name():
     from datetime import datetime
@@ -269,6 +283,7 @@ def rename_old_writer_logs(prefix):
 
 if __name__ == '__main__':
     args = TrainArgs().parse_args()
+    # args = TrainArgs().parse_args('--input 0001 0004 0009 0011 0012 0016 0017 0021 0024 0025 0028 0029 0032 0036 0038 0040 0041 0043 0045 0048 0049 0050 0051 0052 0060 0062 0063 0064 0065 0066 0067 0070 0071 0072 0073 0074 0075 0076 0077 0078 0079 0080 0081 0082 0083 0084 0085 0086 0087 0088 0089 0090 0091 0092 0093 0094 0095 0096 0097 0098 0099 0100 0101 0122 0124 0127 0129 0134 0135 0138 0140 0141 0142 0144 0146 0147 0150 0153 0158 0179 0180 0181 0182 0187 0188 0189 0190 0191 0192 0193 0194 0195 0196 0197 0198 0199 0200 0201 0202 0203 0204 0206 0207 0209 0212 0213 0214 0215 0216 0217 0219 0221 0223 0224 0226 0234 0235 0236 0237 0238 0239 0240 0241 0242 0243 0252 0253 0254 0255 0256 0257 0258 0259 0260 0264 0265 0266 0267 0268 0269 0270 0271 0272 0273 0288 0289 0290 0291 0294 0295 0342 0343 0344 0345 0346 0347 0348 0349 0350 0351 0352 0353 0354 0355 0356 0357 0358 0360 0361 0362 0387 0388 0389 0390 0391 --epsilon 10s --run_name rankformer_sep --model_type rankformer_sep --transformer_nhead 4 --transformer_nhid 128 --transformer_nlayers 1 --save_data --batch_size 128 --epochs 1 --sysinfo --columns_use_hsm --columns_use_tanaka --use_ph --ep_save --val_split 0.0 --test_split 0 --verbose --encoder_size 256 --sizes 128 64 --sizes_sys 16 256 --mpn_depth 3 --clean_data --remove_test_compounds 0003 0018 0055 0054 0019 0002 --remove_test_compounds_mode 2d --remove_test_compounds_rarest --pair_step 1 --pair_stop 100_000 --cluster --no_train_acc_all --conflicting_smiles_pairs /home/fleming/Documents/Uni/RTpred/pairs6.pkl --features --mpn_add_sys_features --no_rtdiff_pair_weights'.split())
     if (args.run_name is None):
         run_name = generic_run_name()
         print(f'preparing rtranknet model "{run_name}"')
@@ -570,12 +585,20 @@ if __name__ == '__main__':
                 valdata.remove_indices(clean_val)
                 print(f'cleaning up {len(clean_val)} of {len(valdata.y_trans)} total '
                       f'({np.divide(len(clean_val), len(valdata.y_trans)):.0%}) pairs for being invalid')
-
+        if (args.sample):
+            sampling_weights_train = calc_sampling_weights(traindata, method=args.sampling_mode, cluster_informed=args.cluster,
+                                                           sqrt_weights=args.sampling_sqrt_weights, verbose=args.verbose)
+            sampling_weights_val = calc_sampling_weights(valdata, method=args.sampling_mode, cluster_informed=args.cluster,
+                                                         sqrt_weights=args.sampling_sqrt_weights, verbose=args.verbose)
+            sampler_train = CustomWeightedRandomSampler(sampling_weights_train, args.sampling_count, replacement=True)
+            sampler_val = CustomWeightedRandomSampler(sampling_weights_val, args.sampling_count, replacement=True)
+        else:
+            sampler_train = sampler_val = None
         # print(f'{traindata.y_trans.mean()=}') DEBUG
-        trainloader = DataLoader(traindata, args.batch_size, shuffle=True,
+        trainloader = DataLoader(traindata, args.batch_size, shuffle=(not args.sample), sampler=sampler_train,
                                  generator=torch.Generator(device='cuda' if args.gpu else 'cpu'),
                                  collate_fn=custom_collate if (args.mpn_encoder in ['dmpnn', 'graphformer', 'deepergcn']) else None)
-        valloader = DataLoader(valdata, args.batch_size, shuffle=True,
+        valloader = DataLoader(valdata, args.batch_size, shuffle=(not args.sample), sampler=sampler_val,
                                generator=torch.Generator(device='cuda' if args.gpu else 'cpu'),
                                collate_fn=custom_collate if (args.mpn_encoder in ['dmpnn', 'graphformer', 'deepergcn']) else None
                                ) if len(valdata) > 0 else None

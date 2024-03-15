@@ -242,6 +242,7 @@ class RankDataset(Dataset):
                     pair_nrs_cluster_min[g] = pair_num_min
             if (len(pair_nrs) > 0):
                 print(f'number of pairs per cluster ({len(clusters)}): min={min(pair_nrs.values())}, max={max(pair_nrs.values())}')
+            self.dataset_clusters = clusters
         nr_group_pairs_max = max(list(pair_nrs.values()) + [0])
         downsample_nr = min(list(pair_nrs.values()) + [np.infty]) * self.downsample_factor
         pprint(pair_nrs)
