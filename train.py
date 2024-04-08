@@ -105,6 +105,7 @@ class TrainArgs(Tap):
     mpn_add_sys_features: bool = False                # add sys features to the graphs themselves
     mpn_add_sys_features_mode: Literal['bond', 'atom'] = 'bond' # whether to add sys featues as 'bond' and 'atom' features
     mpn_no_sys_layers: bool = False # don't add any layers for sys features to the MPN (for example when sys features are already part of the graphs)
+    mpn_sys_blowup: bool = False # extra layer which blows up sysfeatures dimension to encoder size
     # rankformer model
     # TODO: all the hyperparams
     transformer_nhead: int = 4
@@ -651,7 +652,8 @@ if __name__ == '__main__':
                                        res_conn_enc=(not args.mpn_no_residual_connections_encoder),
                                        add_sys_features=args.mpn_add_sys_features,
                                        add_sys_features_mode=args.mpn_add_sys_features_mode,
-                                       no_sys_layers=args.mpn_no_sys_layers)
+                                       no_sys_layers=args.mpn_no_sys_layers,
+                                       sys_blowup=args.mpn_sys_blowup)
                 elif (args.model_type == 'rankformer'):
                     if (args.transformer_individual_cls):
                         ranker = RankformerEncoderSub(

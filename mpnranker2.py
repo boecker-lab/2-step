@@ -25,7 +25,7 @@ class MPNranker(nn.Module):
                  hidden_units=[16, 8], hidden_units_pv=[16, 2], encoder_size=300,
                  depth=3, dropout_rate_encoder=0.0, dropout_rate_pv=0.0,
                  dropout_rate_rank=0.0, res_conn_enc=True, add_sys_features=False,
-                 add_sys_features_mode=None, no_sys_layers=False):
+                 add_sys_features_mode=None, no_sys_layers=False, sys_blowup=False):
         super(MPNranker, self).__init__()
         if (encoder == 'dmpnn'):
             from dmpnn import dmpnn
@@ -53,9 +53,14 @@ class MPNranker(nn.Module):
         self.add_sys_features = add_sys_features
         self.add_sys_features_mode = add_sys_features_mode
         self.no_sys_layers = no_sys_layers
+        self.sys_blowup = sys_blowup
         if (not self.no_sys_layers):
             # System x molecule preference encoding
-            self.encextra_size = encoder_size + extra_features_dim + sys_features_dim
+            if (self.sys_blowup):
+                self.sys_blowup_layer = Linear(self.sys_features_dim, encoder_size)
+                self.encextra_size = encoder_size + extra_features_dim + encoder_size
+            else:
+                self.encextra_size = encoder_size + extra_features_dim + sys_features_dim
             self.hidden_pv = nn.ModuleList()
             for i, u in enumerate(hidden_units_pv):
                 self.hidden_pv.append(Linear(self.encextra_size if i == 0 else hidden_units_pv[i - 1], u))
@@ -100,6 +105,8 @@ class MPNranker(nn.Module):
                 raise NotImplementedError(f'{self.encoder} encoder')
             if (not self.no_sys_layers):
                 # encode system x molecule relationships
+                if (self.sys_blowup):
+                    sysf = F.relu(self.sys_blowup_layer(sysf))
                 enc_pv = torch.cat([enc, extra, sysf], 1)
                 for h in self.hidden_pv:
                     enc_pv = F.relu(h(enc_pv))
