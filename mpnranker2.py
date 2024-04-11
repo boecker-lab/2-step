@@ -105,7 +105,7 @@ class MPNranker(nn.Module):
                 raise NotImplementedError(f'{self.encoder} encoder')
             if (not self.no_sys_layers):
                 # encode system x molecule relationships
-                if (self.sys_blowup):
+                if (hasattr(self, 'sys_blowup') and self.sys_blowup):
                     sysf = F.relu(self.sys_blowup_layer(sysf))
                 enc_pv = torch.cat([enc, extra, sysf], 1)
                 for h in self.hidden_pv:
