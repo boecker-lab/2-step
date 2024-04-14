@@ -734,6 +734,10 @@ def export_predictions(data, preds, out, mode='all'):
     else:
         raise NotImplementedError(mode)
     df['roi'] = preds
+    from os.path import exists, dirname
+    from os import mkdir
+    if not(exists(dirname(out))):
+        mkdir(dirname(out))
     df[['smiles', 'rt', 'roi']].to_csv(out, sep='\t', index=False, header=False)
 
 def naive_void_est(df, perc_mean=1):
