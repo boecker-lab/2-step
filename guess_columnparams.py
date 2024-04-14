@@ -149,7 +149,7 @@ if __name__ == '__main__':
         data_graphs = data.get_graphs()
         data_x_features = data.get_x()[0]
         data_x_sys = data.get_x()[1]
-        if (m.add_sys_features):
+        if (hasattr(m, 'add_sys_features') and m.add_sys_features):
             from utils_newbg import sysfeature_graph
             from chemprop.features import set_extra_atom_fdim, set_extra_bond_fdim
             if (m.add_sys_features_mode == 'bond'):
