@@ -103,7 +103,7 @@ class MPNranker(nn.Module):
                 enc = self.encoder(graphs)
             else:
                 raise NotImplementedError(f'{self.encoder} encoder')
-            if (not self.no_sys_layers):
+            if (not (hasattr(self, 'no_sys_layers') and self.no_sys_layers)):
                 # encode system x molecule relationships
                 if (hasattr(self, 'sys_blowup') and self.sys_blowup):
                     sysf = F.relu(self.sys_blowup_layer(sysf))
