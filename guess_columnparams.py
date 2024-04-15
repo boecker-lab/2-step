@@ -158,7 +158,7 @@ if __name__ == '__main__':
                 set_extra_atom_fdim(data_x_sys.shape[1])
         for i, r in df.iterrows():
             if (input_:=(r.dataset_id, r.smiles)) in to_predict:
-                if (m.add_sys_features):
+                if (hasattr(m, 'add_sys_features') and m.add_sys_features):
                     to_predict_data['graphs'].append(sysfeature_graph(
                         r.smiles, data_graphs[i], data_x_sys[i],
                         bond_or_atom=m.add_sys_features_mode))
