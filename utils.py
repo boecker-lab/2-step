@@ -181,6 +181,7 @@ class Data:
     columns_remove_na: bool = True
     hsm_fields: List[str] = field(default_factory=lambda: ['H', 'S*', 'A', 'B', 'C (pH 2.8)', 'C (pH 7.0)'])
     tanaka_fields: List[str] = field(default_factory=lambda: ['kPB', 'αCH2', 'αT/O', 'αC/P', 'αB/P', 'αB/P.1'])
+    mobile_phase_components: List[str] = field(default_factory=lambda: ['h2o', 'acn', 'meoh', 'formic'])
     solvent_order: Optional[List[str]] = None
     tanaka_match: Literal['best_match', 'exact'] = 'best_match'
     tanaka_ignore_spp_particle_size: bool = True
@@ -521,6 +522,10 @@ class Data:
             column_information['ph'] = [ph_desc[0] if len(
                 ph_desc:=(r[['eluent.A.pH', 'eluent.B.pH', 'eluent.C.pH', 'eluent.D.pH']].replace(0, np.nan).dropna().drop_duplicates()))
                                         == 1 else np.nan for i, r in column_information.iterrows()]
+            for component in self.mobile_phase_components:
+                column_information[f'has_{component}'] = float((column_information[
+                    [c for c in column_information.columns if c in [f'eluent.{part}.{component}' for part in 'ABCD']]].sum() > 0).any())
+            print(column_information.iloc[0])
             del column_information['id']
             df = df.merge(column_information, on='dataset_id')
             # gradient
