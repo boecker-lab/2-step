@@ -373,8 +373,7 @@ class Data:
                                                          for i, r in to_get.iterrows()]).set_index('id'))
             data_with_hsm = pd.merge(self.df, hsm, how='left', on=['column.name', 'column.particle.size'])
             print('HSM parameters matching:\n' + data_with_hsm.drop_duplicates('dataset_id')['hsm_how'].value_counts().to_string())
-            # store the "hsm_how" in data, but not the redundant hsm values
-            self.df = data_with_hsm[[c for c in data_with_hsm.columns.tolist() if c not in self.hsm_fields]]
+            self.df = data_with_hsm
             fields.append(data_with_hsm[self.hsm_fields].astype(float).values)
             system_features.extend(self.hsm_fields)
         if (use_tanaka):
@@ -384,8 +383,7 @@ class Data:
                                                             for i, r in to_get.iterrows()]).set_index('id'))
             data_with_tanaka = pd.merge(self.df, tanaka, how='left', on=['column.name', 'column.particle.size'])
             print('Tanaka parameters matching:\n' + data_with_tanaka.drop_duplicates('dataset_id')['tanaka_how'].value_counts().to_string())
-            # store the "tanaka_how" in data, but not the redundant tanaka values
-            self.df = data_with_tanaka[[c for c in data_with_tanaka.columns.tolist() if c not in self.tanaka_fields]]
+            self.df = data_with_tanaka
             fields.append(data_with_tanaka[self.tanaka_fields].astype(float).values)
             system_features.extend(self.tanaka_fields)
         field_names = custom_column_fields if custom_column_fields is not None else REL_COLUMNS
