@@ -335,6 +335,10 @@ def load_model(path: str, type_='mpn'):
             if hasattr(model, 'ranknet_encoder'):
                 model.ranknet_encoder.embedding.gnn.device = torch.device('cpu')
                 model.ranknet_encoder.embedding.gnn.encoder[0].device = torch.device('cpu')
+            try:
+                model.encoder.encoder[0].device = torch.device('cpu')
+            except:
+                pass
         path = re.sub(r'_ep\d+(\.pt)?$', '', re.sub(r'\.pt$', '', path)) # for ep_save
         data = DataUnpickler(open(f'{path}_data.pkl', 'rb')).load()
         config = json.load(open(f'{path}_config.json'))
