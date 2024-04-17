@@ -417,13 +417,183 @@ def pair_stats(d: Data, verbose=False):
             fields.setdefault('MolLogP_diff', []).append(np.abs(row_i.MolLogP - row_j.MolLogP))
     return pd.DataFrame(fields)
 
+def get_pair_consensus_order(pair, train_df, epsilon=0.5):
+    s1, s2 = sorted(pair)
+    confl_df = train_df.loc[train_df.smiles.isin(pair)]
+    counts = confl_df.dataset_id.value_counts()
+    orders = []
+    for ds in counts[counts > 1].index.tolist():
+        ds_df = confl_df.loc[confl_df.dataset_id == ds]
+        if not (len(ds_df) == 2 and ds_df.smiles.nunique() == 2):
+            continue    # doublet
+        order = ds_df.loc[ds_df.smiles == s1, 'rt'].item() - ds_df.loc[ds_df.smiles == s2, 'rt'].item()
+        if np.abs(order) < epsilon:
+            continue
+        orders.append(order > 0)
+    if len(orders) > 0:
+        return np.mean(orders)
+    return None
+
+def get_pair_order(s1, s2, ds, rts, void, epsilon=0.5):
+    try:
+        rt1 = rts[ds][s1]
+        rt2 = rts[ds][s2]
+    except:
+        # doublets etc.
+        return None
+    if (np.abs(rt1 - rt2) < epsilon or (rt1 < void and rt2 < void)):
+        return None
+    return rt1 - rt2 > 0
+
+def get_pair_stats(df, ds_target, qualifiers, confl_pairs, void_info, epsilon=0.5):
+    rts = {}
+    rel_datasets = set(df.dataset_id.unique().tolist())
+    for ds in rel_datasets:
+        rows = df.loc[(df.dataset_id == ds)].drop_duplicates('smiles.std', keep=False)
+        for smiles, rt in rows[['smiles.std', 'rt']].dropna().values:
+            rts.setdefault(ds, {})[smiles] = rt
+    setups = df.groupby(qualifiers)['dataset_id'].agg(list)
+    setup_names = setups.index.tolist()
+    setup_sets = list(setups)
+    setup_dict = {k: set(v) for k, v in dict(setups).items()}
+    setup_dict_rev = {}
+    for setup, sets in setup_dict.items():
+        for ds in sets:
+            setup_dict_rev[ds] = setup
+    records = []
+    no_setup = []
+    for p in tqdm(confl_pairs, desc=f'[{ds_target}] iterating confl pairs'):
+        sets = {ds for ds_pair in confl_pairs[p] for ds in ds_pair if ds in rel_datasets}
+        target_ds_setup = setup_dict_rev[ds_target]
+        train_datasets = df.loc[df['split_type'] == 'train', 'dataset_id'].unique().tolist()
+        target_ds_setup_in_train = any(setup_dict_rev[ds] == target_ds_setup for ds in train_datasets if ds in setup_dict_rev)
+        setup_orders = {}
+        s1, s2 = sorted(p)
+        for ds in sets:
+            order = get_pair_order(s1, s2, ds, rts, void_info[ds], epsilon=epsilon)
+            if order is None:
+                continue
+            if ds not in setup_dict_rev:
+                no_setup.append(ds)
+                continue
+            else:
+                setup = setup_dict_rev[ds]
+            setup_orders.setdefault(setup, set()).add(order)
+        if (len({order for orders in setup_orders.values() for order in orders}) < 2):
+            # no actual conflicts with the datasets provided
+            records.append(dict(s1=s1, s2=s2, mean_order=list({order for orders in setup_orders.values() for order in orders}),
+                                informative_here=False,
+                                has_characterstic_setups=False, num_characteristic_setups=0, has_unique_setups=False,
+                                num_unique_setups=0, has_contradicting_setups=False, num_contradicting_setups=0,
+                                target_ds_setup_in_train=target_ds_setup_in_train, target_ds_unique=False,
+                                target_ds_characteristic=False, target_ds_contradictory=False))
+            continue
+        accountable_orders = [list(v)[0] for v in setup_orders.values() if len(v) == 1]
+        mean_order = np.mean(accountable_orders) if len(accountable_orders) > 0 else None
+        characteristic_setups = {}
+        if mean_order is not None and mean_order != 0.5:
+            for setup, orders in setup_orders.items():
+                if len(orders) == 1 and (order:=list(orders)[0]) != np.round(mean_order, 0):
+                    characteristic_setups[setup] = order
+        # unique?
+        unique_setups = {}
+        if all([len(v) == 1 for v in setup_orders.values()]):
+            rev_lookup = {}
+            for setup, orders in setup_orders.items():
+                assert len(orders) == 1
+                order = list(orders)[0]
+                rev_lookup.setdefault(order, set()).add(setup)
+            for order in rev_lookup:
+                if len(rev_lookup[order]) == 1:
+                    unique_setups[list(rev_lookup[order])[0]] = order
+        contradictory_setups = {k for k, v in setup_orders.items() if len(v) > 1}
+        target_ds_unique = target_ds_setup in unique_setups
+        target_ds_characteristic = target_ds_setup in characteristic_setups
+        target_ds_contradictory = target_ds_setup in contradictory_setups
+        records.append(dict(s1=s1, s2=s2, mean_order=mean_order, informative_here=True,
+                            characteristic_setups=', '.join(f'{k}:{v}' for k, v in characteristic_setups.items()) if len(characteristic_setups) > 0 else None,
+                            unique_setups=', '.join(f'{k}:{v}' for k, v in unique_setups.items()) if len(unique_setups) > 0 else None,
+                            contradictory_setups=', '.join(f'{k}' for k in contradictory_setups) if len(contradictory_setups) > 0 else None,
+                            has_characterstic_setups=len(characteristic_setups) > 0,
+                            num_characteristic_setups=len(characteristic_setups),
+                            has_unique_setups=len(unique_setups) > 0,
+                            num_unique_setups=len(unique_setups),
+                            has_contradicting_setups=len(contradictory_setups) > 0,
+                            num_contradicting_setups=len(contradictory_setups),
+                            target_ds_setup_in_train=target_ds_setup_in_train,
+                            target_ds_unique=target_ds_unique,
+                            target_ds_characteristic=target_ds_characteristic,
+                            target_ds_contradictory=target_ds_contradictory))
+    df = pd.DataFrame.from_records(records)
+    # print(len(set(map(str, no_setup))), 'datasets could not be mapped to setups')
+    return df
+
+def try_inject_setup_info(d, params):
+    to_inject = {}
+    for c, get_fun in [('H', d.get_hsm_params), ('kPB', d.get_tanaka_params)]:
+        if c in params and (c not in d.df.columns.tolist()):
+            for ds in d.df.dataset_id.unique():
+                to_inject.setdefault(ds, {}).update(dict(get_fun(d.df.loc[d.df.dataset_id == ds].iloc[0])))
+    for ds in to_inject:
+        for k, v in to_inject[ds].items():
+            d.df.loc[d.df.dataset_id == ds, k] = v
+
+def confl_eval(ds, preds, test_data, train_data, confl_pairs,
+               roi_thr=1e-5, epsilon=0.5, setup_params=['column.name', 'ph']):
+    assert len(test_data.df) == len(preds)
+    smiles_lookup = {r.smiles: i for i, r in test_data.df.iterrows()}
+    # only pairs from the test dataset
+    rel_confl_pairs = {k for k, v in confl_pairs.items()
+                       if any(ds in x for x in v)
+                       and all(s in test_data.df.smiles.tolist() for s in k)}
+    if any(c not in train_data.df.columns.tolist() for c in setup_params):
+        print('WARNING: not all info for the setup was found in the train data ({}), trying to inject now...'.format(
+        [c for c in setup_params if c not in train_data.df.columns.tolist()]))
+        try_inject_setup_info(train_data, setup_params)
+    all_data_df = pd.concat([train_data.df, test_data.df]).drop_duplicates('id')
+    pair_stats_df = get_pair_stats(all_data_df, ds,
+                                   qualifiers=setup_params, confl_pairs=confl_pairs,
+                                   void_info=train_data.void_info | test_data.void_info, epsilon=epsilon)
+    pair_stats_dict = {frozenset(i): dict(r) for i, r in pair_stats_df.set_index(['s1', 's2']).iterrows()}
+    records = []
+    for c in rel_confl_pairs:
+        s1, s2 = sorted(c)
+        i1, i2 = smiles_lookup[s1], smiles_lookup[s2]
+        rt1 = test_data.df.loc[i1, 'rt']
+        rt2 = test_data.df.loc[i2, 'rt']
+        correct = rt1 - rt2
+        if np.abs(correct) < epsilon:
+            continue
+        correct_order = correct > 0
+        roi1 = preds[i1]
+        roi2 = preds[i2]
+        pred = roi1 - roi2
+        if np.abs(pred) < roi_thr:
+            pred_order = None
+        else:
+            pred_order = (pred > 0)
+        pred_correct = pred_order == correct_order
+        pair_stats_record = pair_stats_dict[c]
+        records.append(dict(smiles1=s1, smiles2=s2, correct=pred_correct, rt1=rt1, rt2=rt2, roi1=roi1, roi2=roi2,
+                            roi_diff=np.abs(roi1 - roi2), rt_diff=np.abs(rt1 - rt2),
+                            setup_in_train=pair_stats_record['target_ds_setup_in_train'],
+                            setup_unique=pair_stats_record['target_ds_unique'],
+                            setup_characteristic=pair_stats_record['target_ds_characteristic'],
+                            setup_contradictory=pair_stats_record['target_ds_contradictory'],
+                            any_setup_contradictory=pair_stats_record['has_contradicting_setups'],
+                            any_setup_characteristic=pair_stats_record['has_characterstic_setups'],
+                            any_setup_unique=pair_stats_record['has_unique_setups'],
+                            predictable_from_train=pair_stats_record['target_ds_setup_in_train'] and not pair_stats_record['target_ds_contradictory'],
+                            informative_here=pair_stats_record['informative_here']))
+    df = pd.DataFrame.from_records(records)
+    return df
+
 if __name__ == '__main__':
     if '__file__' in globals():
         args = EvalArgs().parse_args()
     else:
-        args = EvalArgs().parse_args('--model runs/newranker/newranker_ph9 --test_sets 0129 0040 0030 0125 0070 0096 0004 0019 0038 0042 0049 0052 --metadata_void_rt --model_type mpn --epsilon 0.5 --test_stats --confl_pairs /home/fleming/Documents/Uni/RTpred/pairs3.pkl --export_rois'.split())
-        args = EvalArgs().parse_args('--model runs/hsmvstanaka/hsm_vs_tanaka4_both --test_sets 0016 0037 0062 0073 0080 0131 0133 0219 --metadata_void_rt --model_type mpn --epsilon 0.5 --test_stats --confl_pairs /home/fleming/Documents/Uni/RTpred/pairs3.pkl'.split())
-        args = EvalArgs().parse_args('--model rankformer_test_rt --test_sets 0354 0355 --test_stats --model_type rankformer_rt'.split())
+        args = EvalArgs().parse_args('--model test_confl_eval --test_sets 0003 0018 0055 0054 0019 0002 --epsilon 10s --test_stats --confl_pairs /home/fleming/Documents/Uni/RTpred/pairs6.pkl --export_rois'.split())
+        args = EvalArgs().parse_args('--model runs/FE_sys/fetest_columnph_disjoint_sys_yes_cluster_yes_sysblowup_nores_fold1_ep10 --test_sets 0004 0017 0018 0048 0049 0052 0079 0080 0101 0158 0179 0180 0181 0182 0226 --epsilon 10s --test_stats --confl_pairs /home/fleming/Documents/Uni/RTpred/pairs6.pkl'.split())
 
     if (args.verbose):
         basicConfig(level=INFO)
@@ -481,13 +651,14 @@ if __name__ == '__main__':
     if (args.confl_pairs):
         info('loading conflicting pairs')
         confl_pairs = pickle.load(open(args.confl_pairs, 'rb'))
-        # filter confl pairs to only consider relevant ones
+        print(f'number of conflicting pairs loaded: {len(confl_pairs)}')
+        # filter confl pairs to only consider datasets from either the train or test set
         train_sets = data.df.iloc[data.train_indices].dataset_id.unique().tolist()
-        confl_pairs = {k: v for k, v in confl_pairs.items()
-                       if any(all(xi in args.test_sets for xi in x)
-                              or (any(xi in args.test_sets for xi in x) and
-                                  any(xi in train_sets for xi in x))
-                              for x in v)}
+        relevant_sets = set(train_sets) | set(args.test_sets)
+        confl_pairs = {k: {ds_pair for ds_pair in v if all(ds in relevant_sets for ds in ds_pair)}
+                       for k, v in confl_pairs.items()}
+        confl_pairs = {k: v for k, v in confl_pairs.items() if len(v) > 0}
+        print(f'only keeping those that conflict for any dataset from train/test data, leaving: {len(confl_pairs)}')
     else:
         confl_pairs = None
     for ds in args.test_sets:
@@ -501,7 +672,8 @@ if __name__ == '__main__':
             d.add_dataset_id(ds,
                              repo_root_folder=args.repo_root_folder,
                              void_rt=args.void_rt,
-                             isomeric=(not args.no_isomeric))
+                             isomeric=(not args.no_isomeric),
+                             split_type='evaluate')
         if (args.remove_train_compounds):
             info('removing train compounds')
             train_compounds_all = set(data.df[args.compound_identifier])
@@ -548,10 +720,10 @@ if __name__ == '__main__':
         X_sys = np.concatenate((train_sys, test_sys, val_sys)).astype(np.float32)
         Y = np.concatenate((train_y, test_y, val_y))
         if (args.confl_pairs is not None):
-            rel_confl = {k for k, v in confl_pairs.items()
-                         if any(ds in x for x in v)
-                         and all(s in d.df.smiles.tolist() for s in k)}
-            rel_confl = {_ for x in rel_confl for _ in x}
+            rel_confl_pairs = {k for k, v in confl_pairs.items()
+                               if any(ds in x for x in v)
+                               and all(s in d.df.smiles.tolist() for s in k)}
+            rel_confl = {_ for x in rel_confl_pairs for _ in x}
             confl = [smiles in rel_confl for smiles in d.df.smiles]
         info(f'done preprocessing. predicting...')
         if (args.model_type == 'mpn' or args.model_type == 'rankformer'):
@@ -593,9 +765,25 @@ if __name__ == '__main__':
         info('done predicting. evaluation...')
         print(ds, d.void_info[ds])
         acc = eval_(Y, preds, args.epsilon, void_rt=d.void_info[ds])
+        optional_stats = {}
         if (confl_pairs is not None):
-            acc_confl = eval_(Y[confl], preds[confl], args.epsilon, void_rt=d.void_info[ds]) if any(confl) else np.nan
-            acc_nonconfl = eval_(Y[~np.array(confl)], preds[~np.array(confl)], args.epsilon, void_rt=d.void_info[ds]) if any(confl) else acc
+            optional_stats['acc_confl'] = eval_(Y[confl], preds[confl], args.epsilon, void_rt=d.void_info[ds]) if any(confl) else np.nan
+            optional_stats['acc_nonconfl'] = eval_(Y[~np.array(confl)], preds[~np.array(confl)], args.epsilon, void_rt=d.void_info[ds]) if any(confl) else acc
+            optional_stats['num_confl'] = np.array(confl).sum()
+            confl_stats_df = confl_eval(ds, preds=preds, test_data=d, train_data=data, confl_pairs=confl_pairs,
+                                        epsilon=args.epsilon, setup_params=data.system_features)
+            if (len(data.system_features) > 0):
+                optional_stats['acc_confl_predictable_from_train'] = (confl_stats_df.loc[confl_stats_df.predictable_from_train, 'correct']).mean()
+                optional_stats['acc_confl_really_informative'] = (confl_stats_df.loc[confl_stats_df.informative_here, 'correct']).mean()
+                optional_stats['num_confl_setup_unique'] = confl_stats_df.setup_unique.sum()
+                optional_stats['num_confl_setup_characteristic'] = confl_stats_df.setup_characteristic.sum()
+                optional_stats['acc_confl_setup_unique'] = (confl_stats_df.loc[confl_stats_df.setup_unique, 'correct']).mean()
+                optional_stats['acc_confl_setup_characteristic'] = (confl_stats_df.loc[confl_stats_df.setup_characteristic, 'correct']).mean()
+                optional_stats['acc_confl_noncontradictory'] = (confl_stats_df.loc[~confl_stats_df.any_setup_contradictory, 'correct']).mean()
+                # TODO: more stats?
+            else:
+                # TODO: just make stats anyways? allowing `setup_params` to be passed manually? then injection also for test data
+                pass
         d.df['roi'] = preds[np.arange(len(d.df.rt))[ # restore correct order
             np.argsort(np.concatenate([d.train_indices, d.test_indices, d.val_indices]))]]
         if (not args.include_void_compounds_lcs):
@@ -618,10 +806,7 @@ if __name__ == '__main__':
             info('computing test stats')
             stats = data_stats(d, data, data.custom_column_fields, compound_identifier=args.compound_identifier)
             stats.update({'acc': acc, 'id': ds, 'lcs_dist': lcs_dist})
-            if (confl_pairs is not None):
-                stats.update({'acc_confl': acc_confl, 'acc_nonconfl': acc_nonconfl, 'num_confl': np.array(confl).sum()})
-            else:
-                stats.update({'acc_confl': np.nan, 'acc_nonconfl': np.nan, 'num_confl': np.nan})
+            stats.update(optional_stats)
             test_stats.append(stats)
         else:
             print(f'{ds}: {acc:.3f}, LCS_dist {lcs_dist:.0f} \t (#data: {len(Y)})')
@@ -651,7 +836,7 @@ if __name__ == '__main__':
         pd.set_option('display.max_columns', 100)
         pd.set_option('display.max_rows', 500)
         print(test_stats_df)
-        print(test_stats_df[['acc', 'acc_confl', 'acc_nonconfl']].agg(['mean', 'median']))
+        print(test_stats_df[sorted([c for c in test_stats_df.columns if c.startswith('acc')])].agg(['mean', 'median']))
         if (args.output is not None):
             json.dump({t['id']: t for t in test_stats},
                       open(args.output, 'w'), indent=2, cls=NpEncoder)
