@@ -291,6 +291,7 @@ class EvalArgs(Tap):
     diffs: bool = False         # compute outliers
     classyfire: bool = False    # compound class stats
     confl_pairs: Optional[str] = None # pickle file with conflicting pairs (smiles)
+    overwrite_system_features: List[str] = [] # use these system descriptors for confl pairs stats instead of those from the training data
 
     def process_args(self):
         # process epsilon unit
@@ -530,18 +531,25 @@ def get_pair_stats(df, ds_target, qualifiers, confl_pairs, void_info, epsilon=0.
 
 def try_inject_setup_info(d, params):
     to_inject = {}
-    for c, get_fun in [('H', d.get_hsm_params), ('kPB', d.get_tanaka_params)]:
-        if c in params and (c not in d.df.columns.tolist()):
+    for c, get_fun in [('H', d.get_hsm_params), ('kPB', lambda r: d.get_tanaka_params(
+            r, how=d.tanaka_match, ignore_spp_particle_size=d.tanaka_ignore_spp_particle_size))]:
+        if c in params:
             for ds in d.df.dataset_id.unique():
-                to_inject.setdefault(ds, {}).update(dict(get_fun(d.df.loc[d.df.dataset_id == ds].iloc[0])))
+                df = d.df.loc[d.df.dataset_id == ds]
+                if (c not in df.columns.tolist()) or pd.isna(df[c]).any():
+                    to_inject.setdefault(ds, {}).update(dict(get_fun(df.iloc[0])))
     for ds in to_inject:
         for k, v in to_inject[ds].items():
             d.df.loc[d.df.dataset_id == ds, k] = v
 
 def confl_eval(ds, preds, test_data, train_data, confl_pairs,
-               roi_thr=1e-5, epsilon=0.5, setup_params=['column.name', 'ph']):
+               roi_thr=1e-5, epsilon=0.5, setup_params=['column.name', 'ph'],
+               Y_debug=None):
     assert len(test_data.df) == len(preds)
-    smiles_lookup = {r.smiles: i for i, r in test_data.df.iterrows()}
+    smiles_lookup = {s: i for i, s in enumerate(test_data.df.smiles.tolist())}
+    if Y_debug is not None:
+        for s, i in smiles_lookup.items():
+            assert Y[i] == d.df.iloc[i].rt
     # only pairs from the test dataset
     rel_confl_pairs = {k for k, v in confl_pairs.items()
                        if any(ds in x for x in v)
@@ -550,6 +558,10 @@ def confl_eval(ds, preds, test_data, train_data, confl_pairs,
         print('WARNING: not all info for the setup was found in the train data ({}), trying to inject now...'.format(
         [c for c in setup_params if c not in train_data.df.columns.tolist()]))
         try_inject_setup_info(train_data, setup_params)
+    if any(c not in test_data.df.columns.tolist() for c in setup_params):
+        print('WARNING: not all info for the setup was found in the test data ({}), trying to inject now...'.format(
+        [c for c in setup_params if c not in test_data.df.columns.tolist()]))
+        try_inject_setup_info(test_data, setup_params)
     all_data_df = pd.concat([train_data.df, test_data.df]).drop_duplicates('id')
     pair_stats_df = get_pair_stats(all_data_df, ds,
                                    qualifiers=setup_params, confl_pairs=confl_pairs,
@@ -559,8 +571,8 @@ def confl_eval(ds, preds, test_data, train_data, confl_pairs,
     for c in rel_confl_pairs:
         s1, s2 = sorted(c)
         i1, i2 = smiles_lookup[s1], smiles_lookup[s2]
-        rt1 = test_data.df.loc[i1, 'rt']
-        rt2 = test_data.df.loc[i2, 'rt']
+        rt1 = test_data.df.iloc[i1].rt
+        rt2 = test_data.df.iloc[i2].rt
         correct = rt1 - rt2
         if np.abs(correct) < epsilon:
             continue
@@ -583,16 +595,17 @@ def confl_eval(ds, preds, test_data, train_data, confl_pairs,
                             any_setup_contradictory=pair_stats_record['has_contradicting_setups'],
                             any_setup_characteristic=pair_stats_record['has_characterstic_setups'],
                             any_setup_unique=pair_stats_record['has_unique_setups'],
-                            predictable_from_train=pair_stats_record['target_ds_setup_in_train'] and not pair_stats_record['target_ds_contradictory'],
+                            predictable_from_train=pair_stats_record['target_ds_setup_in_train'] & ~(pair_stats_record['target_ds_contradictory']),
                             informative_here=pair_stats_record['informative_here']))
-    df = pd.DataFrame.from_records(records)
-    return df
+    if len(records) == 0:
+        return None
+    return pd.DataFrame.from_records(records)
 
 if __name__ == '__main__':
     if '__file__' in globals():
         args = EvalArgs().parse_args()
     else:
-        args = EvalArgs().parse_args('--model test_confl_eval --test_sets 0003 0018 0055 0054 0019 0002 --epsilon 10s --test_stats --confl_pairs /home/fleming/Documents/Uni/RTpred/pairs6.pkl --export_rois'.split())
+        args = EvalArgs().parse_args("--model runs/FE_sys/FE_columnph_disjoint_sys_no_fold1_ep10 --test_sets 0004 0017 0018 0048 0049 0052 0079 0080 0101 0158 0179 0180 0181 0182 0226 --epsilon 10s --test_stats --confl_pairs /home/fleming/Documents/Uni/RTpred/pairs6.pkl --overwrite_system_features 'H' 'S*' 'A' 'B' 'C (pH 2.8)' 'C (pH 7.0)' 'kPB' 'αCH2' 'αT/O' 'αC/P' 'αB/P' 'αB/P.1' 'ph' --repo_root_folder /home/fleming/Documents/Projects/RtPredTrainingData_mostcurrent/".split())
         args = EvalArgs().parse_args('--model runs/FE_sys/fetest_columnph_disjoint_sys_yes_cluster_yes_sysblowup_nores_fold1_ep10 --test_sets 0004 0017 0018 0048 0049 0052 0079 0080 0101 0158 0179 0180 0181 0182 0226 --epsilon 10s --test_stats --confl_pairs /home/fleming/Documents/Uni/RTpred/pairs6.pkl'.split())
 
     if (args.verbose):
@@ -606,6 +619,9 @@ if __name__ == '__main__':
     features_type = parse_feature_spec(config['args']['feature_type'])['mode']
     features_add = config['args']['add_descs']
     n_thr = config['args']['num_features']
+    # change paths if necessary for loading additional data
+    if (not os.path.exists(data.repo_root_folder)):
+        data.repo_root_folder = args.repo_root_folder
     info('load cache')
     # load cached descriptors
     if (args.cache_file is not None):
@@ -770,9 +786,13 @@ if __name__ == '__main__':
             optional_stats['acc_confl'] = eval_(Y[confl], preds[confl], args.epsilon, void_rt=d.void_info[ds]) if any(confl) else np.nan
             optional_stats['acc_nonconfl'] = eval_(Y[~np.array(confl)], preds[~np.array(confl)], args.epsilon, void_rt=d.void_info[ds]) if any(confl) else acc
             optional_stats['num_confl'] = np.array(confl).sum()
+            if (args.overwrite_system_features is not None and len(args.overwrite_system_features) > 0):
+                system_features = args.overwrite_system_features
+            else:
+                system_features = data.system_features
             confl_stats_df = confl_eval(ds, preds=preds, test_data=d, train_data=data, confl_pairs=confl_pairs,
-                                        epsilon=args.epsilon, setup_params=data.system_features)
-            if (len(data.system_features) > 0):
+                                        epsilon=args.epsilon, setup_params=system_features, Y_debug=Y)
+            if (len(system_features) > 0 and confl_stats_df is not None):
                 optional_stats['acc_confl_predictable_from_train'] = (confl_stats_df.loc[confl_stats_df.predictable_from_train, 'correct']).mean()
                 optional_stats['acc_confl_really_informative'] = (confl_stats_df.loc[confl_stats_df.informative_here, 'correct']).mean()
                 optional_stats['num_confl_setup_unique'] = confl_stats_df.setup_unique.sum()
@@ -781,9 +801,6 @@ if __name__ == '__main__':
                 optional_stats['acc_confl_setup_characteristic'] = (confl_stats_df.loc[confl_stats_df.setup_characteristic, 'correct']).mean()
                 optional_stats['acc_confl_noncontradictory'] = (confl_stats_df.loc[~confl_stats_df.any_setup_contradictory, 'correct']).mean()
                 # TODO: more stats?
-            else:
-                # TODO: just make stats anyways? allowing `setup_params` to be passed manually? then injection also for test data
-                pass
         d.df['roi'] = preds[np.arange(len(d.df.rt))[ # restore correct order
             np.argsort(np.concatenate([d.train_indices, d.test_indices, d.val_indices]))]]
         if (not args.include_void_compounds_lcs):
