@@ -292,6 +292,7 @@ class EvalArgs(Tap):
     classyfire: bool = False    # compound class stats
     confl_pairs: Optional[str] = None # pickle file with conflicting pairs (smiles)
     overwrite_system_features: List[str] = [] # use these system descriptors for confl pairs stats instead of those from the training data
+    preds_from_exported_rois: List[str] = []
 
     def process_args(self):
         # process epsilon unit
@@ -453,7 +454,7 @@ def get_pair_stats(df, ds_target, qualifiers, confl_pairs, void_info, epsilon=0.
         rows = df.loc[(df.dataset_id == ds)].drop_duplicates('smiles.std', keep=False)
         for smiles, rt in rows[['smiles.std', 'rt']].dropna().values:
             rts.setdefault(ds, {})[smiles] = rt
-    setups = df.groupby(qualifiers)['dataset_id'].agg(list)
+    setups = df.drop_duplicates(subset=['dataset_id']).groupby(qualifiers)['dataset_id'].agg(list)
     setup_names = setups.index.tolist()
     setup_sets = list(setups)
     setup_dict = {k: set(v) for k, v in dict(setups).items()}
@@ -606,7 +607,8 @@ if __name__ == '__main__':
         args = EvalArgs().parse_args()
     else:
         args = EvalArgs().parse_args("--model runs/FE_sys/FE_columnph_disjoint_sys_no_fold1_ep10 --test_sets 0004 0017 0018 0048 0049 0052 0079 0080 0101 0158 0179 0180 0181 0182 0226 --epsilon 10s --test_stats --confl_pairs /home/fleming/Documents/Uni/RTpred/pairs6.pkl --overwrite_system_features 'H' 'S*' 'A' 'B' 'C (pH 2.8)' 'C (pH 7.0)' 'kPB' 'αCH2' 'αT/O' 'αC/P' 'αB/P' 'αB/P.1' 'ph' --repo_root_folder /home/fleming/Documents/Projects/RtPredTrainingData_mostcurrent/".split())
-        args = EvalArgs().parse_args('--model runs/FE_sys/fetest_columnph_disjoint_sys_yes_cluster_yes_sysblowup_nores_fold1_ep10 --test_sets 0004 0017 0018 0048 0049 0052 0079 0080 0101 0158 0179 0180 0181 0182 0226 --epsilon 10s --test_stats --confl_pairs /home/fleming/Documents/Uni/RTpred/pairs6.pkl'.split())
+        args = EvalArgs().parse_args('--model runs/FE_sys/FE_setup_disjoint_sys_yes_cluster_yes_fold1_ep10 --test_sets 0002 0009 0038 0043 0049 0050 0052 0060 0062 0066 0082 0098 0100 0201 0202 0203 0204 0206 0236 0237 0264 0270 0271 0342 0343 0387 --epsilon 10s --test_stats --confl_pairs /home/fleming/Documents/Uni/RTpred/pairs6.pkl'.split())
+        args = EvalArgs().parse_args('--model runs/nores/dmpnn_encpv_no_residual3_ep10 --test_sets 0003 0018 0055 0054 0019 0002 --epsilon 10s --test_stats --confl_pairs /home/fleming/Documents/Uni/RTpred/pairs6.pkl --repo_root_folder /home/fleming/Documents/Projects/RtPredTrainingData_mostcurrent/ --preds_from_exported_rois runs/dmpnn_encpv_no_residual3_ep10/dmpnn_encpv_no_residual3_ep10_0003_real.tsv runs/dmpnn_encpv_no_residual3_ep10/dmpnn_encpv_no_residual3_ep10_0018_real.tsv runs/dmpnn_encpv_no_residual3_ep10/dmpnn_encpv_no_residual3_ep10_0055_real.tsv runs/dmpnn_encpv_no_residual3_ep10/dmpnn_encpv_no_residual3_ep10_0054_real.tsv runs/dmpnn_encpv_no_residual3_ep10/dmpnn_encpv_no_residual3_ep10_0019_real.tsv runs/dmpnn_encpv_no_residual3_ep10/dmpnn_encpv_no_residual3_ep10_0002_real.tsv --overwrite_system_features'.split() + ['H', 'S*', 'A', 'B', 'C (pH 2.8)', 'C (pH 7.0)', 'kPB', 'αCH2', 'αT/O', 'αC/P', 'αB/P', 'αB/P.1', 'ph'])
 
     if (args.verbose):
         basicConfig(level=INFO)
@@ -742,10 +744,16 @@ if __name__ == '__main__':
             rel_confl = {_ for x in rel_confl_pairs for _ in x}
             confl = [smiles in rel_confl for smiles in d.df.smiles]
         info(f'done preprocessing. predicting...')
-        if (args.model_type == 'mpn' or args.model_type == 'rankformer'):
+        if (len(args.preds_from_exported_rois) > 0):
+            rois_df = pd.read_csv(args.preds_from_exported_rois[args.test_sets.index(ds)], sep='\t',
+                                  names=['smiles', 'rt', 'roi'], header=None)
+            d.df = pd.merge(d.df, rois_df, on='smiles', how='left', suffixes=('', '_from_roi'))
+            assert (d.df.dropna(subset=['rt'])['rt'] == d.df.dropna(subset=['rt'])['rt_from_roi']).all()
+            preds = d.df.roi
+        elif (args.model_type == 'mpn' or args.model_type == 'rankformer'):
             # NOTE: for rankformer only works with the `transformer_individual_cls` setting
             graphs = np.concatenate((train_graphs, test_graphs, val_graphs))
-            if (model.add_sys_features):
+            if (hasattr(model, 'add_sys_features') and model.add_sys_features):
                 from utils_newbg import sysfeature_graph
                 info('add system features to graphs')
                 smiles_list = d.df.iloc[np.concatenate((d.train_indices, d.test_indices, d.val_indices))]['smiles'].tolist()
