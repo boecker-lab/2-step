@@ -596,7 +596,7 @@ def confl_eval(ds, preds, test_data, train_data, confl_pairs,
                             any_setup_contradictory=pair_stats_record['has_contradicting_setups'],
                             any_setup_characteristic=pair_stats_record['has_characterstic_setups'],
                             any_setup_unique=pair_stats_record['has_unique_setups'],
-                            predictable_from_train=pair_stats_record['target_ds_setup_in_train'] & ~(pair_stats_record['target_ds_contradictory']),
+                            predictable_from_train=pair_stats_record['target_ds_setup_in_train'] and not pair_stats_record['target_ds_contradictory'],
                             informative_here=pair_stats_record['informative_here']))
     if len(records) == 0:
         return None

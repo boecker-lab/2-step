@@ -518,7 +518,7 @@ class Data:
             column_information['dataset_id'] = [str(x).rjust(4, '0') for x in column_information['id']]
             # NOTE: only set when only one constant pH value is found for all parts of the gradient
             column_information['ph'] = [ph_desc[0] if len(
-                ph_desc:=(r[['eluent.A.pH', 'eluent.B.pH', 'eluent.C.pH', 'eluent.D.pH']].replace(0, np.nan).dropna().drop_duplicates()))
+                ph_desc:=(list(set([x for x in r[['eluent.A.pH', 'eluent.B.pH', 'eluent.C.pH', 'eluent.D.pH']] if not np.isnan(x) and x != 0]))))
                                         == 1 else np.nan for i, r in column_information.iterrows()]
             for component in self.mobile_phase_components:
                 column_information[f'has_{component}'] = float((column_information[
