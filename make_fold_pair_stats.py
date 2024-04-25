@@ -80,7 +80,5 @@ if __name__ == '__main__':
                         records.append(r | dict(kind='characteristic'))
                     else:
                         records.append(r | dict(kind='consensus'))
-            break
-        break
     pairs_df = pd.DataFrame.from_records(records)
     pairs_df.to_csv(args.out_file, sep='\t')
