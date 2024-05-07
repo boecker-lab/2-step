@@ -42,6 +42,7 @@ parser.add_argument('--void_factor', default=2, type=float)
 parser.add_argument('--extrap', default=None, type=int)
 parser.add_argument('--onlybest', action='store_true')
 parser.add_argument('--showolsfit', action='store_true')
+parser.add_argument('--no_sort_flags', action='store_true')
 
 class LADModel:
     def __init__(self, data, void=0, ols_after=False):
@@ -152,7 +153,8 @@ if __name__ == '__main__':
                              figsize=figsize)
     #fig.set_dpi(150)
     errors = []
-    for ds, ax in zip(sorted(ds_list, key=lambda x: (sort_flags(titles[x].split('\n')[0].split()[-1]), int(x))),
+    for ds, ax in zip(sorted(ds_list, key=lambda x: (sort_flags(titles[x].split('\n')[0].split()[-1]) if not args.no_sort_flags else None,
+                                                int(x))),
                       axes.ravel()):
         colors = plt.rcParams["axes.prop_cycle"]()
         x = np.arange(data[ds].roi.min(), data[ds].roi.max(), 0.001)
