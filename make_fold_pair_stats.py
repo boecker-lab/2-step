@@ -67,18 +67,18 @@ if __name__ == '__main__':
                 p = frozenset([s1, s2])
                 r = dict(fold=fold, ds=ds_target, s1=s1, s2=s2)
                 if s1 not in train_compounds or s2 not in train_compounds:
-                    records.append(r | dict(kind='unique_compound'))
+                    records.append(r | dict(kind='unique_compound')) # 1 grey
                 elif p not in orig_informative_pairs:
-                    records.append(r | dict(kind='uninformative_general'))
+                    records.append(r | dict(kind='uninformative_general')) # 2 black
                 elif p not in statsd:
-                    records.append(r | dict(kind='uninformative_fold'))
+                    records.append(r | dict(kind='uninformative_fold')) # 3 other black
                 else:
                     row = statsd[p]
                     if row.target_ds_contradictory:
-                        records.append(r | dict(kind='contradictory'))
+                        records.append(r | dict(kind='contradictory')) # 6 red
                     elif row.target_ds_characteristic or row.target_ds_unique:
-                        records.append(r | dict(kind='characteristic'))
+                        records.append(r | dict(kind='characteristic')) # 5 orange
                     else:
-                        records.append(r | dict(kind='consensus'))
+                        records.append(r | dict(kind='consensus')) # 4 green
     pairs_df = pd.DataFrame.from_records(records)
     pairs_df.to_csv(args.out_file, sep='\t')
