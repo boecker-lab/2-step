@@ -60,6 +60,7 @@ class TrainArgs(Tap):
     no_metadata_void_rt: bool = False # do not use t0 value from repo metadata (times void_factor)
     remove_void_compounds: bool = False # throw out all compounds eluting in the void volume
     void_factor: float = 2              # factor for 'column.t0' value to use as void threshold
+    void_extra_file: Optional[str] = None # extra tsv file with dataset ID as first column and void rt guess as second; no header
     validation_datasets: List[str] = [] # datasets to use for validation (instead of split of training data)
     test_datasets: List[str] = [] # datasets to use for test (instead of split of training data)
     # features
@@ -339,6 +340,12 @@ if __name__ == '__main__':
             features.cached = {}
             info('cache file does not exist yet')
     info('reading in data and computing features...')
+    # additional data from special files
+    void_guesses = {}
+    if (args.void_extra_file is not None):
+        for line in open(args.void_extra_file).readlines():
+            ds, void_guess = line.strip().split('\t')
+            void_guesses[ds] = float(void_guess)
     # TRAINING
     if (len(args.input) == 1 and os.path.exists(input_ := args.input[0])):
         # TODO: probably broken, fix!
@@ -392,18 +399,18 @@ if __name__ == '__main__':
         for did in args.input:
             data.add_dataset_id(did,
                                 repo_root_folder=args.repo_root_folder,
-                                void_rt=args.void_rt,
+                                void_rt=void_guesses.get(did, args.void_rt),
                                 isomeric=(not args.no_isomeric))
         for did in args.validation_datasets:
             data.add_dataset_id(did,
                                 repo_root_folder=args.repo_root_folder,
-                                void_rt=args.void_rt,
+                                void_rt=void_guesses.get(did, args.void_rt),
                                 isomeric=(not args.no_isomeric),
                                 split_type='val')
         for did in args.test_datasets:
             data.add_dataset_id(did,
                                 repo_root_folder=args.repo_root_folder,
-                                void_rt=args.void_rt,
+                                void_rt=void_guesses.get(did, args.void_rt),
                                 isomeric=(not args.no_isomeric),
                                 split_type='test')
         if (args.remove_test_compounds is not None and len(args.remove_test_compounds) > 0):
@@ -518,6 +525,7 @@ if __name__ == '__main__':
         conflicting_smiles_pairs = (pickle.load(open(args.conflicting_smiles_pairs, 'rb'))
                                     if args.conflicting_smiles_pairs is not None else {})
         info('done. Initializing RankDatasets...')
+        print(f'{data.void_info=}')
         print(f'training data shapes: {train_x.shape=}, {train_sys.shape=}')
         traindata = RankDataset(x_mols=train_graphs, x_extra=train_x, x_sys=train_sys,
                                 x_ids=data.df.iloc[data.train_indices].smiles.tolist(),

@@ -553,7 +553,8 @@ class Data:
         else:
             print(f'{dataset_id}: removing duplicates, {old_len0}→{old_len1}')
         if (self.metadata_void_rt and 'column.t0' in df.columns):
-            void_rt = df['column.t0'].iloc[0] * self.void_factor # NOTE: 2 or 3?
+            metadata_void_rt_guess = df['column.t0'].iloc[0] * self.void_factor
+            void_rt = metadata_void_rt_guess if metadata_void_rt_guess > 0 else void_rt
         self.void_info[df.dataset_id.iloc[0]] = void_rt
         if (self.remove_void_compounds):
             df = df.loc[df.rt >= void_rt]
