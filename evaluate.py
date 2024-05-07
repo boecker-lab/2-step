@@ -279,6 +279,7 @@ class EvalArgs(Tap):
     void_factor: float = 2              # factor for 'column.t0' value to use as void threshold
     cache_file: str = 'cached_descs.pkl'
     export_rois: bool = False
+    export_rois_dir: Optional[str] = None
     export_embeddings: bool = False
     device: Optional[str] = None # can be `mirrored`, a specific device name like `gpu:1` or `None` which automatically selects an option
     epsilon: Union[str, float] = '30s' # difference in evaluation measure below which to ignore falsely predicted pairs
@@ -850,7 +851,11 @@ if __name__ == '__main__':
             if (not re.match(r'\d{4}', ds)):
                 ds = os.path.basename(ds)
             model_spec = os.path.basename(args.model) # preserve epoch specification if present
-            export_predictions(d, preds, f'runs/{model_spec}/{model_spec}_{ds}.tsv')
+            if (args.export_rois_dir is None):
+                roi_dir = f'runs/{model_spec}'
+            else:
+                roi_dir = args.export_rois_dir
+            export_predictions(d, preds, f'{roi_dir}/{model_spec}_{ds}.tsv')
         if (False and args.classyfire):
             fig = px.treemap(d.df.dropna(subset=['classyfire.kingdom', 'classyfire.superclass', 'classyfire.class']),
                              path=['classyfire.kingdom', 'classyfire.superclass', 'classyfire.class'],
