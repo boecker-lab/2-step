@@ -3,10 +3,9 @@ from collections import defaultdict
 import numpy as np
 import matplotlib.pyplot as plt
 import sys
-from pulp import LpMinimize, LpProblem, LpVariable, lpSum, getSolver
 from argparse import ArgumentParser
 import json
-from logging import warning
+from mapping import LADModel
 
 SYMBOLS = {'benchmark_dataset': '▥',
            'our_dataset': '★',
@@ -28,67 +27,6 @@ BENCHMARK_MAE = {'0003': 0.44,
                  '0054': 0.23,
                  '0019': 0.94,
                  '0002': 2.15}
-
-
-
-parser = ArgumentParser()
-parser.add_argument('tsvs', nargs='+')
-parser.add_argument('--out', default=None)
-parser.add_argument('--out_errors', default=None)
-parser.add_argument('--accs_file', default=None)
-parser.add_argument('--errorlabels', action='store_true')
-parser.add_argument('--dont_show', action='store_true')
-parser.add_argument('--repo_root', default='/home/fleming/Documents/Projects/RtPredTrainingData_mostcurrent/')
-parser.add_argument('--void_factor', default=2, type=float)
-parser.add_argument('--extrap', default=None, type=int)
-parser.add_argument('--onlybest', action='store_true')
-parser.add_argument('--showolsfit', action='store_true')
-parser.add_argument('--no_negative_ols', action='store_true')
-parser.add_argument('--no_sort_flags', action='store_true')
-
-class LADModel:
-    def __init__(self, data, void=0, ols_after=False, ols_discard_if_negative=False):
-        model = LpProblem(name='LAD', sense=LpMinimize)
-        if (void > 0):
-            data = data.loc[data.rt > void]
-        x = data.roi.values
-        y = data.rt.values
-        n = len(x)
-        u = [LpVariable(name=f'u{i}') for i in range(n)]
-        a = LpVariable(name='a', lowBound=0)
-        b = LpVariable(name='b', lowBound=0)
-        c = LpVariable(name='c', lowBound=0)
-        for i in range(n):
-            model += u[i] >= y[i] - a * x[i] ** 2 - b * x[i] - c
-            model += u[i] >= - (y[i] - a * x[i] ** 2 - b * x[i] - c)
-        model += lpSum(u)
-        status = model.solve(getSolver('PULP_CBC_CMD', msg=False))
-        # status = model.solve()
-        assert status == 1, 'solution not optimal'
-        self.get_y = lambda x: a.varValue * x ** 2 + b.varValue * x + c.varValue
-        print(f'LAD coefficients: {c.varValue:.1f}, {b.varValue:.1f}, {a.varValue:.1f}')
-        self.prevent_ols = False
-        if (ols_after):
-            self.data_keep = np.argsort(np.abs([self.get_y(xi) for xi in x] - y))[:len(x) // 2]
-            x = x[self.data_keep]
-            y = y[self.data_keep]
-            self.ols_points = (x, y)
-            import statsmodels.api as sm
-            X = sm.add_constant(np.array([x, x**2]).transpose())
-            model = sm.OLS(y, X)
-            try:
-                const, x1, x2 = model.fit().params # TODO: with too few data points: error
-                # TODO: all coefficients positive?
-                if (any([coefficient < 0 for coefficient in [const, x1, x2]])):
-                    warning('Applying the OLS leads to negative coefficients: '
-                            f'{const:.1f}({c.varValue:.1f}), {x1:.1f}({b.varValue:.1f}), {x2:.1f}({a.varValue:.1f})')
-                    if (ols_discard_if_negative):
-                        self.prevent_ols = True
-                if (not self.prevent_ols):
-                    self.get_y = lambda x: x2 * x ** 2 + x1 * x + const
-                    print(f'OLS coefficients: {const:.1f}, {x1:.1f}, {x2:.1f}')
-            except:
-                print('not enough data points for OLS model')
 
 def make_title(ds, acc=None, lcs_dist=None, flags=None, display_ref_mae=True):
     title = ds
@@ -119,6 +57,23 @@ def sort_flags(flags):
     return res
 
 if __name__ == '__main__':
+    parser = ArgumentParser()
+    parser.add_argument('tsvs', nargs='+')
+    parser.add_argument('--out', default=None)
+    parser.add_argument('--out_errors', default=None)
+    parser.add_argument('--accs_file', default=None)
+    parser.add_argument('--errorlabels', action='store_true')
+    parser.add_argument('--dont_show', action='store_true')
+    parser.add_argument('--repo_root', default='/home/fleming/Documents/Projects/RtPredTrainingData_mostcurrent/')
+    parser.add_argument('--void_factor', default=2, type=float)
+    parser.add_argument('--extrap', default=None, type=int)
+    parser.add_argument('--onlybest', action='store_true')
+    parser.add_argument('--showolsfit', action='store_true')
+    parser.add_argument('--no_negative_ols', action='store_true')
+    parser.add_argument('--no_sort_flags', action='store_true')
+    parser.add_argument('--extra_bases', action='store_true')
+    parser.add_argument('--extra_bases_nr_thr', default=-1, type=int)
+    # parser.add_argument('--bases', nargs='+', default=['1', 'x', 'x**2'], type=str, help='supported are 1, x, x**2, sqrt(x), x*sqrt(x)')
     args = parser.parse_args()
     sys.path.append(args.repo_root)
     from pandas_dfs import get_dataset_df
@@ -126,6 +81,7 @@ if __name__ == '__main__':
     models = defaultdict(dict)
     roi_cutoff = defaultdict(dict)
     data = {}
+    normal_bases = ['1', 'x', 'x**2']
     # load data + make LAD models
     for ds in args.tsvs:
         id_ = ds.split('.')[-2].split('_')[-1]
@@ -136,7 +92,7 @@ if __name__ == '__main__':
         # models['all_points'][ds] = LADModel(data[ds])
         void_t = dss['column.t0'].loc[id_] * args.void_factor
         if (not args.onlybest):
-            models['LAD'][id_] = LADModel(data[id_], void=void_t)
+            models['LAD'][id_] = LADModel(data[id_], void=void_t, ols_after=False)
         models['LAD+OLS'][id_] = LADModel(data[id_], void=void_t, ols_after=True,
                                           ols_discard_if_negative=args.no_negative_ols)
         if args.extrap is not None:
@@ -145,6 +101,11 @@ if __name__ == '__main__':
             roi_cutoff[extrap][id_] = data_void.roi.sort_values().iloc[int(len(data_void) * (args.extrap / 100))]
             models[extrap][id_] = LADModel(data[id_].loc[data[id_].roi < roi_cutoff[extrap][id_]], void=void_t,
                                            ols_after=True, ols_discard_if_negative=args.no_negative_ols)
+        if args.extra_bases and (args.extra_bases_nr_thr == -1 or
+                                 len(data[id_].loc[data[id_].rt > void_t]) >= args.extra_bases_nr_thr):
+                models['LAD+OLS (extra)'][id_] = LADModel(data[id_], void=void_t, ols_after=True,
+                                                          ols_discard_if_negative=args.no_negative_ols,
+                                                          bases=normal_bases + ['sqrt(x)', 'x*sqrt(x)'])
     ds_list = list(data)
     # optionally various other information
     accs = defaultdict(lambda: None)
@@ -178,17 +139,26 @@ if __name__ == '__main__':
         # sns.scatterplot(data=data[ds], x='roi', y='rt', hue='density', s=2, ax=ax)
         ax.scatter(data[ds].roi, data[ds].rt, s=2)
         for type_ in models:
+            if ds not in models[type_]:
+                continue        # some models are only made for certain datasets
             c = next(colors)['color']
-            y = models[type_][ds].get_y(x)
+            model = models[type_][ds]
+            y = model.get_mapping(x)
             data_rel = data[ds].loc[data[ds].rt >= dss['column.t0'].loc[ds] * args.void_factor]
-            error = (models[type_][ds].get_y(data_rel.roi) - data_rel.rt).abs()
-            description = type_ if not models[type_][ds].prevent_ols else f'{type_.replace("+OLS", "")} (OLS noninc)'
+            error = (model.get_mapping(data_rel.roi) - data_rel.rt).abs()
+            match model.no_ols_why:
+                case 'NEGATIVE_COEFFICIENTS':
+                    description = f'{type_.replace("+OLS", "")} (OLS noninc)'
+                case 'OLS_FAILED':
+                    description = f'{type_.replace("+OLS", "")} (OLS failed)'
+                case _:
+                    description = type_
             errors.append({'model_type': description, 'ds': ds, 'MAE': error.mean(), 'MedAE': error.median()})
             ax.plot(x, y, color=c,
                     label=f'{description}' + (f'(MAE={error.mean():.2f}, MedAE={error.median():.2f})'
                                         if args.errorlabels else ''))
-            if (args.showolsfit and not 'extrap' in type_ and hasattr(models[type_][ds], 'ols_points')):
-                ax.scatter(models[type_][ds].ols_points[0], models[type_][ds].ols_points[1],
+            if (args.showolsfit and not 'extrap' in type_ and hasattr(model, 'ols_points')):
+                ax.scatter(model.ols_points.roi, model.ols_points.rt_pred,
                            label='OLS fit points', c=c, s=5)
         ax.set_title(titles[ds])
         ax.set_xlabel('ROI')
