@@ -6,6 +6,7 @@ import sys
 from pulp import LpMinimize, LpProblem, LpVariable, lpSum, getSolver
 from argparse import ArgumentParser
 import json
+from logging import warning
 
 SYMBOLS = {'benchmark_dataset': '▥',
            'our_dataset': '★',
@@ -42,10 +43,11 @@ parser.add_argument('--void_factor', default=2, type=float)
 parser.add_argument('--extrap', default=None, type=int)
 parser.add_argument('--onlybest', action='store_true')
 parser.add_argument('--showolsfit', action='store_true')
+parser.add_argument('--no_negative_ols', action='store_true')
 parser.add_argument('--no_sort_flags', action='store_true')
 
 class LADModel:
-    def __init__(self, data, void=0, ols_after=False):
+    def __init__(self, data, void=0, ols_after=False, ols_discard_if_negative=False):
         model = LpProblem(name='LAD', sense=LpMinimize)
         if (void > 0):
             data = data.loc[data.rt > void]
@@ -64,6 +66,8 @@ class LADModel:
         # status = model.solve()
         assert status == 1, 'solution not optimal'
         self.get_y = lambda x: a.varValue * x ** 2 + b.varValue * x + c.varValue
+        print(f'LAD coefficients: {c.varValue:.1f}, {b.varValue:.1f}, {a.varValue:.1f}')
+        self.prevent_ols = False
         if (ols_after):
             self.data_keep = np.argsort(np.abs([self.get_y(xi) for xi in x] - y))[:len(x) // 2]
             x = x[self.data_keep]
@@ -74,7 +78,15 @@ class LADModel:
             model = sm.OLS(y, X)
             try:
                 const, x1, x2 = model.fit().params # TODO: with too few data points: error
-                self.get_y = lambda x: x2 * x ** 2 + x1 * x + const
+                # TODO: all coefficients positive?
+                if (any([coefficient < 0 for coefficient in [const, x1, x2]])):
+                    warning('Applying the OLS leads to negative coefficients: '
+                            f'{const:.1f}({c.varValue:.1f}), {x1:.1f}({b.varValue:.1f}), {x2:.1f}({a.varValue:.1f})')
+                    if (ols_discard_if_negative):
+                        self.prevent_ols = True
+                if (not self.prevent_ols):
+                    self.get_y = lambda x: x2 * x ** 2 + x1 * x + const
+                    print(f'OLS coefficients: {const:.1f}, {x1:.1f}, {x2:.1f}')
             except:
                 print('not enough data points for OLS model')
 
@@ -125,12 +137,14 @@ if __name__ == '__main__':
         void_t = dss['column.t0'].loc[id_] * args.void_factor
         if (not args.onlybest):
             models['LAD'][id_] = LADModel(data[id_], void=void_t)
-        models['LAD+OLS'][id_] = LADModel(data[id_], void=void_t, ols_after=True)
+        models['LAD+OLS'][id_] = LADModel(data[id_], void=void_t, ols_after=True,
+                                          ols_discard_if_negative=args.no_negative_ols)
         if args.extrap is not None:
             extrap = f'extrap{args.extrap}'
             data_void = data[id_].loc[data[id_].rt > void_t]
             roi_cutoff[extrap][id_] = data_void.roi.sort_values().iloc[int(len(data_void) * (args.extrap / 100))]
-            models[extrap][id_] = LADModel(data[id_].loc[data[id_].roi < roi_cutoff[extrap][id_]], void=void_t, ols_after=True)
+            models[extrap][id_] = LADModel(data[id_].loc[data[id_].roi < roi_cutoff[extrap][id_]], void=void_t,
+                                           ols_after=True, ols_discard_if_negative=args.no_negative_ols)
     ds_list = list(data)
     # optionally various other information
     accs = defaultdict(lambda: None)
@@ -168,9 +182,10 @@ if __name__ == '__main__':
             y = models[type_][ds].get_y(x)
             data_rel = data[ds].loc[data[ds].rt >= dss['column.t0'].loc[ds] * args.void_factor]
             error = (models[type_][ds].get_y(data_rel.roi) - data_rel.rt).abs()
-            errors.append({'model_type': type_, 'ds': ds, 'MAE': error.mean(), 'MedAE': error.median()})
+            description = type_ if not models[type_][ds].prevent_ols else f'{type_.replace("+OLS", "")} (OLS noninc)'
+            errors.append({'model_type': description, 'ds': ds, 'MAE': error.mean(), 'MedAE': error.median()})
             ax.plot(x, y, color=c,
-                    label=f'{type_}' + (f'(MAE={error.mean():.2f}, MedAE={error.median():.2f})'
+                    label=f'{description}' + (f'(MAE={error.mean():.2f}, MedAE={error.median():.2f})'
                                         if args.errorlabels else ''))
             if (args.showolsfit and not 'extrap' in type_ and hasattr(models[type_][ds], 'ols_points')):
                 ax.scatter(models[type_][ds].ols_points[0], models[type_][ds].ols_points[1],
