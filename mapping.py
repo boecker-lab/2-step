@@ -20,17 +20,20 @@ OLS can also fail with too few data points
 'OLS_FAILED'
 """
 
+from typing import Literal
 import numpy as np
 from pulp import LpMinimize, LpProblem, LpVariable, lpSum, getSolver
 from logging import warning
 
 class LADModel:
     def __init__(self, data, void=0, ols_after=False, ols_discard_if_negative=False,
-                 bases=['1', 'x', 'x**2'], verbose=True):
+                 ols_drop_mode:Literal['50%', '2*median']='2*median', bases=['1', 'x', 'x**2'],
+                 verbose=True):
         self.data_input = data
         self.void = void
         self.ols_after = ols_after
         self.ols_discard_if_negative = ols_discard_if_negative
+        self.ols_drop_mode = ols_drop_mode
         self.data = data.copy() if void == 0 else data.loc[data.rt > void]
         self.bases = bases
         self.verbose = verbose
@@ -44,11 +47,16 @@ class LADModel:
         self.no_ols = not self.ols_after
         self.no_ols_why = None
         if (self.ols_after):
-            # only use data values of 50 % best predictions
             ols_data = self.data.copy()
             ols_data['rt_pred'] = self.get_mapping(ols_data.roi)
             ols_data['MAE'] = (ols_data['rt_pred'] - ols_data.rt).abs()
-            ols_data = ols_data.sort_values('MAE').iloc[:(len(ols_data) // 2)]
+            pre_drop_len = len(ols_data)
+            if (self.ols_drop_mode == '50%'):
+                ols_data = ols_data.sort_values('MAE').iloc[:(len(ols_data) // 2)]
+            elif (self.ols_drop_mode == '2*median'):
+                median_error = ols_data.MAE.median()
+                ols_data = ols_data.loc[ols_data.MAE <= 2 * median_error]
+            print(f'dropped {pre_drop_len - len(ols_data)} data points for OLS [{self.ols_drop_mode}]')
             self.ols_data = ols_data
             self.ols_coefficients = self._get_ols_refined_coefficients(ols_data)
             if self.ols_coefficients is not None:

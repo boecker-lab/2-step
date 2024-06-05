@@ -67,9 +67,11 @@ if __name__ == '__main__':
     parser.add_argument('--repo_root', default='/home/fleming/Documents/Projects/RtPredTrainingData_mostcurrent/')
     parser.add_argument('--void_factor', default=2, type=float)
     parser.add_argument('--extrap', default=None, type=int)
+    parser.add_argument('--anchors', default=None, type=int)
     parser.add_argument('--onlybest', action='store_true')
     parser.add_argument('--showolsfit', action='store_true')
     parser.add_argument('--no_negative_ols', action='store_true')
+    parser.add_argument('--ols_drop_mode', choices=['50%', '2*median'], default='50%')
     parser.add_argument('--no_sort_flags', action='store_true')
     parser.add_argument('--extra_bases', action='store_true')
     parser.add_argument('--extra_bases_nr_thr', default=-1, type=int)
@@ -94,18 +96,30 @@ if __name__ == '__main__':
         if (not args.onlybest):
             models['LAD'][id_] = LADModel(data[id_], void=void_t, ols_after=False)
         models['LAD+OLS'][id_] = LADModel(data[id_], void=void_t, ols_after=True,
-                                          ols_discard_if_negative=args.no_negative_ols)
+                                          ols_discard_if_negative=args.no_negative_ols,
+                                          ols_drop_mode=args.ols_drop_mode)
         if args.extrap is not None:
             extrap = f'extrap{args.extrap}'
             data_void = data[id_].loc[data[id_].rt > void_t]
             roi_cutoff[extrap][id_] = data_void.roi.sort_values().iloc[int(len(data_void) * (args.extrap / 100))]
             models[extrap][id_] = LADModel(data[id_].loc[data[id_].roi < roi_cutoff[extrap][id_]], void=void_t,
-                                           ols_after=True, ols_discard_if_negative=args.no_negative_ols)
+                                           ols_after=True, ols_discard_if_negative=args.no_negative_ols,
+                                           ols_drop_mode=args.ols_drop_mode)
+        if args.anchors is not None:
+            anchors = f'anchors{args.anchors}'
+            data_void = data[id_].loc[data[id_].rt > void_t]
+            data_anchors = data_void.sample(args.anchors)
+            models[anchors][id_] = LADModel(data_anchors, void=void_t,
+                                           ols_after=True, ols_discard_if_negative=args.no_negative_ols,
+                                           ols_drop_mode=args.ols_drop_mode)
+            models[anchors][id_].anchor_points = data_anchors
+            models[anchors][id_].anchor_points['rt_pred'] = models[anchors][id_].get_mapping(data_anchors.roi)
         if args.extra_bases and (args.extra_bases_nr_thr == -1 or
                                  len(data[id_].loc[data[id_].rt > void_t]) >= args.extra_bases_nr_thr):
                 models['LAD+OLS (extra)'][id_] = LADModel(data[id_], void=void_t, ols_after=True,
                                                           ols_discard_if_negative=args.no_negative_ols,
-                                                          bases=normal_bases + ['sqrt(x)', 'x*sqrt(x)'])
+                                                          bases=normal_bases + ['sqrt(x)', 'x*sqrt(x)'],
+                                                          ols_drop_mode=args.ols_drop_mode)
     ds_list = list(data)
     # optionally various other information
     accs = defaultdict(lambda: None)
@@ -160,6 +174,9 @@ if __name__ == '__main__':
             if (args.showolsfit and not 'extrap' in type_ and hasattr(model, 'ols_points')):
                 ax.scatter(model.ols_points.roi, model.ols_points.rt_pred,
                            label='OLS fit points', c=c, s=5)
+            if (hasattr(model, 'anchor_points')):
+                ax.scatter(model.anchor_points.roi, model.anchor_points.rt_pred,
+                           label='anchor points', c=c, s=5)
         ax.set_title(titles[ds])
         ax.set_xlabel('ROI')
         ax.set_ylabel('rt (min)')
