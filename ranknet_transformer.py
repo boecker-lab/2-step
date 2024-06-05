@@ -262,7 +262,7 @@ class RankformerEncoderPart(nn.Module):
         return encoding
 
 class RankformerSeparate(nn.Module):
-    def __init__(self, rankformer_encoder_part, sigmoid=True):
+    def __init__(self, rankformer_encoder_part, sigmoid=True, hidden=[]):
         super(RankformerSeparate, self).__init__()
         self.rankformer_part = rankformer_encoder_part
         self.add_sys_features = rankformer_encoder_part.embedding.gnn_add_sys_features

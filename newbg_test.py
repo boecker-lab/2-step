@@ -15,7 +15,6 @@ def ex_data():
                 metadata_void_rt=True,
                 custom_features=['MolLogP'],
                 use_hsm=True,
-                custom_column_fields='column.flowrate column.length column.id'.split(),
                 graph_mode=True)
     for did in ['0068', '0138']:
         data.add_dataset_id(did, isomeric=True)
