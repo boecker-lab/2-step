@@ -347,37 +347,15 @@ if __name__ == '__main__':
             ds, void_guess = line.strip().split('\t')
             void_guesses[ds] = float(void_guess)
     # TRAINING
-    if (len(args.input) == 1 and os.path.exists(input_ := args.input[0])):
-        # TODO: probably broken, fix!
-        if (input_.endswith('.csv') or input_.endswith('.tsv')):
-            print('input from CSV/TSV file')
-            # csv file
-            data = Data.from_raw_file(input_, void_rt=args.void_rt,
-                                      remove_void_compounds=args.remove_void_compounds,
-                                      void_factor=args.void_factor,
-                                      graph_mode=graphs, smiles_for_graphs=args.smiles_for_graphs,
-                                      use_compound_classes=args.comp_classes, use_system_information=args.sysinfo,
-                                      metadata_void_rt=(not args.no_metadata_void_rt),
-                                      classes_l_thr=args.classes_l_thr, classes_u_thr=args.classes_u_thr,
-                                      repo_root_folder=args.repo_root_folder,
-                                      use_usp_codes=args.usp_codes, custom_features=args.features,
-                                      use_hsm=args.columns_use_hsm, use_tanaka=args.columns_use_tanaka,
-                                      # TODO: use_newonehot
-                                      custom_column_fields=args.custom_column_fields,
-                                      hsm_fields=args.hsm_fields, tanaka_fields=args.tanaka_fields,
-                                      fallback_column=args.fallback_column,
-                                      fallback_metadata=args.fallback_metadata)
-        elif (input_.endswith('.tf')):
+    if (len(args.input) == 1 and os.path.exists(input_ := args.input[0]) and re.match(r'.*\.(tf|pt)$', input_)):
+        if (input_.endswith('.tf')):
             print('input is trained Tensorflow model')
             ranker, data, config = load_model(input_, 'keras')
         elif (input_.endswith('.pt')):
             print('input is trained PyTorch model')
             ranker, data, config = load_model(input_, 'mpn')
-        else:
-            raise Exception(f'input {args.input} not supported')
-    elif (all(re.match(r'\d{4}', i) for i in args.input)):
-        print('input from repository dataset IDs')
-        # dataset IDs (recommended)
+    else:
+        print('input from RepoRT dataset IDs and/or external datasets')
         data = Data(use_compound_classes=args.comp_classes, use_system_information=args.sysinfo,
                     metadata_void_rt=(not args.no_metadata_void_rt),
                     remove_void_compounds=args.remove_void_compounds,
@@ -396,23 +374,22 @@ if __name__ == '__main__':
                     fallback_column=args.fallback_column,
                     fallback_metadata=args.fallback_metadata,
                     encoder=args.mpn_encoder)
-        for did in args.input:
-            data.add_dataset_id(did,
-                                repo_root_folder=args.repo_root_folder,
-                                void_rt=void_guesses.get(did, args.void_rt),
-                                isomeric=(not args.no_isomeric))
-        for did in args.validation_datasets:
-            data.add_dataset_id(did,
-                                repo_root_folder=args.repo_root_folder,
-                                void_rt=void_guesses.get(did, args.void_rt),
-                                isomeric=(not args.no_isomeric),
-                                split_type='val')
-        for did in args.test_datasets:
-            data.add_dataset_id(did,
-                                repo_root_folder=args.repo_root_folder,
-                                void_rt=void_guesses.get(did, args.void_rt),
-                                isomeric=(not args.no_isomeric),
-                                split_type='test')
+        for did, split_type in (list(zip(args.input, ['train'] * len(args.input)))
+                                + list(zip(args.validation_datasets, ['val'] * len(args.validation_datasets)))
+                                + list(zip(args.test_datasets, ['test'] * len(args.test_datasets)))):
+            if re.match(r'\d{4}', did):
+                # RepoRT dataset
+                data.add_dataset_id(did,
+                                    repo_root_folder=args.repo_root_folder,
+                                    void_rt=void_guesses.get(did, args.void_rt),
+                                    isomeric=(not args.no_isomeric),
+                                    split_type=split_type)
+            elif os.path.exists(did):
+                # external dataset
+                data.add_external_data(did, metadata_void_rt=(not args.no_metadata_void_rt), void_rt=void_guesses.get(did, args.void_rt),
+                                       isomeric=(not args.no_isomeric), split_type=split_type)
+            else:
+                raise Exception(f'input {did} not supported')
         if (args.remove_test_compounds is not None and len(args.remove_test_compounds) > 0):
             d_temp = Data()
             for t in args.remove_test_compounds:
@@ -450,8 +427,6 @@ if __name__ == '__main__':
             info('added data for datasets:\n' +
                  '\n'.join([f'  - {did} ({name})' for did, name in
                             set(data.df[['dataset_id', 'column.name']].itertuples(index=False))]))
-    else:
-        raise Exception(f'input {args.input} not supported')
     ((train_graphs, train_x, train_sys, train_y),
      (val_graphs, val_x, val_sys, val_y),
      (test_graphs, test_x, test_sys, test_y)) = preprocess(data, args)

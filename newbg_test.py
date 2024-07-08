@@ -335,3 +335,28 @@ def test_standardization():
                           can_create_new_scaler=False)
     print(data_test.train_x[0])
     print(data_test.train_sys[0])
+
+def test_external_data():
+    data_report = Data(use_hsm=True,
+                       use_ph=True, custom_column_fields=[])
+    for did in ['0068', '0138']:
+        data_report.add_dataset_id(did, isomeric=True)
+
+    data_external = Data(use_hsm=True,
+                         use_ph=True, custom_column_fields=[])
+    for did in ['0068', '0138']:
+        data_external.add_external_data(f'/home/fleming/Documents/Projects/RtPredTrainingData_mostcurrent/one_file/{did}.tsv')
+
+    data_mixed = Data(use_hsm=True,
+                         use_ph=True, custom_column_fields=[])
+    data_mixed.add_dataset_id('0068', isomeric=True)
+    data_mixed.add_external_data('/home/fleming/Documents/Projects/RtPredTrainingData_mostcurrent/one_file/0138.tsv')
+
+    for data in [data_report, data_external, data_mixed]:
+        data = data_report
+        data.compute_features(mode=None)
+        data.compute_graphs()
+        data.split_data((0, 0))
+        data.standardize()
+        x = data.get_x()
+        y = data.get_y()

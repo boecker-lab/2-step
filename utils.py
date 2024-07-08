@@ -566,10 +566,65 @@ class Data:
             self.df = pd.concat([self.df, df], ignore_index=True)
 
 
+    def add_external_data(self, data_path,
+                          metadata_void_rt=True, void_rt=0.0, isomeric=True, split_type='train', tab_mode=True):
+        global REL_ONEHOT_COLUMNS
+        df = pd.read_csv(data_path, sep='\t' if tab_mode else ',')
+        df['smiles'] = df['smiles.std']
+        if not isomeric:
+            # drop isomeric information from smiles
+            # from rdkit import Chem
+            # df['smiles_noiso'] = [Chem.MolToSmiles(Chem.MolFromSmiles(s), isomericSmiles=False) for s in df['smiles.std']]
+            # NOTE: the above alters the SMILES
+            raise NotImplementedError('no isomeric', 'add_external_data')
+        # get dataset ID(s) and void time(s)
+        if ('dataset_id' not in df.columns):
+            # add dummy dataset_id
+            df['dataset_id'] = os.path.basename(data_path)
+        if (not metadata_void_rt or 'column.t0' not in df.columns):
+            df['column.t0'] = void_rt
+        if self.use_system_information or self.metadata_void_rt:
+            # NOTE: only set when only one constant pH value is found for all parts of the gradient
+            df['ph'] = [ph_desc[0] if len(
+                ph_desc:=(list(set([x for x in r[['eluent.A.pH', 'eluent.B.pH', 'eluent.C.pH', 'eluent.D.pH']] if not np.isnan(x) and x != 0]))))
+                                        == 1 else np.nan for i, r in df.iterrows()]
+            for component in self.mobile_phase_components:
+                df[f'has_{component}'] = float((df[
+                    [c for c in df.columns if c in [f'eluent.{part}.{component}' for part in 'ABCD']]].sum() > 0).any())
+            # gradient
+            if (self.use_gradient):
+                raise NotImplementedError('use_gradient', 'add_external_data')
+        # rows without RT data are useless
+        df = df[~pd.isna(df.rt)]
+        # so are compounds (smiles) with multiple rts
+        # unless they're the same or (TODO:) handled in a smart manner
+        old_len0 = len(df)
+        df = df.drop_duplicates(['smiles', 'rt'])
+        old_len1 = len(df)
+        if (self.remove_doublets):
+            df = df.drop_duplicates('smiles', keep=False)
+            print(f'{os.path.basename(data_path)}: removing doublets and duplicates, {old_len0}→{old_len1}→{len(df)}')
+        else:
+            print(f'{os.path.basename(data_path)}: removing duplicates, {old_len0}→{old_len1}')
+        if (self.metadata_void_rt and 'column.t0' in df.columns):
+            metadata_void_rt_guess = df['column.t0'].iloc[0] * self.void_factor
+            void_rt = metadata_void_rt_guess if metadata_void_rt_guess > 0 else void_rt
+        self.void_info[df.dataset_id.iloc[0]] = void_rt
+        if (self.remove_void_compounds):
+            df = df.loc[df.rt >= void_rt]
+        # flag dataset as train/val/test
+        df['split_type'] = split_type
+        if (self.df is None):
+            self.df = df
+        else:
+            self.df = pd.concat([self.df, df], ignore_index=True)
+
+
     @staticmethod
     def from_raw_file(f, void_rt=0.0, graph_mode=False,
                       metadata_void_rt=False, remove_void_compounds=False,
                       **extra_data_args):
+        raise DeprecationWarning()
         # TODO: has not been used in a loong time, make sure everything from `add_dataset_id` is here, too
         # TODO: void compounds removal is not implemented here, for instance
         # get header

@@ -682,12 +682,13 @@ if __name__ == '__main__':
         confl_pairs = None
     for ds in args.test_sets:
         info(f'loading data for {ds}')
+        d = Data(**data_args)
         if (not re.match(r'\d{4}', ds)):
             # raw file
-            d = Data.from_raw_file(ds, void_rt=args.void_rt, **data_args)
-            d.custom_features = data.descriptors
+            d.add_external_data(ds, void_rt=args.void_rt,
+                                       isomeric=(not args.no_isomeric),
+                                       split_type='evaluate')
         else:
-            d = Data(**data_args)
             d.add_dataset_id(ds,
                              repo_root_folder=args.repo_root_folder,
                              void_rt=args.void_rt,
