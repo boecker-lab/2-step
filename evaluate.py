@@ -688,12 +688,19 @@ if __name__ == '__main__':
             d.add_external_data(ds, void_rt=args.void_rt,
                                        isomeric=(not args.no_isomeric),
                                        split_type='evaluate')
+            # for specific eval scenarios it can make sense to use external files for RepoRT datasets.
+            # in these cases, the RepoRT ID (if in the filename) can still be used for confl. stats
+            if (match:=(re.search(r'\b(\d{4})_', ds)) is not None):
+                ds_report_id = match.groups()[0]
+            else:
+                ds_report_id = None
         else:
             d.add_dataset_id(ds,
                              repo_root_folder=args.repo_root_folder,
                              void_rt=args.void_rt,
                              isomeric=(not args.no_isomeric),
                              split_type='evaluate')
+            ds_report_id = ds
         if (args.remove_train_compounds):
             info('removing train compounds')
             train_compounds_all = set(data.df[args.compound_identifier])
@@ -741,7 +748,7 @@ if __name__ == '__main__':
         Y = np.concatenate((train_y, test_y, val_y))
         if (args.confl_pairs is not None):
             rel_confl_pairs = {k for k, v in confl_pairs.items()
-                               if any(ds in x for x in v)
+                               if any(ds_report_id in x for x in v)
                                and all(s in d.df.smiles.tolist() for s in k)}
             rel_confl = {_ for x in rel_confl_pairs for _ in x}
             confl = [smiles in rel_confl for smiles in d.df.smiles]
@@ -800,7 +807,7 @@ if __name__ == '__main__':
                 system_features = args.overwrite_system_features
             else:
                 system_features = data.system_features
-            confl_stats_df = confl_eval(ds, preds=preds, test_data=d, train_data=data, confl_pairs=confl_pairs,
+            confl_stats_df = confl_eval(ds_report_id, preds=preds, test_data=d, train_data=data, confl_pairs=confl_pairs,
                                         epsilon=args.epsilon, setup_params=system_features, Y_debug=Y)
             if (len(system_features) > 0 and confl_stats_df is not None):
                 optional_stats['acc_confl_predictable_from_train'] = (confl_stats_df.loc[confl_stats_df.predictable_from_train, 'correct']).mean()
