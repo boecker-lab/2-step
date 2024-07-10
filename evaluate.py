@@ -690,7 +690,7 @@ if __name__ == '__main__':
                                        split_type='evaluate')
             # for specific eval scenarios it can make sense to use external files for RepoRT datasets.
             # in these cases, the RepoRT ID (if in the filename) can still be used for confl. stats
-            if (match:=(re.search(r'\b(\d{4})_', ds)) is not None):
+            if ((match:=re.search(r'\b(\d{4})_', ds)) is not None):
                 ds_report_id = match.groups()[0]
             else:
                 ds_report_id = None
