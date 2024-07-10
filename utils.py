@@ -580,7 +580,7 @@ class Data:
         # get dataset ID(s) and void time(s)
         if ('dataset_id' not in df.columns):
             # add dummy dataset_id
-            df['dataset_id'] = os.path.basename(data_path)
+            df['dataset_id'] = data_path
         if (not metadata_void_rt or 'column.t0' not in df.columns):
             df['column.t0'] = void_rt
         if self.use_system_information or self.metadata_void_rt:
@@ -603,9 +603,9 @@ class Data:
         old_len1 = len(df)
         if (self.remove_doublets):
             df = df.drop_duplicates('smiles', keep=False)
-            print(f'{os.path.basename(data_path)}: removing doublets and duplicates, {old_len0}→{old_len1}→{len(df)}')
+            print(f'{data_path}: removing doublets and duplicates, {old_len0}→{old_len1}→{len(df)}')
         else:
-            print(f'{os.path.basename(data_path)}: removing duplicates, {old_len0}→{old_len1}')
+            print(f'{data_path}: removing duplicates, {old_len0}→{old_len1}')
         if (self.metadata_void_rt and 'column.t0' in df.columns):
             metadata_void_rt_guess = df['column.t0'].iloc[0] * self.void_factor
             void_rt = metadata_void_rt_guess if metadata_void_rt_guess > 0 else void_rt
