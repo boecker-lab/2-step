@@ -294,6 +294,7 @@ class EvalArgs(Tap):
     confl_pairs: Optional[str] = None # pickle file with conflicting pairs (smiles)
     overwrite_system_features: List[str] = [] # use these system descriptors for confl pairs stats instead of those from the training data
     preds_from_exported_rois: List[str] = []
+    get_more_dataset_info: bool = False # attempt to get more info from RepoRT on the datasets for more detailed stats
 
     def process_args(self):
         # process epsilon unit
@@ -456,10 +457,16 @@ def get_pair_stats(df, ds_target, qualifiers, confl_pairs, void_info, epsilon=0.
         for smiles, rt in rows[['smiles.std', 'rt']].dropna().values:
             rts.setdefault(ds, {})[smiles] = rt
     setups = df.drop_duplicates(subset=['dataset_id']).groupby(qualifiers)['dataset_id'].agg(list)
+    setups_strict = df.drop_duplicates(subset=['dataset_id']).groupby([c for c in df.columns.tolist() if c.startswith('column.')]
+                                                                      + ['mobilephase', 'gradient', 'authors'], dropna=False)['dataset_id'].agg(list)
     setup_names = setups.index.tolist()
     setup_sets = list(setups)
     setup_dict = {k: set(v) for k, v in dict(setups).items()}
     setup_dict_rev = {}
+    setups_strict_lookup = {}
+    for cluster in list(setups_strict):
+        for ds in cluster:
+            setups_strict_lookup[ds] = {x for x in cluster if x != ds}
     for setup, sets in setup_dict.items():
         for ds in sets:
             setup_dict_rev[ds] = setup
@@ -492,7 +499,9 @@ def get_pair_stats(df, ds_target, qualifiers, confl_pairs, void_info, epsilon=0.
                                 has_characterstic_setups=False, num_characteristic_setups=0, has_unique_setups=False,
                                 num_unique_setups=0, has_contradicting_setups=False, num_contradicting_setups=0,
                                 target_ds_setup_in_train=target_ds_setup_in_train, target_ds_unique=False,
-                                target_ds_characteristic=False, target_ds_contradictory=False))
+                                target_ds_characteristic=False, target_ds_contradictory=False,
+                                target_ds_contradictory_strict=False,
+                                ))
             continue
         accountable_orders = [list(v)[0] for v in setup_orders.values() if len(v) == 1]
         mean_order = np.mean(accountable_orders) if len(accountable_orders) > 0 else None
@@ -513,9 +522,19 @@ def get_pair_stats(df, ds_target, qualifiers, confl_pairs, void_info, epsilon=0.
                 if len(rev_lookup[order]) == 1:
                     unique_setups[list(rev_lookup[order])[0]] = order
         contradictory_setups = {k for k, v in setup_orders.items() if len(v) > 1}
+        # check each dataset of each contrad. setup to see whether the pair is contrad. even for *exactly the same parameters*
+        contradictory_setups_strict_datasets = set()
+        for s in contradictory_setups:
+            sets = setup_dict[s]
+            for ds1, ds2 in combinations(sets, 2):
+                if ds2 in setups_strict_lookup[ds1]:
+                    if get_pair_order(s1, s2, ds1, rts, void_info[ds1], epsilon=epsilon) != get_pair_order(s1, s2, ds2, rts, void_info[ds2], epsilon=epsilon):
+                        contradictory_setups_strict_datasets.add(ds1)
+                        contradictory_setups_strict_datasets.add(ds2)
         target_ds_unique = target_ds_setup in unique_setups
         target_ds_characteristic = target_ds_setup in characteristic_setups
         target_ds_contradictory = target_ds_setup in contradictory_setups
+        target_ds_contradictory_strict = ds_target in contradictory_setups_strict_datasets
         records.append(dict(s1=s1, s2=s2, mean_order=mean_order, informative_here=True,
                             characteristic_setups=', '.join(f'{k}:{v}' for k, v in characteristic_setups.items()) if len(characteristic_setups) > 0 else None,
                             unique_setups=', '.join(f'{k}:{v}' for k, v in unique_setups.items()) if len(unique_setups) > 0 else None,
@@ -529,7 +548,8 @@ def get_pair_stats(df, ds_target, qualifiers, confl_pairs, void_info, epsilon=0.
                             target_ds_setup_in_train=target_ds_setup_in_train,
                             target_ds_unique=target_ds_unique,
                             target_ds_characteristic=target_ds_characteristic,
-                            target_ds_contradictory=target_ds_contradictory))
+                            target_ds_contradictory=target_ds_contradictory,
+                            target_ds_contradictory_strict=target_ds_contradictory_strict))
     df = pd.DataFrame.from_records(records)
     # print(len(set(map(str, no_setup))), 'datasets could not be mapped to setups')
     return df
@@ -549,7 +569,7 @@ def try_inject_setup_info(d, params):
 
 def confl_eval(ds, preds, test_data, train_data, confl_pairs,
                roi_thr=1e-5, epsilon=0.5, setup_params=['column.name', 'ph'],
-               Y_debug=None):
+               Y_debug=None, dataset_iall=None):
     assert len(test_data.df) == len(preds)
     smiles_lookup = {s: i for i, s in enumerate(test_data.df.smiles.tolist())}
     if Y_debug is not None:
@@ -568,6 +588,10 @@ def confl_eval(ds, preds, test_data, train_data, confl_pairs,
         [c for c in setup_params if c not in test_data.df.columns.tolist()]))
         try_inject_setup_info(test_data, setup_params)
     all_data_df = pd.concat([train_data.df, test_data.df]).drop_duplicates('id')
+    if (dataset_iall is not None):
+        # if we have more information on the datasets, add it
+        all_data_df = pd.merge(all_data_df, dataset_iall[['gradient', 'mobilephase', 'authors']],
+                               left_on='dataset_id', right_index=True, how='left')
     ds_target_id = test_data.df.dataset_id.unique().item()
     pair_stats_df = get_pair_stats(all_data_df, ds_target_id,
                                    qualifiers=setup_params, confl_pairs=confl_pairs,
@@ -613,6 +637,7 @@ if __name__ == '__main__':
     if '__file__' in globals():
         args = EvalArgs().parse_args()
     else:
+        args = EvalArgs().parse_args('--model external_test_eval_run --test_sets 0343 0344 /home/fleming/Documents/Uni/RTpred/evaluation/split_datasets/0054_test.tsv /home/fleming/Documents/Uni/RTpred/evaluation/split_datasets/0002_test.tsv /home/fleming/Documents/Uni/RTpred/evaluation/split_datasets/0003_test.tsv /home/fleming/Documents/Uni/RTpred/evaluation/split_datasets/0010_test.tsv /home/fleming/Documents/Uni/RTpred/evaluation/split_datasets/0018_test.tsv /home/fleming/Documents/Uni/RTpred/evaluation/split_datasets/0055_test.tsv /home/fleming/Documents/Uni/RTpred/evaluation/split_datasets/0019_test.tsv --epsilon 10s --test_stats --confl_pairs /home/fleming/Documents/Uni/RTpred/pairs6.pkl --export_rois --get_more_dataset_info'.split())
         args = EvalArgs().parse_args("--model runs/FE_sys/FE_columnph_disjoint_sys_no_fold1_ep10 --test_sets 0004 0017 0018 0048 0049 0052 0079 0080 0101 0158 0179 0180 0181 0182 0226 --epsilon 10s --test_stats --confl_pairs /home/fleming/Documents/Uni/RTpred/pairs6.pkl --overwrite_system_features 'H' 'S*' 'A' 'B' 'C (pH 2.8)' 'C (pH 7.0)' 'kPB' 'αCH2' 'αT/O' 'αC/P' 'αB/P' 'αB/P.1' 'ph' --repo_root_folder /home/fleming/Documents/Projects/RtPredTrainingData_mostcurrent/".split())
         args = EvalArgs().parse_args('--model runs/FE_sys/FE_setup_disjoint_sys_yes_cluster_yes_fold1_ep10 --test_sets 0002 0009 0038 0043 0049 0050 0052 0060 0062 0066 0082 0098 0100 0201 0202 0203 0204 0206 0236 0237 0264 0270 0271 0342 0343 0387 --epsilon 10s --test_stats --confl_pairs /home/fleming/Documents/Uni/RTpred/pairs6.pkl'.split())
         args = EvalArgs().parse_args('--model runs/nores/dmpnn_encpv_no_residual3_ep10 --test_sets 0003 0018 0055 0054 0019 0002 --epsilon 10s --test_stats --confl_pairs /home/fleming/Documents/Uni/RTpred/pairs6.pkl --repo_root_folder /home/fleming/Documents/Projects/RtPredTrainingData_mostcurrent/ --preds_from_exported_rois runs/dmpnn_encpv_no_residual3_ep10/dmpnn_encpv_no_residual3_ep10_0003_real.tsv runs/dmpnn_encpv_no_residual3_ep10/dmpnn_encpv_no_residual3_ep10_0018_real.tsv runs/dmpnn_encpv_no_residual3_ep10/dmpnn_encpv_no_residual3_ep10_0055_real.tsv runs/dmpnn_encpv_no_residual3_ep10/dmpnn_encpv_no_residual3_ep10_0054_real.tsv runs/dmpnn_encpv_no_residual3_ep10/dmpnn_encpv_no_residual3_ep10_0019_real.tsv runs/dmpnn_encpv_no_residual3_ep10/dmpnn_encpv_no_residual3_ep10_0002_real.tsv --overwrite_system_features'.split() + ['H', 'S*', 'A', 'B', 'C (pH 2.8)', 'C (pH 7.0)', 'kPB', 'αCH2', 'αT/O', 'αC/P', 'αB/P', 'αB/P.1', 'ph'])
@@ -686,6 +711,13 @@ if __name__ == '__main__':
         print(f'only keeping those that conflict for any dataset from train/test data, leaving: {len(confl_pairs)}')
     else:
         confl_pairs = None
+    if (args.get_more_dataset_info):
+        import sys
+        sys.path.append(args.repo_root_folder)
+        from pandas_dfs import get_dataset_df
+        dataset_iall = get_dataset_df()
+    else:
+        dataset_iall = None
     for ds in args.test_sets:
         info(f'loading data for {ds}')
         d = Data(**data_args)
@@ -814,7 +846,7 @@ if __name__ == '__main__':
             else:
                 system_features = data.system_features
             confl_stats_df = confl_eval(ds, preds=preds, test_data=d, train_data=data, confl_pairs=confl_pairs,
-                                        epsilon=args.epsilon, setup_params=system_features, Y_debug=Y)
+                                        epsilon=args.epsilon, setup_params=system_features, Y_debug=Y, dataset_iall=dataset_iall)
             if (len(system_features) > 0 and confl_stats_df is not None):
                 optional_stats['acc_confl_predictable_from_train'] = (confl_stats_df.loc[confl_stats_df.predictable_from_train, 'correct']).mean()
                 optional_stats['acc_confl_really_informative'] = (confl_stats_df.loc[confl_stats_df.informative_here, 'correct']).mean()

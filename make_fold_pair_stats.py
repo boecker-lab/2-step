@@ -17,6 +17,7 @@ if __name__ == '__main__':
     parser.add_argument('--epsilon', default=0.5, type=float)
     parser.add_argument('--qualifiers', default=['H', 'S*', 'A', 'B', 'C (pH 2.8)', 'C (pH 7.0)', 'kPB', 'αCH2', 'αT/O', 'αC/P', 'αB/P', 'αB/P.1', 'ph'],
                         nargs='+', type=str)
+    parser.add_argument('--contradictory_strict', action='store_true')
     args = parser.parse_args('--fold_file /home/fleming/Documents/Projects/rtranknet/setup_disjoint_fold_1_test.txt /home/fleming/Documents/Projects/rtranknet/setup_disjoint_fold_2_test.txt /home/fleming/Documents/Projects/rtranknet/setup_disjoint_fold_3_test.txt /home/fleming/Documents/Projects/rtranknet/setup_disjoint_fold_4_test.txt /home/fleming/Documents/Projects/rtranknet/setup_disjoint_fold_5_test.txt /home/fleming/Documents/Projects/rtranknet/setup_disjoint_fold_1_train.txt /home/fleming/Documents/Projects/rtranknet/setup_disjoint_fold_2_train.txt /home/fleming/Documents/Projects/rtranknet/setup_disjoint_fold_3_train.txt /home/fleming/Documents/Projects/rtranknet/setup_disjoint_fold_4_train.txt /home/fleming/Documents/Projects/rtranknet/setup_disjoint_fold_5_train.txt --scenario setup --epsilon 0.166666666667 --out_file /tmp/bla.tsv'.split())
     args = parser.parse_args()
 
@@ -75,7 +76,8 @@ if __name__ == '__main__':
                     records.append(r | dict(kind='uninformative_fold')) # 3 other black
                 else:
                     row = statsd[p]
-                    if row.target_ds_contradictory:
+                    if ((not args.contradictory_strict) and row.target_ds_contradictory) or (
+                            args.contradictory_strict and row.target_ds_contradictory_strict):
                         records.append(r | dict(kind='contradictory')) # 6 red
                     elif row.target_ds_characteristic or row.target_ds_unique:
                         records.append(r | dict(kind='characteristic')) # 5 orange
