@@ -465,6 +465,9 @@ def get_pair_stats(df, ds_target, qualifiers, confl_pairs, void_info, epsilon=0.
             setup_dict_rev[ds] = setup
     records = []
     no_setup = []
+    if ds_target not in setup_dict_rev:
+        # can't make statistics
+        return None
     for p in tqdm(confl_pairs, desc=f'[{ds_target}] iterating confl pairs'):
         sets = {ds for ds_pair in confl_pairs[p] for ds in ds_pair if ds in rel_datasets}
         target_ds_setup = setup_dict_rev[ds_target]
@@ -565,9 +568,12 @@ def confl_eval(ds, preds, test_data, train_data, confl_pairs,
         [c for c in setup_params if c not in test_data.df.columns.tolist()]))
         try_inject_setup_info(test_data, setup_params)
     all_data_df = pd.concat([train_data.df, test_data.df]).drop_duplicates('id')
-    pair_stats_df = get_pair_stats(all_data_df, ds,
+    ds_target_id = test_data.df.dataset_id.unique().item()
+    pair_stats_df = get_pair_stats(all_data_df, ds_target_id,
                                    qualifiers=setup_params, confl_pairs=confl_pairs,
                                    void_info=train_data.void_info | test_data.void_info, epsilon=epsilon)
+    if pair_stats_df is None:
+        return None
     pair_stats_dict = {frozenset(i): dict(r) for i, r in pair_stats_df.set_index(['s1', 's2']).iterrows()}
     records = []
     for c in rel_confl_pairs:
@@ -690,17 +696,17 @@ if __name__ == '__main__':
                                        split_type='evaluate')
             # for specific eval scenarios it can make sense to use external files for RepoRT datasets.
             # in these cases, the RepoRT ID (if in the filename) can still be used for confl. stats
-            if ((match:=re.search(r'\b(\d{4})_', ds)) is not None):
-                ds_report_id = match.groups()[0]
-            else:
-                ds_report_id = None
+            # if ((match:=re.search(r'\b(\d{4})_', ds)) is not None):
+            #     ds_report_id = match.groups()[0]
+            # else:
+            #     ds_report_id = None
         else:
             d.add_dataset_id(ds,
                              repo_root_folder=args.repo_root_folder,
                              void_rt=args.void_rt,
                              isomeric=(not args.no_isomeric),
                              split_type='evaluate')
-            ds_report_id = ds
+            # ds_report_id = ds
         if (args.remove_train_compounds):
             info('removing train compounds')
             train_compounds_all = set(data.df[args.compound_identifier])
@@ -748,7 +754,7 @@ if __name__ == '__main__':
         Y = np.concatenate((train_y, test_y, val_y))
         if (args.confl_pairs is not None):
             rel_confl_pairs = {k for k, v in confl_pairs.items()
-                               if any(ds_report_id in x for x in v)
+                               if any(ds in x for x in v)
                                and all(s in d.df.smiles.tolist() for s in k)}
             rel_confl = {_ for x in rel_confl_pairs for _ in x}
             confl = [smiles in rel_confl for smiles in d.df.smiles]
@@ -807,7 +813,7 @@ if __name__ == '__main__':
                 system_features = args.overwrite_system_features
             else:
                 system_features = data.system_features
-            confl_stats_df = confl_eval(ds_report_id, preds=preds, test_data=d, train_data=data, confl_pairs=confl_pairs,
+            confl_stats_df = confl_eval(ds, preds=preds, test_data=d, train_data=data, confl_pairs=confl_pairs,
                                         epsilon=args.epsilon, setup_params=system_features, Y_debug=Y)
             if (len(system_features) > 0 and confl_stats_df is not None):
                 optional_stats['acc_confl_predictable_from_train'] = (confl_stats_df.loc[confl_stats_df.predictable_from_train, 'correct']).mean()

@@ -569,7 +569,7 @@ class Data:
     def add_external_data(self, data_path,
                           metadata_void_rt=True, void_rt=0.0, isomeric=True, split_type='train', tab_mode=True):
         global REL_ONEHOT_COLUMNS
-        df = pd.read_csv(data_path, sep='\t' if tab_mode else ',')
+        df = pd.read_csv(data_path, sep='\t' if tab_mode else ',', dtype={'dataset_id': str})
         df['smiles'] = df['smiles.std']
         if not isomeric:
             # drop isomeric information from smiles
@@ -581,6 +581,9 @@ class Data:
         if ('dataset_id' not in df.columns):
             # add dummy dataset_id
             df['dataset_id'] = data_path
+        if ('id' not in df.columns):
+            # add dummy ID
+            df['id'] = [f'{r.dataset_id}_external{i}' for i, r in df.iterrows()]
         if (not metadata_void_rt or 'column.t0' not in df.columns):
             df['column.t0'] = void_rt
         if self.use_system_information or self.metadata_void_rt:
@@ -610,6 +613,7 @@ class Data:
             metadata_void_rt_guess = df['column.t0'].iloc[0] * self.void_factor
             void_rt = metadata_void_rt_guess if metadata_void_rt_guess > 0 else void_rt
         self.void_info[df.dataset_id.iloc[0]] = void_rt
+        self.void_info[data_path] = void_rt
         if (self.remove_void_compounds):
             df = df.loc[df.rt >= void_rt]
         # flag dataset as train/val/test
