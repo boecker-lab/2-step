@@ -176,6 +176,7 @@ if __name__ == '__main__':
             model = models[type_][ds]
             y = model.get_mapping(x)
             data_rel = data[ds].loc[data[ds].rt >= dss['column.t0'].loc[ds] * args.void_factor]
+            split_errors = {}
             if 'split' in data_rel.columns and (data_rel.split == 'test').sum() > 0:
                 # only use the test portion for the error
                 test_df = data_rel.loc[data_rel.split == 'test']
@@ -185,6 +186,7 @@ if __name__ == '__main__':
                 print(f'{ds} train error: MAE={error_train.mean():.2f}, MedAE={error_train.median():.2f})')
                 print(f'{ds} test error: MAE={error_test.mean():.2f}, MedAE={error_test.median():.2f})')
                 error = error_test
+                split_errors = dict(train=error_train, test=error_test)
             else:
                 error = (model.get_mapping(data_rel.roi) - data_rel.rt).abs()
             match model.no_ols_why:
@@ -194,7 +196,11 @@ if __name__ == '__main__':
                     description = f'{type_.replace("+OLS", "")} (OLS failed)'
                 case _:
                     description = type_
-            errors.append({'model_type': description, 'ds': ds, 'MAE': error.mean(), 'MedAE': error.median()})
+            errors_record = {'model_type': description, 'ds': ds, 'MAE': error.mean(), 'MedAE': error.median()}
+            for k, v in split_errors.items():
+                errors_record[f'MAE_{k}'] = v.mean()
+                errors_record[f'MedAE_{k}'] = v.median()
+            errors.append(errors_record)
             ax.plot(x, y, color=c,
                     label=f'{description}' + (f'(MAE={error.mean():.2f}, MedAE={error.median():.2f})'
                                         if args.errorlabels else ''))
