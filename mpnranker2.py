@@ -490,7 +490,7 @@ def train(ranker: MPNranker, bg: DataLoader, epochs=2,
         ranker.train()
 
 def custom_collate(batch):
-    return (
+    return (                    # x, y, weights, is_confl
                 (
                     (custom_collate.graph_batch([_[0][0][0] for _ in batch]),
                      torch.stack(list(map(default_convert, [_[0][0][1] for _ in batch])), 0),

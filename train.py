@@ -77,7 +77,7 @@ class TrainArgs(Tap):
     tanaka_fields: List[str] = ['kPB', 'αCH2', 'αT/O', 'αC/P', 'αB/P', 'αB/P.1']
     custom_column_fields: List[str] = []
     fallback_column: str = 'Waters ACQUITY UPLC BEH C18' # column data to use when needed and no data available; can also be 'average'
-    fallback_metadata: str = '0045' # repository metadata to use when needed and no data available; can also be 'average'
+    fallback_metadata: str = '0045' # repository metadata to use when needed and no data available; can also be 'average' or 'zeros'
     usp_codes: bool = False     # use column usp codes as onehot system features (only for `--sysinfo`)
     use_ph: bool = False        # use pH estimations of mobilephase if available
     use_gradient: bool = False  # use mobile phase solvent concentrations at specific gradient positions
