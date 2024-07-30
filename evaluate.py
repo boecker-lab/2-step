@@ -289,6 +289,7 @@ class EvalArgs(Tap):
     plot_diffs: bool = False    # plot for every dataset with outliers marked
     test_stats: bool = False    # overview stats for all datasets
     dataset_stats: bool = False # stats for each dataset
+    no_optional_stats: bool = False   # don't do optional stats for conflicting pairs
     diffs: bool = False         # compute outliers
     classyfire: bool = False    # compound class stats
     confl_pairs: Optional[str] = None # pickle file with conflicting pairs (smiles)
@@ -837,7 +838,7 @@ if __name__ == '__main__':
         print(ds, d.void_info[ds])
         acc = eval_(Y, preds, args.epsilon, void_rt=d.void_info[ds])
         optional_stats = {}
-        if (confl_pairs is not None):
+        if (confl_pairs is not None and not args.no_optional_stats):
             optional_stats['acc_confl'] = eval_(Y[confl], preds[confl], args.epsilon, void_rt=d.void_info[ds]) if any(confl) else np.nan
             optional_stats['acc_nonconfl'] = eval_(Y[~np.array(confl)], preds[~np.array(confl)], args.epsilon, void_rt=d.void_info[ds]) if any(confl) else acc
             optional_stats['num_confl'] = np.array(confl).sum()
