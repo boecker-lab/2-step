@@ -84,9 +84,9 @@ if __name__ == '__main__':
                                              for i, r in final_accs_subset_datasets.iterrows()]
     if (not args.ignore_missing_datasets):
         assert final_accs_subset_datasets.has_all_datasets.all(), f'[final_accs_over] datasets are missing for {(~(final_accs_subset_datasets.has_all_datasets)).sum()} runs'
-    if (not args.always_last_epoch):
-        final_accs_subset = final_accs_subset[final_accs_subset[['fold', 'epoch']].apply(
-            lambda x : best_epochs[x.fold] == x.epoch, axis=1)]
+    final_accs_subset = final_accs_subset[final_accs_subset[['fold', 'epoch']].apply(
+        lambda x : best_epochs[x.fold] == x.epoch, axis=1)]
+    print(final_accs_subset[['fold', 'epoch']].value_counts())
 
     fold_accs = final_accs_subset.groupby(['fold']).acc.agg(['mean', 'median']).sort_index()
     if (args.print_fold_accs):
