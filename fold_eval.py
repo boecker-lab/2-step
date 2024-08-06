@@ -12,6 +12,8 @@ if __name__ == '__main__':
     parser.add_argument('eval_jsons', help='*_eval.json files', nargs='+')
     parser.add_argument('--best_epoch_over', help='best epoch determined by test or train datasets',
                         choices=['train', 'test'], default='train')
+    parser.add_argument('--always_last_epoch', help='don\'t determine best epoch, just use the last',
+                        action='store_true')
     parser.add_argument('--final_accs_over', help='final stats determined by test or train datasets',
                         choices=['train', 'test'], default='test')
     parser.add_argument('--splits_dir', help='directory containing dataset-split files',
@@ -60,16 +62,20 @@ if __name__ == '__main__':
     scenario = accs.scenario.unique().item()
 
     # 1. Get best epoch per fold on `best_epoch_over` datasets
-    best_epoch_subset = accs.loc[accs.ds_split == args.best_epoch_over].copy().reset_index()
-    best_epoch_datasets = best_epoch_subset.groupby(['fold', 'epoch']).ds.agg(list).reset_index()
-    best_epoch_datasets['has_all_datasets'] = [set(r.ds) == set(k for k, v in splits[(scenario, r.fold)].items() if v == args.best_epoch_over)
-                                               for i, r in best_epoch_datasets.iterrows()]
-    if (not args.ignore_missing_datasets):
-        assert best_epoch_datasets.has_all_datasets.all(), f'[best_epoch_over] datasets are missing for {(~(best_epoch_datasets.has_all_datasets)).sum()} runs'
+    if (not args.always_last_epoch):
+        best_epoch_subset = accs.loc[accs.ds_split == args.best_epoch_over].copy().reset_index()
+        best_epoch_datasets = best_epoch_subset.groupby(['fold', 'epoch']).ds.agg(list).reset_index()
+        best_epoch_datasets['has_all_datasets'] = [set(r.ds) == set(k for k, v in splits[(scenario, r.fold)].items() if v == args.best_epoch_over)
+                                                   for i, r in best_epoch_datasets.iterrows()]
+        if (not args.ignore_missing_datasets):
+            assert best_epoch_datasets.has_all_datasets.all(), f'[best_epoch_over] datasets are missing for {(~(best_epoch_datasets.has_all_datasets)).sum()} runs'
 
-    best_epoch_subset['mean_epoch_acc'] = best_epoch_subset.groupby(['fold', 'epoch']).acc.transform('mean')
-    best_epoch_subset['median_epoch_acc'] = best_epoch_subset.groupby(['fold', 'epoch']).acc.transform('median')
-    best_epochs = dict(best_epoch_subset.loc[best_epoch_subset.groupby(['fold'])['mean_epoch_acc'].idxmax(), ['fold', 'epoch']].values)
+        best_epoch_subset['mean_epoch_acc'] = best_epoch_subset.groupby(['fold', 'epoch']).acc.transform('mean')
+        best_epoch_subset['median_epoch_acc'] = best_epoch_subset.groupby(['fold', 'epoch']).acc.transform('median')
+        best_epochs = dict(best_epoch_subset.loc[best_epoch_subset.groupby(['fold'])['mean_epoch_acc'].idxmax(), ['fold', 'epoch']].values)
+    else:
+        best_epochs = {fold: sorted(accs.epoch.unique())[-1] for fold in accs.fold.unique()}
+    print(best_epochs)
 
     # 2. With this get metrics over on `final_accs_over` datasets
     final_accs_subset = accs.loc[accs.ds_split == args.final_accs_over].copy().reset_index()
@@ -78,8 +84,10 @@ if __name__ == '__main__':
                                              for i, r in final_accs_subset_datasets.iterrows()]
     if (not args.ignore_missing_datasets):
         assert final_accs_subset_datasets.has_all_datasets.all(), f'[final_accs_over] datasets are missing for {(~(final_accs_subset_datasets.has_all_datasets)).sum()} runs'
-    final_accs_subset = final_accs_subset[final_accs_subset[['fold', 'epoch']].apply(
-        lambda x : best_epochs[x[0]] == x[1], axis=1)]
+    if (not args.always_last_epoch):
+        final_accs_subset = final_accs_subset[final_accs_subset[['fold', 'epoch']].apply(
+            lambda x : best_epochs[x.fold] == x.epoch, axis=1)]
+
     fold_accs = final_accs_subset.groupby(['fold']).acc.agg(['mean', 'median']).sort_index()
     if (args.print_fold_accs):
         print(fold_accs)
