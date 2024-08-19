@@ -172,7 +172,7 @@ if __name__ == '__main__':
         # data[ds]['density'] = gaussian_kde(np.vstack([data[ds].rt, data[ds].roi]))(
         #     np.vstack([data[ds].rt, data[ds].roi]))
         # sns.scatterplot(data=data[ds], x='roi', y='rt', hue='density', s=2, ax=ax)
-        ax.scatter(data[ds].roi, data[ds].rt, s=2)
+        ax.scatter(data[ds].roi, data[ds].rt, c='grey', s=5)
         for type_ in models:
             if ds not in models[type_]:
                 continue        # some models are only made for certain datasets
@@ -205,20 +205,20 @@ if __name__ == '__main__':
                 errors_record[f'MAE_{k}'] = v.mean()
                 errors_record[f'MedAE_{k}'] = v.median()
             errors.append(errors_record)
-            ax.plot(x, y, color=c,
+            ax.plot(x, y, color=c, linewidth=2.5,
                     label=f'{description}' + (f'(MAE={error.mean():.2f}, MedAE={error.median():.2f})'
                                         if args.errorlabels else ''))
             if (args.showolsfit and not 'extrap' in type_ and hasattr(model, 'ols_points')):
                 ax.scatter(model.ols_points.roi, model.ols_points.rt_pred,
-                           label='OLS fit points', c=c, s=5)
+                           label='OLS fit points', c=c)
             if (hasattr(model, 'anchor_points')):
                 ax.scatter(model.anchor_points.roi, model.anchor_points.rt_pred,
-                           label='anchor points', c=c, s=5)
+                           label='Anchors', c='black', s=10)
         ax.set_title(titles[ds])
-        ax.set_xlabel('ROI')
-        ax.set_ylabel('rt (min)')
+        ax.set_xlabel('Retention Order Index')
+        ax.set_ylabel('Retention time (min)')
         # ax.axhline(dss['column.t0'].loc[ds], linestyle='dotted', color='red')
-        ax.axhline(dss['column.t0'].loc[ds] * args.void_factor, linestyle='dotted', color='red', label='void cutoff')
+        ax.axhline(dss['column.t0'].loc[ds] * args.void_factor, linestyle='dotted', color='red', label='Void volume threshold', linewidth=2.)
         # ax.axhline(dss['column.t0'].loc[ds] * 3, linestyle='dotted', color='green')
         ax.legend()
     plt.tight_layout()
