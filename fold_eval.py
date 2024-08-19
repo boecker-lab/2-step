@@ -24,6 +24,8 @@ if __name__ == '__main__':
                         action='store_true')
     parser.add_argument('--print_fold_accs', help='prints stats for individual folds',
                         action='store_true')
+    parser.add_argument('--print_all_datasets', help='prints stats for all datasets',
+                        action='store_true')
 
     # args = parser.parse_args('--best_epoch_over train --final_accs_over test '.split()
     #                          + list(glob('/home/fleming/Documents/Projects/rtranknet/runs/FE_sys/FE_columnph_disjoint_sys_no_fold*_ep*_eval.json')))
@@ -87,8 +89,10 @@ if __name__ == '__main__':
     final_accs_subset = final_accs_subset[final_accs_subset[['fold', 'epoch']].apply(
         lambda x : best_epochs[x.fold] == x.epoch, axis=1)]
     print(final_accs_subset[['fold', 'epoch']].value_counts())
+    if (args.print_all_datasets):
+        print(final_accs_subset.sort_values(['fold', 'ds']))
 
-    fold_accs = final_accs_subset.groupby(['fold']).acc.agg(['mean', 'median']).sort_index()
+    fold_accs = final_accs_subset.groupby(['fold']).acc.agg(['mean', 'median', 'std']).sort_index()
     if (args.print_fold_accs):
         print(fold_accs)
     final_accs = fold_accs.agg(['mean', 'median', 'std'])
