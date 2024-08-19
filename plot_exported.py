@@ -29,7 +29,7 @@ BENCHMARK_MAE = {'0003': 0.44,
                  '0019': 0.94,
                  '0002': 2.15}
 
-def make_title(ds, acc=None, lcs_dist=None, flags=None, display_ref_mae=True):
+def make_title(ds, acc=None, lcs_dist=None, flags=None, display_ref_mae=False):
     title = ds
     if ds in BENCHMARK_DATASETS:
         title += f' "{BENCHMARK_DATASETS[ds]}"'
@@ -50,7 +50,7 @@ def make_title(ds, acc=None, lcs_dist=None, flags=None, display_ref_mae=True):
 
 def sort_flags(flags):
     if not any(f in SYMBOLS.values() for f in flags):
-        return np.infty
+        return np.inf
     # return most important symbol (min) in flags
     flag_order = {SYMBOLS[k]: i for i, k in enumerate([
         'benchmark_dataset', 'column_disjoint', 'setup_disjoint', 'structure_disjoint', 'our_dataset'])}
@@ -69,6 +69,7 @@ if __name__ == '__main__':
     parser.add_argument('--void_factor', default=2, type=float)
     parser.add_argument('--extrap', default=None, type=int)
     parser.add_argument('--anchors', default=None, type=int)
+    parser.add_argument('--anchors_only', action='store_true')
     parser.add_argument('--onlybest', action='store_true')
     parser.add_argument('--showolsfit', action='store_true')
     parser.add_argument('--no_negative_ols', action='store_true')
@@ -89,7 +90,7 @@ if __name__ == '__main__':
     # load data + make LAD models
     input_data = {}
     for f in args.tsvs:
-        ds_id, split = re.match(r'.*_(\d{4})(_test|_train)?.tsv', f.split('/')[-1]).groups()
+        ds_id, fold, split = re.match(r'.*_(\d{4})(_fold\d+)?(_test|_train)?.tsv', f.split('/')[-1]).groups()
         # TODO: won't work with non-RepoRT datasets
         df = pd.read_csv(f, sep='\t', names=['smiles', 'rt', 'roi'], header=None)
         if split is not None:
@@ -100,6 +101,8 @@ if __name__ == '__main__':
                 input_data[ds_id] = combined
             else:
                 input_data[ds_id] = df
+        else:
+            input_data[ds_id] = df
     for id_, df in input_data.items():
         print(f'{id_}: ROI->RT modeling')
         df['roi2'] = df.roi ** 2 # for LAD model
@@ -110,11 +113,12 @@ if __name__ == '__main__':
             print(f'{id_}: building LAD models on the train portion (max #compounds {len(df)}, full dataset {len(data[id_])})')
         # models['all_points'][ds] = LADModel(data[ds])
         void_t = dss['column.t0'].loc[id_] * args.void_factor
-        if (not args.onlybest):
-            models['LAD'][id_] = LADModel(df, void=void_t, ols_after=False)
-        models['LAD+OLS'][id_] = LADModel(df, void=void_t, ols_after=True,
-                                          ols_discard_if_negative=args.no_negative_ols,
-                                          ols_drop_mode=args.ols_drop_mode)
+        if (not args.anchors_only):
+            if (not args.onlybest):
+                models['LAD'][id_] = LADModel(df, void=void_t, ols_after=False)
+            models['LAD+OLS'][id_] = LADModel(df, void=void_t, ols_after=True,
+                                              ols_discard_if_negative=args.no_negative_ols,
+                                              ols_drop_mode=args.ols_drop_mode)
         if args.extrap is not None:
             extrap = f'extrap{args.extrap}'
             data_void = df.loc[df.rt > void_t]
