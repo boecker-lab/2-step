@@ -224,6 +224,7 @@ if __name__ == '__main__':
     # ax.set_xlabel('Income', fontsize=16)
     # ax.set_ylabel('Food expenditure', fontsize=16);
     if (args.out is not None):
+        plt.rcParams['svg.fonttype'] = 'none'
         plt.savefig(args.out)
     errors_df = pd.DataFrame.from_records(errors).set_index(['ds', 'model_type'])
     print(errors_df)
