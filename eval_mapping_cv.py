@@ -2,8 +2,11 @@ from argparse import ArgumentParser
 import sys
 import pandas as pd
 from mapping import LADModel
-from sklearn.model_selection import KFold
+from sklearn.model_selection import KFold, ShuffleSplit
 import re
+
+def anchors_split(n_anchors=15):
+    return ShuffleSplit
 
 if __name__ == '__main__':
     parser = ArgumentParser()
@@ -28,9 +31,14 @@ if __name__ == '__main__':
         void_t = dss['column.t0'].loc[ds_id] * args.void_factor
         data_novoid = df.loc[df.rt > void_t]
         records_i = []
-        for i, (train_index, test_index) in enumerate(KFold(n_splits=args.folds, shuffle=True).split(data_novoid)):
+        if (args.anchors is not None):
+            split_fun = ShuffleSplit(n_splits=args.folds, train_size=args.anchors).split
+        else:
+            split_fun = KFold(n_splits=args.folds, shuffle=True).split
+        for i, (train_index, test_index) in enumerate(split_fun(data_novoid)):
             data_train = data_novoid.iloc[train_index]
             data_test = data_novoid.iloc[test_index]
+            print(f'{i=}, {len(data_train)=}, {i=}, {len(data_test)=}')
             model = LADModel(data_train, ols_after=True, ols_discard_if_negative=True, ols_drop_mode='2*median')
             error_test = (model.get_mapping(data_test.roi) - data_test.rt).abs()
             error_train = (model.get_mapping(data_train.roi) - data_train.rt).abs()
