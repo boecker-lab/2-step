@@ -36,7 +36,7 @@ class TrainArgs(Tap):
     test_split: float = 0                         # not needed when testing on exclusive test datasets afterwards
     val_split: float = 0.05
     device: Optional[str] = None  # either `mirrored` or specific device name like gpu:1 or None (auto)
-    remove_test_compounds: List[str] = [] # remove compounds occuring in the specified (test) datasets
+    remove_test_compounds: List[str] = [] # remove compounds occurring in the specified (test) datasets
     remove_test_compounds_mode: Literal['exact', '2d'] = '2d' # remove exact structures or those with same canonical SMILES
     remove_test_compounds_rarest: bool = False # only remove rarest 50% of test compounds
     exclude_compounds_list: Optional[str] = None # list of compounds to exclude from training
