@@ -13,6 +13,8 @@ from typing import List, Optional, Literal, Tuple, Union
 from tqdm import tqdm
 import pickle
 import io
+import bisect
+from collections import Counter
 
 import torch
 
@@ -113,10 +115,41 @@ def lcs(seq1, seq2):
                 LCS[i, j] = max(LCS[i-1, j], LCS[i, j-1])
     return LCS[m][n]
 
-def lcs_results(data):
-    _, order_true = zip(*sorted(zip(data.rt, data.smiles)))
-    _, order_pred = zip(*sorted(zip(data.roi, data.smiles)))
-    return lcs(order_true, order_pred)
+def lis_prepare(seq1, seq2):
+    # delete doublets
+    seq1_occs = Counter(seq1)
+    seq2_occs = Counter(seq2)
+    seq1_cleaned = [c for c in seq1 if seq1_occs[c] == 1]
+    seq2_cleaned = [c for c in seq2 if seq2_occs[c] == 1]
+    shared_compounds = set(seq1_cleaned) & set(seq2_cleaned)
+    seq1_shared = [c for c in seq1_cleaned if c in shared_compounds]
+    seq2_shared = [c for c in seq2_cleaned if c in shared_compounds]
+    mapping = {c: i for i, c in enumerate(seq1_shared)}
+    return [mapping[c] for c in seq2_shared]
+
+def lis_len(seq):                   # from https://algorithmist.com/wiki/Longest_increasing_subsequence, O(Nlogk)
+    # the smallest number that ends a chain of length i
+    best = []
+    for num in seq:
+        # find the smallest index where num is bigger than best[i]
+        i = bisect.bisect_left(best, num)
+        # if num is bigger than longest increasing subsequence
+        # so far, we create a new length
+        if i >= len(best):
+            best.append(num)
+        else:
+            # update because by definition, num is smaller best[i]
+            best[i] = num
+    return len(best)
+
+def lis(seq1, seq2):
+    return lis_len(lis_prepare(seq1, seq2))
+
+def lcs_results(df, mode='lis'):
+    order_true = df.sort_values('rt').smiles.tolist()
+    order_pred = df.sort_values('roi').smiles.tolist()
+    lcs_fun = {'lcs': lcs, 'lis':lis}[mode]
+    return lcs_fun(order_true, order_pred)
 
 def rt_roi_diffs(data, y, preds, k=3):
     """for all pairs x, y:
@@ -275,7 +308,7 @@ class EvalArgs(Tap):
     void_rt: float = 0.0
     no_metadata_void_rt: bool = False # don't use t0 value from repo metadata (times 2)
     remove_void_compounds: bool = False      # remove void compounds completely
-    include_void_compounds_lcs: bool = False # don't remove compounds eluting in void volume for LCS dist
+    include_void_compounds_mcd: bool = False # don't remove compounds eluting in void volume for minimum compound deletion
     void_factor: float = 2              # factor for 'column.t0' value to use as void threshold
     cache_file: str = 'cached_descs.pkl'
     export_rois: bool = False
@@ -296,6 +329,7 @@ class EvalArgs(Tap):
     overwrite_system_features: List[str] = [] # use these system descriptors for confl pairs stats instead of those from the training data
     preds_from_exported_rois: List[str] = []
     get_more_dataset_info: bool = False # attempt to get more info from RepoRT on the datasets for more detailed stats
+    mcd_method: Literal['lcs', 'lis'] = 'lis' # how to compute minimum compound deletion
 
     def process_args(self):
         # process epsilon unit
@@ -860,10 +894,12 @@ if __name__ == '__main__':
         d.df['roi'] = preds[np.arange(len(d.df.rt))[ # restore correct order
             np.argsort(np.concatenate([d.train_indices, d.test_indices, d.val_indices]))]]
         if (not args.include_void_compounds_lcs):
-            df_lcs = d.df.loc[d.df.rt > d.void_info[ds]]
+            df_mcd = d.df.loc[d.df.rt > d.void_info[ds]]
         else:
-            df_lcs = d.df
-        lcs_dist = len(df_lcs) - lcs_results(df_lcs)
+            df_mcd = d.df
+        mcd = len(df_mcd) - lcs_results(df_mcd, args.mcd_method)
+        mcd_ratio = mcd / (len(df_mcd) - 1) # subtract one because a single compound cannot be in conflict
+
         # acc2, results = eval2(d.df, args.epsilon)
         if (args.classyfire):
             info('computing classyfire stats')
@@ -878,11 +914,13 @@ if __name__ == '__main__':
         if (args.test_stats):
             info('computing test stats')
             stats = data_stats(d, data, data.custom_column_fields, compound_identifier=args.compound_identifier)
-            stats.update({'acc': acc, 'id': ds, 'lcs_dist': lcs_dist})
+            stats.update({'acc': acc, 'id': ds, 'mcd': mcd, 'mcd_ratio': mcd_ratio,
+                          'lcs_dist': mcd # legacy
+                          })
             stats.update(optional_stats)
             test_stats.append(stats)
         else:
-            print(f'{ds}: {acc:.3f}, LCS_dist {lcs_dist:.0f} \t (#data: {len(Y)})')
+            print(f'{ds}: {acc:.3f}, MCD {mcd:.0f}, MCD ratio {mcd_ratio:.3f} \t (#data: {len(Y)})')
         if (args.diffs):
             info('computing outlier stats')
             df = rt_roi_diffs(d, Y, preds)
