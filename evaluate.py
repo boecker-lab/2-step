@@ -893,7 +893,7 @@ if __name__ == '__main__':
                 # TODO: more stats?
         d.df['roi'] = preds[np.arange(len(d.df.rt))[ # restore correct order
             np.argsort(np.concatenate([d.train_indices, d.test_indices, d.val_indices]))]]
-        if (not args.include_void_compounds_lcs):
+        if (not args.include_void_compounds_mcd):
             df_mcd = d.df.loc[d.df.rt > d.void_info[ds]]
         else:
             df_mcd = d.df
