@@ -50,7 +50,7 @@ if __name__ == '__main__':
         scenario = f.split('/')[-1].split('_')[1]
         fold = int(re.search(r'.*_fold(\d+)_.*', f).group(1))
         df = pd.DataFrame.from_records([{'ds':k , 'acc': data[k]['acc'],
-                                         'raw_name': re.search('^.*/(.*)_eval.json$', f).group(1),
+                                         'raw_name': re.search('^.*/(.*)_eval(_[a-z]+)?.json$', f).group(1),
                                          'scenario': scenario,
                                          'fold': fold,
                                          'epoch': int(re.search(r'.*_ep(\d+)_.*', f).group(1)),
@@ -77,7 +77,6 @@ if __name__ == '__main__':
         best_epochs = dict(best_epoch_subset.loc[best_epoch_subset.groupby(['fold'])['mean_epoch_acc'].idxmax(), ['fold', 'epoch']].values)
     else:
         best_epochs = {fold: sorted(accs.epoch.unique())[-1] for fold in accs.fold.unique()}
-    print(best_epochs)
 
     # 2. With this get metrics over on `final_accs_over` datasets
     final_accs_subset = accs.loc[accs.ds_split == args.final_accs_over].copy().reset_index()
@@ -88,7 +87,6 @@ if __name__ == '__main__':
         assert final_accs_subset_datasets.has_all_datasets.all(), f'[final_accs_over] datasets are missing for {(~(final_accs_subset_datasets.has_all_datasets)).sum()} runs'
     final_accs_subset = final_accs_subset[final_accs_subset[['fold', 'epoch']].apply(
         lambda x : best_epochs[x.fold] == x.epoch, axis=1)]
-    print(final_accs_subset[['fold', 'epoch']].value_counts())
     if (args.print_all_datasets):
         print(final_accs_subset.sort_values(['fold', 'ds']))
 
