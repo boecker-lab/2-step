@@ -15,6 +15,7 @@ if __name__ == '__main__':
     parser.add_argument('--roi_dir', required=True)
     parser.add_argument('--repo_root', required=True)
     parser.add_argument('eval_jsons', nargs='+')
+    parser.add_argument('--warn_lcs_diff', action='store_true')
     args = parser.parse_args()
     for f in args.eval_jsons:
         assert f.endswith('_eval.json'), f'{f} no valid eval json'
@@ -33,7 +34,7 @@ if __name__ == '__main__':
             mcd_ratio = mcd / (len(df_mcd) - 1) # subtract one because a single compound cannot be in conflict
             j[ds]['mcd'] = mcd
             j[ds]['mcd_ratio'] = mcd_ratio
-            if ('lcs_dist' in j[ds] and int(j[ds]['lcs_dist']) != int(mcd)):
+            if (args.warn_lcs_diff and 'lcs_dist' in j[ds] and int(j[ds]['lcs_dist']) != int(mcd)):
                 print('WARNING', base, ds, f'{j[ds]["lcs_dist"]=}', '!=', f'{mcd=}')
         # write
         out_path = f.replace('_eval.json', '_eval_mcd.json')
