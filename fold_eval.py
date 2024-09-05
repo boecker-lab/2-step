@@ -4,6 +4,7 @@ from argparse import ArgumentParser
 import re
 import json
 import pandas as pd
+import numpy as np
 
 BENCHMARK_DATASETS = ['0003', '0010', '0018', '0055', '0054', '0019', '0002']
 
@@ -56,7 +57,7 @@ if __name__ == '__main__':
                                          'fold': fold,
                                          'epoch': int(re.search(r'.*_ep(\d+)_.*', f).group(1)),
                                          'ds_split': splits[(scenario, fold)].get(k, None),
-                                         'benchmark': k in BENCHMARK_DATASETS} | ({args.final_metric: data[k][args.final_metric]}
+                                         'benchmark': k in BENCHMARK_DATASETS} | ({args.final_metric: data[k].get(args.final_metric, np.nan)}
                                                                                   if args.final_metric != 'acc' else {})
                                         for k in data])
         dfs.append(df)
