@@ -880,6 +880,7 @@ if __name__ == '__main__':
                 system_features = args.overwrite_system_features
             else:
                 system_features = data.system_features
+            print('making detailed stats for system features:', ', '.join(system_features))
             confl_stats_df = confl_eval(ds, preds=preds, test_data=d, train_data=data, confl_pairs=confl_pairs,
                                         epsilon=args.epsilon, setup_params=system_features, Y_debug=Y, dataset_iall=dataset_iall)
             if (len(system_features) > 0 and confl_stats_df is not None):
