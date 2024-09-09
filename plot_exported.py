@@ -1,5 +1,5 @@
 import pandas as pd
-from collections import defaultdict
+from collections import defaultdict, OrderedDict
 import numpy as np
 import matplotlib.pyplot as plt
 import sys
@@ -7,6 +7,7 @@ from argparse import ArgumentParser
 import json
 from mapping import LADModel
 import re
+from os.path import basename
 
 SYMBOLS = {'benchmark_dataset': '▥',
            'our_dataset': '★',
@@ -29,16 +30,15 @@ BENCHMARK_MAE = {'0003': 0.44,
                  '0019': 0.94,
                  '0002': 2.15}
 
-def make_title(ds, acc=None, lcs_dist=None, flags=None, display_ref_mae=False):
-    title = ds
+def make_title(ds, acc=None, mcd_ratio=None, flags=None, display_ref_mae=False):
+    title = ds[1] if isinstance(ds, tuple) else ds
     if ds in BENCHMARK_DATASETS:
         title += f' "{BENCHMARK_DATASETS[ds]}"'
-    if acc is not None or lcs_dist is not None:
+    if acc is not None or mcd_ratio is not None:
         title += ' '
         acc = f'{acc:.1%}' if acc is not None else ''
-        # lcs_dist = r'$d_{LCS}=' + f'{lcs_dist:.1f}' + r'$' if lcs_dist is not None else ''
-        lcs_dist = r'LCS=' + f'{lcs_dist:.0f}' + r'' if lcs_dist is not None else ''
-        title += '(' + ', '.join([acc, lcs_dist]) + ')'
+        mcd_ratio = r'MCD=' + f'{mcd_ratio:.2f}' + r'' if mcd_ratio is not None else ''
+        title += '(' + ', '.join([acc, mcd_ratio]) + ')'
     if flags is not None:
         title += '  '
         for desc, symbol in SYMBOLS.items():
@@ -68,15 +68,19 @@ if __name__ == '__main__':
     parser.add_argument('--repo_root', default='/home/fleming/Documents/Projects/RtPredTrainingData_mostcurrent/')
     parser.add_argument('--void_factor', default=2, type=float)
     parser.add_argument('--extrap', default=None, type=int)
-    parser.add_argument('--anchors', default=None, type=int)
+    parser.add_argument('--anchors', default=None, type=str)
     parser.add_argument('--anchors_only', action='store_true')
     parser.add_argument('--onlybest', action='store_true')
     parser.add_argument('--showolsfit', action='store_true')
     parser.add_argument('--no_negative_ols', action='store_true')
     parser.add_argument('--ols_drop_mode', choices=['50%', '2*median'], default='50%')
     parser.add_argument('--no_sort_flags', action='store_true')
+    parser.add_argument('--no_sort_datasets', action='store_true')
+    parser.add_argument('--basename_as_id', action='store_true')
     parser.add_argument('--extra_bases', action='store_true')
     parser.add_argument('--extra_bases_nr_thr', default=-1, type=int)
+    parser.add_argument('--ncols', default=4, type=int)
+    parser.add_argument('--no_legend', action='store_true')
     # parser.add_argument('--bases', nargs='+', default=['1', 'x', 'x**2'], type=str, help='supported are 1, x, x**2, sqrt(x), x*sqrt(x)')
     args = parser.parse_args()
     # args = parser.parse_args('/home/fleming/Documents/Projects/rtranknet/runs/FEbenchmark/FEbenchmark_reporthsmtanakaph_benchmarkpartly/FEbenchmark_reporthsmtanakaph_benchmarkpartly_0002_train.tsv.tsv /home/fleming/Documents/Projects/rtranknet/runs/FEbenchmark/FEbenchmark_reporthsmtanakaph_benchmarkpartly/FEbenchmark_reporthsmtanakaph_benchmarkpartly_0002_test.tsv.tsv --repo_root /home/fleming/Documents/Projects/RtPredTrainingData_mostcurrent/ --errorlabels --anchor 15'.split())
@@ -85,7 +89,7 @@ if __name__ == '__main__':
     dss = get_dataset_df()
     models = defaultdict(dict)
     roi_cutoff = defaultdict(dict)
-    data = {}
+    data = OrderedDict()
     normal_bases = ['1', 'x', 'x**2']
     # load data + make LAD models
     input_data = {}
@@ -93,17 +97,19 @@ if __name__ == '__main__':
         ds_id, fold, split = re.match(r'.*_(\d{4})(_fold\d+)?(_test|_train)?.tsv', f.split('/')[-1]).groups()
         # TODO: won't work with non-RepoRT datasets
         df = pd.read_csv(f, sep='\t', names=['smiles', 'rt', 'roi'], header=None)
+        data_dict_id = ds_id if (not args.basename_as_id) else (basename(f), ds_id)
         if split is not None:
             # there is a train and a test portion
             df['split'] = split.strip('_')
-            if ds_id in input_data:
-                combined = pd.concat([input_data[ds_id], df])
-                input_data[ds_id] = combined
+            if data_dict_id in input_data:
+                combined = pd.concat([input_data[data_dict_id], df])
+                input_data[data_dict_id] = combined
             else:
-                input_data[ds_id] = df
+                input_data[data_dict_id] = df
         else:
-            input_data[ds_id] = df
+            input_data[data_dict_id] = df
     for id_, df in input_data.items():
+        report_id = id_[1] if isinstance(id_, tuple) else id_
         print(f'{id_}: ROI->RT modeling')
         df['roi2'] = df.roi ** 2 # for LAD model
         data[id_] = df.copy()
@@ -112,7 +118,7 @@ if __name__ == '__main__':
             df = df.loc[df.split == 'train']
             print(f'{id_}: building LAD models on the train portion (max #compounds {len(df)}, full dataset {len(data[id_])})')
         # models['all_points'][ds] = LADModel(data[ds])
-        void_t = dss['column.t0'].loc[id_] * args.void_factor
+        void_t = dss['column.t0'].loc[report_id] * args.void_factor
         if (not args.anchors_only):
             if (not args.onlybest):
                 models['LAD'][id_] = LADModel(df, void=void_t, ols_after=False)
@@ -129,7 +135,13 @@ if __name__ == '__main__':
         if args.anchors is not None:
             anchors = f'anchors{args.anchors}'
             data_void = df.loc[df.rt > void_t]
-            data_anchors = data_void.sample(args.anchors)
+            if args.anchors.endswith('%'):
+                # percentage
+                data_anchors = data_void.sample(np.round(len(data_void) * (float(args.anchors.replace('%', '')) / 100)).astype(int))
+                print(f'{id_}: using {len(data_anchors)} ({args.anchors}) out of {len(data_void)}({len(df)}) data points for the mapping')
+            else:
+                # absolute number
+                data_anchors = data_void.sample(args.anchors)
             models[anchors][id_] = LADModel(data_anchors, void=void_t,
                                            ols_after=True, ols_discard_if_negative=args.no_negative_ols,
                                            ols_drop_mode=args.ols_drop_mode)
@@ -144,28 +156,34 @@ if __name__ == '__main__':
     ds_list = list(data)
     # optionally various other information
     accs = defaultdict(lambda: None)
-    lcs_dists = defaultdict(lambda: None)
+    mcd_ratios = defaultdict(lambda: None)
     flags = defaultdict(lambda: None)
     if (args.accs_file is not None):
         for k, v in json.load(open(args.accs_file)).items():
-            if 'lcs_dist' in v:
-                lcs_dists[k] = v['lcs_dist']
+            if 'mcd_ratio' in v:
+                mcd_ratios[k] = v['mcd_ratio']
             if 'acc' in v:
                 accs[k] = v['acc']
             if 'flags' in v:
                 flags[k] = v['flags']
     # make titles to use for sorting datasets
-    titles = {ds: make_title(ds, acc=accs[ds], lcs_dist=lcs_dists[ds], flags=flags[ds])
+    titles = {ds: make_title(ds, acc=accs[ds], mcd_ratio=mcd_ratios[ds], flags=flags[ds])
               for ds in ds_list}
     # plot
-    figsize = (19, np.ceil(len(ds_list) / 4) * 4.5)
-    fig,axes = plt.subplots(nrows=np.ceil(len(ds_list) / 4).astype(int), ncols=4,
+    figsize = (4.5 * args.ncols, np.ceil(len(ds_list) / args.ncols) * 4.5)
+    # TODO: make sure figsize leads to exactly equal size ratios for each subplot
+    fig,axes = plt.subplots(nrows=np.ceil(len(ds_list) / args.ncols).astype(int), ncols=args.ncols,
                              figsize=figsize)
     #fig.set_dpi(150)
     errors = []
-    for ds, ax in zip(sorted(ds_list, key=lambda x: (sort_flags(titles[x].split('\n')[0].split()[-1]) if not args.no_sort_flags else None,
-                                                int(x))),
+    if args.no_sort_datasets:
+        ds_iter = ds_list
+    else:
+        ds_iter = sorted(ds_list, key=lambda x: (sort_flags(titles[x].split('\n')[0].split()[-1]) if not args.no_sort_flags else None,
+                                            int(x)))
+    for ds, ax in zip(ds_iter,
                       axes.ravel()):
+        report_id = ds[1] if isinstance(ds, tuple) else ds
         colors = plt.rcParams["axes.prop_cycle"]()
         x = np.arange(data[ds].roi.min(), data[ds].roi.max(), 0.001)
         # TODO: maybe density, commented out code works in principle
@@ -179,7 +197,7 @@ if __name__ == '__main__':
             c = next(colors)['color']
             model = models[type_][ds]
             y = model.get_mapping(x)
-            data_rel = data[ds].loc[data[ds].rt >= dss['column.t0'].loc[ds] * args.void_factor]
+            data_rel = data[ds].loc[data[ds].rt >= dss['column.t0'].loc[report_id] * args.void_factor]
             split_errors = {}
             if 'split' in data_rel.columns and (data_rel.split == 'test').sum() > 0:
                 # only use the test portion for the error
@@ -217,10 +235,11 @@ if __name__ == '__main__':
         ax.set_title(titles[ds])
         ax.set_xlabel('Retention Order Index')
         ax.set_ylabel('Retention time (min)')
-        # ax.axhline(dss['column.t0'].loc[ds], linestyle='dotted', color='red')
-        ax.axhline(dss['column.t0'].loc[ds] * args.void_factor, linestyle='dotted', color='red', label='Void volume threshold', linewidth=2.)
-        # ax.axhline(dss['column.t0'].loc[ds] * 3, linestyle='dotted', color='green')
-        ax.legend()
+        # ax.axhline(dss['column.t0'].loc[report_id], linestyle='dotted', color='red')
+        ax.axhline(dss['column.t0'].loc[report_id] * args.void_factor, linestyle='dotted', color='red', label='Void volume threshold', linewidth=2.)
+        # ax.axhline(dss['column.t0'].loc[report_id] * 3, linestyle='dotted', color='green')
+        if (not args.no_legend):
+            ax.legend()
     plt.tight_layout()
     # ax.set_xlim((240, 3000))
     # ax.set_ylim((240, 2000))
