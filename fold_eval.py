@@ -18,9 +18,9 @@ if __name__ == '__main__':
     parser.add_argument('--final_accs_over', help='final stats determined by test or train datasets',
                         choices=['train', 'test'], default='test')
     parser.add_argument('--splits_dir', help='directory containing dataset-split files',
-                        default='/home/fleming/Documents/Projects/rtranknet')
+                        default='/home/fleming/Documents/Projects/rtranknet/splits/FE')
     parser.add_argument('--splits_prefixes', help='filename prefixes for dataset-split files',
-                        default=['setup_disjoint_fold_', 'columnph_disjoint_fold_'], nargs='+')
+                        default=['setup_disjoint_fold_', 'columnph_disjoint_fold_', 'columnphdiff_disjoint_fold_'], nargs='+')
     parser.add_argument('--ignore_missing_datasets', help='make stats even when datasets are missing from eval',
                         action='store_true')
     parser.add_argument('--print_fold_accs', help='prints stats for individual folds',
