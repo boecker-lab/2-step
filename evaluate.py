@@ -15,6 +15,7 @@ import pickle
 import io
 import bisect
 from collections import Counter
+from graphlib import TopologicalSorter
 
 import torch
 
@@ -36,7 +37,7 @@ class NpEncoder(json.JSONEncoder):
             return obj.tolist()
         return super(NpEncoder, self).default(obj)
 
-def eval_(y, preds, epsilon=0.5, void_rt=0.0, roi_thr=1e-5):
+def eval_(y, preds, epsilon=0.5, void_rt=0.0, roi_thr=1e-5, dont_count_low_epsilon=False):
     assert len(y) == len(preds)
     if (not any(preds)):
         return 0.0
@@ -47,6 +48,8 @@ def eval_(y, preds, epsilon=0.5, void_rt=0.0, roi_thr=1e-5):
         if y[i] <= void_rt and y[j] <= void_rt:
             # ignore pairs with both compounds eluting in void volume
             continue
+        if dont_count_low_epsilon and np.abs(y[i] - y[j]) < epsilon:
+            continue
         diff = y[i] - y[j]
         #if (diff < epsilon and preds[i] < preds[j]):
         if (diff < epsilon and (preds[j] - preds[i] > roi_thr)):
@@ -54,6 +57,19 @@ def eval_(y, preds, epsilon=0.5, void_rt=0.0, roi_thr=1e-5):
         total += 1
     toret = matches / total if not total == 0 else np.nan
     return toret
+
+def eval_from_pairs(y, pair_preds, **eval_args):
+    assert pair_preds.shape == (len(y), len(y))
+    assert np.allclose(pair_preds, -pair_preds.T), 'not symmetrical'
+    triu = pair_preds[np.triu_indices(len(pair_preds), k=1)]
+    assert (np.isclose(triu, 1) | np.isclose(triu, -1)).all(), 'has to consist of 1s and -1s'
+    ts = TopologicalSorter()
+    for i, j in combinations(range(len(y)), 2):
+        if np.isclose(pair_preds[i, j], -1):
+            ts.add(i, j)
+        else:
+            ts.add(j, i)
+    return eval_(y, tuple(ts.static_order()), **eval_args)
 
 
 def eval_detailed(mols, y, preds, epsilon=0.5, void_rt=0.0, roi_thr=1e-5):
