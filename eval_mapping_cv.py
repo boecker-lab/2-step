@@ -51,5 +51,5 @@ if __name__ == '__main__':
                             MedAE=df_i.MedAE.mean(), MedAE_std=df_i.MedAE.std(),
                             MedAE_train=df_i.MedAE_train.mean(), MedAE_train_std=df_i.MedAE_train.std()))
     df = pd.DataFrame.from_records(records)
-    df['print'] = [f'{r["MAE"]:.3f}±{r["MAE_std"]:.3f}' for i, r in df.iterrows()]
+    df['print'] = [f'{r["MAE"]:.2f}±{r["MAE_std"]:.2f}' for i, r in df.iterrows()]
     print(df.to_string())
