@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 import sys
 from argparse import ArgumentParser
 import json
+import yaml
 from mapping import LADModel
 import re
 from os.path import basename
@@ -67,6 +68,8 @@ if __name__ == '__main__':
     parser.add_argument('--dont_show', action='store_true')
     parser.add_argument('--repo_root', default='/home/fleming/Documents/Projects/RtPredTrainingData_mostcurrent/')
     parser.add_argument('--void_factor', default=2, type=float)
+    parser.add_argument('--hide_void', action='store_true', help='don\'t show data in void volume in plot')
+    parser.add_argument('--overwrite_void_thresholds', default=None, help='yaml file containing estimations with dataset IDs as key')
     parser.add_argument('--extrap', default=None, type=int)
     parser.add_argument('--anchors', default=None, type=str)
     parser.add_argument('--anchors_only', action='store_true')
@@ -81,6 +84,7 @@ if __name__ == '__main__':
     parser.add_argument('--extra_bases_nr_thr', default=-1, type=int)
     parser.add_argument('--ncols', default=4, type=int)
     parser.add_argument('--no_legend', action='store_true')
+    parser.add_argument('--error_in_titles', action='store_true')    
     # parser.add_argument('--bases', nargs='+', default=['1', 'x', 'x**2'], type=str, help='supported are 1, x, x**2, sqrt(x), x*sqrt(x)')
     args = parser.parse_args()
     # args = parser.parse_args('/home/fleming/Documents/Projects/rtranknet/runs/FEbenchmark/FEbenchmark_reporthsmtanakaph_benchmarkpartly/FEbenchmark_reporthsmtanakaph_benchmarkpartly_0002_train.tsv.tsv /home/fleming/Documents/Projects/rtranknet/runs/FEbenchmark/FEbenchmark_reporthsmtanakaph_benchmarkpartly/FEbenchmark_reporthsmtanakaph_benchmarkpartly_0002_test.tsv.tsv --repo_root /home/fleming/Documents/Projects/RtPredTrainingData_mostcurrent/ --errorlabels --anchor 15'.split())
@@ -93,6 +97,9 @@ if __name__ == '__main__':
     normal_bases = ['1', 'x', 'x**2']
     # load data + make LAD models
     input_data = {}
+    void_thresholds = {}
+    if (args.overwrite_void_thresholds is not None):
+        void_thresholds |= yaml.load(open(args.overwrite_void_thresholds), yaml.loader.SafeLoader)
     for f in args.tsvs:
         ds_id, fold, split = re.match(r'.*_(\d{4})(_fold\d+)?(_test|_train)?.tsv', f.split('/')[-1]).groups()
         # TODO: won't work with non-RepoRT datasets
@@ -118,7 +125,9 @@ if __name__ == '__main__':
             df = df.loc[df.split == 'train']
             print(f'{id_}: building LAD models on the train portion (max #compounds {len(df)}, full dataset {len(data[id_])})')
         # models['all_points'][ds] = LADModel(data[ds])
-        void_t = dss['column.t0'].loc[report_id] * args.void_factor
+        if (report_id not in void_thresholds):
+            void_thresholds[report_id] = dss['column.t0'].loc[report_id] * args.void_factor
+        void_t = void_thresholds[report_id]
         if (not args.anchors_only):
             if (not args.onlybest):
                 models['LAD'][id_] = LADModel(df, void=void_t, ols_after=False)
@@ -141,7 +150,7 @@ if __name__ == '__main__':
                 print(f'{id_}: using {len(data_anchors)} ({args.anchors}) out of {len(data_void)}({len(df)}) data points for the mapping')
             else:
                 # absolute number
-                data_anchors = data_void.sample(args.anchors)
+                data_anchors = data_void.sample(int(args.anchors))
             models[anchors][id_] = LADModel(data_anchors, void=void_t,
                                            ols_after=True, ols_discard_if_negative=args.no_negative_ols,
                                            ols_drop_mode=args.ols_drop_mode)
@@ -185,19 +194,24 @@ if __name__ == '__main__':
                       axes.ravel()):
         report_id = ds[1] if isinstance(ds, tuple) else ds
         colors = plt.rcParams["axes.prop_cycle"]()
-        x = np.arange(data[ds].roi.min(), data[ds].roi.max(), 0.001)
+        data_rel = data[ds].loc[data[ds].rt >= void_thresholds[report_id]]
+        if (args.hide_void):
+            x = np.arange(data_rel.roi.min(), data_rel.roi.max(), 0.001)
+            ax.scatter(data_rel.roi, data_rel.rt, c='grey', s=5)
+        else:
+            x = np.arange(data[ds].roi.min(), data[ds].roi.max(), 0.001)
+            ax.scatter(data[ds].roi, data[ds].rt, c='grey', s=5)
         # TODO: maybe density, commented out code works in principle
         # data[ds]['density'] = gaussian_kde(np.vstack([data[ds].rt, data[ds].roi]))(
         #     np.vstack([data[ds].rt, data[ds].roi]))
         # sns.scatterplot(data=data[ds], x='roi', y='rt', hue='density', s=2, ax=ax)
-        ax.scatter(data[ds].roi, data[ds].rt, c='grey', s=5)
+        title_extra_info = ' '
         for type_ in models:
             if ds not in models[type_]:
                 continue        # some models are only made for certain datasets
             c = next(colors)['color']
             model = models[type_][ds]
             y = model.get_mapping(x)
-            data_rel = data[ds].loc[data[ds].rt >= dss['column.t0'].loc[report_id] * args.void_factor]
             split_errors = {}
             if 'split' in data_rel.columns and (data_rel.split == 'test').sum() > 0:
                 # only use the test portion for the error
@@ -225,19 +239,24 @@ if __name__ == '__main__':
             errors.append(errors_record)
             ax.plot(x, y, color=c, linewidth=2.5,
                     label=f'{description}' + (f'(MAE={error.mean():.2f}, MedAE={error.median():.2f})'
-                                        if args.errorlabels else ''))
+                                              if args.errorlabels else ''))
             if (args.showolsfit and not 'extrap' in type_ and hasattr(model, 'ols_points')):
                 ax.scatter(model.ols_points.roi, model.ols_points.rt_pred,
                            label='OLS fit points', c=c)
             if (hasattr(model, 'anchor_points')):
                 ax.scatter(model.anchor_points.roi, model.anchor_points.rt_pred,
                            label='Anchors', c='black', s=10)
-        ax.set_title(titles[ds])
+            if (args.error_in_titles):
+                title_extra_info += f'(MAE={error.mean():.2f})'
+        ax.set_title((titles[ds] + title_extra_info).strip())
         ax.set_xlabel('Retention Order Index')
         ax.set_ylabel('Retention time (min)')
-        # ax.axhline(dss['column.t0'].loc[report_id], linestyle='dotted', color='red')
-        ax.axhline(dss['column.t0'].loc[report_id] * args.void_factor, linestyle='dotted', color='red', label='Void volume threshold', linewidth=2.)
-        # ax.axhline(dss['column.t0'].loc[report_id] * 3, linestyle='dotted', color='green')
+        if (not args.hide_void):
+            # ax.axhline(dss['column.t0'].loc[report_id], linestyle='dotted', color='red')
+            ax.axhline(void_thresholds[report_id], linestyle='dotted', color='red', label='Void volume threshold', linewidth=2.)
+            # ax.axhline(dss['column.t0'].loc[report_id] * 3, linestyle='dotted', color='green')
+            # TODO: debug plot original void lines
+            # ax.axhline(dss['column.t0'].loc[report_id] * 2, linestyle='dotted', color='green', label='Void volume threshold original', linewidth=2.)
         if (not args.no_legend):
             ax.legend()
     plt.tight_layout()
