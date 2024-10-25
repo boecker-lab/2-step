@@ -338,7 +338,7 @@ class EvalArgs(Tap):
     export_embeddings: bool = False
     device: Optional[str] = None # can be `mirrored`, a specific device name like `gpu:1` or `None` which automatically selects an option
     epsilon: Union[str, float] = '30s' # difference in evaluation measure below which to ignore falsely predicted pairs
-    dont_count_low_epsilon: bool = False # completely ignore pairs with diff < epsilon for acc calculation
+    # dont_count_low_epsilon: bool = False # completely ignore pairs with diff < epsilon for acc calculation
     remove_train_compounds: bool = False
     remove_train_compounds_mode: Literal['all', 'column', 'print'] = 'all'
     compound_identifier: Literal['smiles', 'inchi.std', 'inchikey.std'] = 'smiles' # how to identify compounds for statistics
@@ -893,13 +893,18 @@ if __name__ == '__main__':
             preds = predict(X, model, args.batch_size)
         info('done predicting. evaluation...')
         print(ds, d.void_info[ds])
-        acc = eval_(Y, preds, args.epsilon, void_rt=d.void_info[ds], dont_count_low_epsilon=args.dont_count_low_epsilon)
+        acc = eval_(Y, preds, args.epsilon, void_rt=d.void_info[ds], dont_count_low_epsilon=False)
+        acc_ignore_epsilon = eval_(Y, preds, args.epsilon, void_rt=d.void_info[ds], dont_count_low_epsilon=True)
         optional_stats = {}
         if (confl_pairs is not None and not args.no_optional_stats):
             optional_stats['acc_confl'] = eval_(Y[confl], preds[confl], args.epsilon, void_rt=d.void_info[ds],
-                                                dont_count_low_epsilon=args.dont_count_low_epsilon) if any(confl) else np.nan
+                                                dont_count_low_epsilon=False) if any(confl) else np.nan
+            optional_stats['acc_ignore_epsilon_confl'] = eval_(Y[confl], preds[confl], args.epsilon, void_rt=d.void_info[ds],
+                                                               dont_count_low_epsilon=True) if any(confl) else np.nan
             optional_stats['acc_nonconfl'] = eval_(Y[~np.array(confl)], preds[~np.array(confl)], args.epsilon, void_rt=d.void_info[ds],
-                                                   dont_count_low_epsilon=args.dont_count_low_epsilon) if any(confl) else acc
+                                                   dont_count_low_epsilon=False) if any(confl) else acc
+            optional_stats['acc_ignore_epsilon_nonconfl'] = eval_(Y[~np.array(confl)], preds[~np.array(confl)], args.epsilon, void_rt=d.void_info[ds],
+                                                                  dont_count_low_epsilon=True) if any(confl) else acc
             optional_stats['num_confl'] = np.array(confl).sum()
             if (args.overwrite_system_features is not None and len(args.overwrite_system_features) > 0):
                 system_features = args.overwrite_system_features
@@ -940,13 +945,13 @@ if __name__ == '__main__':
         if (args.test_stats):
             info('computing test stats')
             stats = data_stats(d, data, data.custom_column_fields, compound_identifier=args.compound_identifier)
-            stats.update({'acc': acc, 'id': ds, 'mcd': mcd, 'mcd_ratio': mcd_ratio,
+            stats.update({'acc': acc, 'id': ds, 'mcd': mcd, 'mcd_ratio': mcd_ratio, 'acc_ignore_epsilon': acc_ignore_epsilon,
                           'lcs_dist': mcd # legacy
                           })
             stats.update(optional_stats)
             test_stats.append(stats)
         else:
-            print(f'{ds}: {acc:.3f}, MCD {mcd:.0f}, MCD ratio {mcd_ratio:.3f} \t (#data: {len(Y)})')
+            print(f'{ds}: {acc:.3f}, MCD {mcd:.0f}, MCD ratio {mcd_ratio:.3f}, acc_ignore_epsilon {acc_ignore_epsilon:.3f} \t (#data: {len(Y)})')
         if (args.diffs):
             info('computing outlier stats')
             df = rt_roi_diffs(d, Y, preds)
