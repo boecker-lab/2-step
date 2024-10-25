@@ -15,7 +15,6 @@ import pickle
 import io
 import bisect
 from collections import Counter
-from graphlib import TopologicalSorter
 
 import torch
 
@@ -58,18 +57,25 @@ def eval_(y, preds, epsilon=0.5, void_rt=0.0, roi_thr=1e-5, dont_count_low_epsil
     toret = matches / total if not total == 0 else np.nan
     return toret
 
-def eval_from_pairs(y, pair_preds, **eval_args):
+def eval_from_pairs(y, pair_preds, allow_0_preds=False, epsilon=0.5, void_rt=0.0):
     assert pair_preds.shape == (len(y), len(y))
     assert np.allclose(pair_preds, -pair_preds.T), 'not symmetrical'
-    triu = pair_preds[np.triu_indices(len(pair_preds), k=1)]
-    assert (np.isclose(triu, 1) | np.isclose(triu, -1)).all(), 'has to consist of 1s and -1s'
-    ts = TopologicalSorter()
+    matches = total = 0
     for i, j in combinations(range(len(y)), 2):
-        if np.isclose(pair_preds[i, j], -1):
-            ts.add(i, j)
-        else:
-            ts.add(j, i)
-    return eval_(y, tuple(ts.static_order()), **eval_args)
+        if (np.abs(y[i] - y[j]) < epsilon):
+            continue
+        if y[i] <= void_rt and y[j] <= void_rt:
+            continue
+        if np.isclose(pair_preds[i, j], 0):
+             if allow_0_preds:
+                 continue
+             else:
+                 raise Exception('predictions are not all 1s and -1s:', pair_preds[i, j])
+        if pair_preds[i, j] * (y[j] - y[i]) > 0:
+            matches += 1
+        total += 1
+    toret = matches / total if not total == 0 else np.nan
+    return toret
 
 
 def eval_detailed(mols, y, preds, epsilon=0.5, void_rt=0.0, roi_thr=1e-5):
