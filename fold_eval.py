@@ -52,7 +52,7 @@ if __name__ == '__main__':
         scenario = f.split('/')[-1].split('_')[1]
         fold = int(re.search(r'.*_fold(\d+)_.*', f).group(1))
         df = pd.DataFrame.from_records([{'ds':k , 'acc': data[k]['acc'],
-                                         'raw_name': re.search('^.*/(.*)_eval(_[a-z]+)?.json$', f).group(1),
+                                         'raw_name': re.search('^.*/(.*)_eval(.*)?.json$', f).group(1),
                                          'scenario': scenario,
                                          'fold': fold,
                                          'epoch': int(re.search(r'.*_ep(\d+)_.*', f).group(1)),
