@@ -15,6 +15,8 @@ if __name__ == '__main__':
                         choices=['train', 'test'], default='train')
     parser.add_argument('--always_last_epoch', help='don\'t determine best epoch, just use the last',
                         action='store_true')
+    parser.add_argument('--always_first_epoch', help='don\'t determine best epoch, just use the first',
+                        action='store_true')
     parser.add_argument('--final_accs_over', help='final stats determined by test or train datasets',
                         choices=['train', 'test'], default='test')
     parser.add_argument('--splits_dir', help='directory containing dataset-split files',
@@ -67,7 +69,7 @@ if __name__ == '__main__':
     scenario = accs.scenario.unique().item()
 
     # 1. Get best epoch per fold on `best_epoch_over` datasets
-    if (not args.always_last_epoch):
+    if (not (args.always_last_epoch or args.always_first_epoch)):
         best_epoch_subset = accs.loc[accs.ds_split == args.best_epoch_over].copy().reset_index()
         best_epoch_datasets = best_epoch_subset.groupby(['fold', 'epoch']).ds.agg(list).reset_index()
         best_epoch_datasets['has_all_datasets'] = [set(r.ds) == set(k for k, v in splits[(scenario, r.fold)].items() if v == args.best_epoch_over)
@@ -79,7 +81,7 @@ if __name__ == '__main__':
         best_epoch_subset['median_epoch_acc'] = best_epoch_subset.groupby(['fold', 'epoch']).acc.transform('median')
         best_epochs = dict(best_epoch_subset.loc[best_epoch_subset.groupby(['fold'])['mean_epoch_acc'].idxmax(), ['fold', 'epoch']].values)
     else:
-        best_epochs = {fold: sorted(accs.epoch.unique())[-1] for fold in accs.fold.unique()}
+        best_epochs = {fold: sorted(accs.epoch.unique())[-1 if args.always_last_epoch else 0] for fold in accs.fold.unique()}
 
     # 2. With this get metrics over on `final_accs_over` datasets
     final_accs_subset = accs.loc[accs.ds_split == args.final_accs_over].copy().reset_index()
