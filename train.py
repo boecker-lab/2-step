@@ -284,8 +284,11 @@ def rename_old_writer_logs(prefix):
                 print(f'old logdir {prefix + suffix} -> {new_dir}')
 
 if __name__ == '__main__':
-    args = TrainArgs().parse_args()
-    # args = TrainArgs().parse_args('--input 0001 0004 0009 0011 0012 0016 0017 0021 0024 0025 0028 0029 0032 0036 0038 0040 0041 0043 0045 0048 0049 0050 0051 0052 0060 0062 0063 0064 0065 0066 0067 0070 0071 0072 0073 0074 0075 0076 0077 0078 0079 0080 0081 0082 0083 0084 0085 0086 0087 0088 0089 0090 0091 0092 0093 0094 0095 0096 0097 0098 0099 0100 0101 0122 0124 0127 0129 0134 0135 0138 0140 0141 0142 0144 0146 0147 0150 0153 0158 0179 0180 0181 0182 0187 0188 0189 0190 0191 0192 0193 0194 0195 0196 0197 0198 0199 0200 0201 0202 0203 0204 0206 0207 0209 0212 0213 0214 0215 0216 0217 0219 0221 0223 0224 0226 0234 0235 0236 0237 0238 0239 0240 0241 0242 0243 0252 0253 0254 0255 0256 0257 0258 0259 0260 0264 0265 0266 0267 0268 0269 0270 0271 0272 0273 0288 0289 0290 0291 0294 0295 0342 0343 0344 0345 0346 0347 0348 0349 0350 0351 0352 0353 0354 0355 0356 0357 0358 0360 0361 0362 0387 0388 0389 0390 0391 --epsilon 10s --run_name rankformer_sep --model_type rankformer_sep --transformer_nhead 4 --transformer_nhid 128 --transformer_nlayers 1 --save_data --batch_size 128 --epochs 1 --sysinfo --columns_use_hsm --columns_use_tanaka --use_ph --ep_save --val_split 0.0 --test_split 0 --verbose --encoder_size 256 --sizes 128 64 --sizes_sys 16 256 --mpn_depth 3 --clean_data --remove_test_compounds 0003 0018 0055 0054 0019 0002 --remove_test_compounds_mode 2d --remove_test_compounds_rarest --pair_step 1 --pair_stop 100_000 --cluster --no_train_acc_all --conflicting_smiles_pairs /home/fleming/Documents/Uni/RTpred/pairs6.pkl --features --mpn_add_sys_features --no_rtdiff_pair_weights'.split())
+    # arguments can be read directly from JSON
+    if (len(sys.argv) == 2 and (json_file:=sys.argv[1]).endswith('.json')):
+        args = TrainArgs().from_dict(json.load(open(json_file))['args'])
+    else:
+        args = TrainArgs().parse_args()
     if (args.run_name is None):
         run_name = generic_run_name()
         print(f'preparing rtranknet model "{run_name}"')
