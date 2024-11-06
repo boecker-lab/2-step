@@ -70,13 +70,25 @@ def eval_from_pairs(y, pair_preds, allow_0_preds=False, epsilon=0.5, void_rt=0.0
              if allow_0_preds:
                  continue
              else:
-                 raise Exception('predictions are not all 1s and -1s:', pair_preds[i, j])
+                 total += 1     # wrong prediction
+                 continue
+                 # raise Exception('predictions are not all 1s and -1s:', pair_preds[i, j])
         if pair_preds[i, j] * (y[j] - y[i]) > 0:
             matches += 1
         total += 1
     toret = matches / total if not total == 0 else np.nan
     return toret
 
+def order_from_pairs(pair_preds):
+    from graphlib import TopologicalSorter
+    assert np.allclose(pair_preds, -pair_preds.T), 'not symmetrical'
+    ts = TopologicalSorter()
+    for i, j in combinations(range(len(pair_preds)), 2):
+        if np.isclose(pair_preds[i, j], 1):
+            ts.add(j, i)
+        elif np.isclose(pair_preds[i, j], -1):
+            ts.add(i, j)
+    return tuple(ts.static_order())
 
 def eval_detailed(mols, y, preds, epsilon=0.5, void_rt=0.0, roi_thr=1e-5):
     matches = []
