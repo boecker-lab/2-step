@@ -567,10 +567,14 @@ class Data:
 
 
     def add_external_data(self, data_path,
-                          metadata_void_rt=True, void_rt=0.0, isomeric=True, split_type='train', tab_mode=True):
+                          metadata_void_rt=True, void_rt=0.0, isomeric=True, split_type='train', tab_mode=True,
+                          remove_nan_rts=True, metadata=None):
         global REL_ONEHOT_COLUMNS
         df = pd.read_csv(data_path, sep='\t' if tab_mode else ',', dtype={'dataset_id': str})
         df['smiles'] = df['smiles.std']
+        if (metadata is not None):
+            for k, v in metadata.items():
+                df[k] = v
         if not isomeric:
             # drop isomeric information from smiles
             # from rdkit import Chem
@@ -589,16 +593,18 @@ class Data:
         if self.use_system_information or self.metadata_void_rt:
             # NOTE: only set when only one constant pH value is found for all parts of the gradient
             df['ph'] = [ph_desc[0] if len(
-                ph_desc:=(list(set([x for x in r[['eluent.A.pH', 'eluent.B.pH', 'eluent.C.pH', 'eluent.D.pH']] if not np.isnan(x) and x != 0]))))
-                                        == 1 else np.nan for i, r in df.iterrows()]
+                ph_desc:=(list(set([x for x in [r.get(f'eluent.{part}.pH', np.nan) for part in 'ABCD']
+                                    if not np.isnan(x) and x != 0]))))
+                        == 1 else np.nan for i, r in df.iterrows()]
             for component in self.mobile_phase_components:
                 df[f'has_{component}'] = float((df[
                     [c for c in df.columns if c in [f'eluent.{part}.{component}' for part in 'ABCD']]].sum() > 0).any())
             # gradient
             if (self.use_gradient):
                 raise NotImplementedError('use_gradient', 'add_external_data')
-        # rows without RT data are useless
-        df = df[~pd.isna(df.rt)]
+        if (remove_nan_rts):
+            # rows without RT data are useless for training
+            df = df[~pd.isna(df.rt)]
         # so are compounds (smiles) with multiple rts
         # unless they're the same or (TODO:) handled in a smart manner
         old_len0 = len(df)
