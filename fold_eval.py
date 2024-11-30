@@ -32,6 +32,8 @@ if __name__ == '__main__':
     parser.add_argument('--print_best_epochs', help='prints epoch numbers selected',
                         action='store_true')
     parser.add_argument('--final_metric', default='acc')
+    parser.add_argument('--final_stats_over_all_sets', help='final stats not over folds but over all (test) datasets',
+                        action='store_true')
 
     # args = parser.parse_args(list(glob('/home/fleming/Documents/Projects/rtranknet/runs/FE_newepsilonacc/FE_columnphdiff_disjoint_sys_yes_cluster_no_fold*_ep*_eval_acc_ignore_epsilon.json')))
     args = parser.parse_args()
@@ -99,8 +101,13 @@ if __name__ == '__main__':
     fold_accs = final_accs_subset.groupby(['fold'])[args.final_metric].agg(['mean', 'median', 'std']).sort_index()
     if (args.print_fold_accs):
         print(fold_accs)
-    final_accs = fold_accs.agg(['mean', 'median', 'std'])
-    print(f'{final_accs.loc["mean", "mean"]:.3f}±{final_accs.loc["std", "mean"]:.3f}')
+    if (args.final_stats_over_all_sets):
+        final_accs = final_accs_subset[args.final_metric].agg(['mean', 'median', 'std'])
+        print(final_accs)
+        print(f'{final_accs.loc["mean"]:.3f}±{final_accs.loc["std"]:.3f}')
+    else:
+        final_accs = fold_accs.agg(['mean', 'median', 'std'])
+        print(f'{final_accs.loc["mean", "mean"]:.3f}±{final_accs.loc["std", "mean"]:.3f}')
 
     if (args.print_best_epochs):
         print(' '.join(sorted(final_accs_subset.raw_name.unique())))
