@@ -20,7 +20,7 @@ logger = logging.getLogger('rtranknet.mpnranker2')
 info = logger.info
 warning = logger.warning
 
-from utils_newbg import SPECIAL_FEATURES
+from utils_newbg import SPECIAL_FEATURES_SIZE
 
 class MPNranker(nn.Module):
     def __init__(self, encoder='dmpnn', extra_features_dim=0, sys_features_dim=0,
@@ -34,7 +34,7 @@ class MPNranker(nn.Module):
             from dmpnn import dmpnn
             self.encoder = dmpnn(encoder_size=encoder_size, depth=depth, dropout_rate=dropout_rate_encoder,
                                  add_sys_features=add_sys_features, add_sys_features_mode=add_sys_features_mode,
-                                 add_sys_features_dim=sys_features_dim + (len(SPECIAL_FEATURES) if include_special_atom_features else 0))
+                                 add_sys_features_dim=sys_features_dim + (SPECIAL_FEATURES_SIZE if include_special_atom_features else 0))
         elif (encoder.lower() in ['dualmpnnplus', 'dualmpnn']):
             from cdmvgnn import cdmvgnn
             self.encoder = cdmvgnn(encoder, encoder_size=encoder_size,

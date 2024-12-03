@@ -17,20 +17,26 @@ logger = logging.getLogger('rtranknet.utils')
 info = logger.info
 warning = logger.warning
 
-from deepgcnrt_features import crippen_log_p_contrib, crippen_molar_refractivity_contrib, gasteiger_charge, labute_asa_contrib, tpsa_contrib
-SPECIAL_FEATURES = [crippen_log_p_contrib,
-                    crippen_molar_refractivity_contrib,
-                    gasteiger_charge,
-                    labute_asa_contrib,
-                    tpsa_contrib]
+from deepgcnrt_features import cip_code, crippen_log_p_contrib, crippen_molar_refractivity_contrib, gasteiger_charge, labute_asa_contrib, tpsa_contrib
+SPECIAL_FEATURES = [(cip_code, 2),
+                    (crippen_log_p_contrib, 1),
+                    (crippen_molar_refractivity_contrib, 1),
+                    (gasteiger_charge, 1),
+                    (labute_asa_contrib, 1),
+                    (tpsa_contrib, 1)]
+SPECIAL_FEATURES_SIZE = sum([x[1] for x in SPECIAL_FEATURES])
 
 def compute_special_features(mol, sysfeatures):
-    features = np.zeros((mol.GetNumAtoms(), len(SPECIAL_FEATURES) + (len(sysfeatures) if sysfeatures is not None else 0)))
+    features = np.zeros((mol.GetNumAtoms(), SPECIAL_FEATURES_SIZE + (len(sysfeatures) if sysfeatures is not None else 0)))
     for i, a in enumerate(mol.GetAtoms()):
-        for j, f in enumerate(SPECIAL_FEATURES):
-            features[i, j] = f(a)[0]
+        j = 0
+        for f, n in SPECIAL_FEATURES:
+            res = f(a)
+            assert n == len(res)
+            features[i, j:j+n] = res
+            j += n
         if sysfeatures is not None:
-            features[i, len(SPECIAL_FEATURES):] = sysfeatures
+            features[i, j:] = sysfeatures
     return features
 
 
