@@ -16,7 +16,7 @@ atom_features = [
     'degree',
     'element',
     'formal_charge',
-    # 'gasteiger_charge',
+    'gasteiger_charge',
     'hybridization',
     'is_aromatic',
     'is_h_acceptor',
@@ -30,9 +30,9 @@ atom_features = [
     'num_valence',
     'tpsa_contrib',
     # for graphformer
-    'atom_num',
-    'is_in_ring_atom',
-    'chiral_tag'
+    # 'atom_num',
+    # 'is_in_ring_atom',
+    # 'chiral_tag'
 ]
 
 bond_features = [
@@ -42,8 +42,8 @@ bond_features = [
     'is_in_ring',
     'is_rotatable',
     # for graphformer
-    'bondtype_num',
-    'bondstereo_num',
+    # 'bondtype_num',
+    # 'bondstereo_num',
 ]
 
 '''adopted from: https://github.com/akensert/GCN-retention-time-predictions'''
@@ -53,7 +53,7 @@ def onehot_encode(x: Union[float, int, str],
     return list(map(lambda s: float(x == s), allowable_set))
 
 def encode(x: Union[float, int, str]) -> List[float]:
-    if x is None or np.isnan(x):
+    if x is None or np.isnan(x) or np.isinf(x):
         x = 0.0
     return [float(x)]
 
@@ -282,9 +282,11 @@ def labute_asa_contrib(atom: Chem.Atom) -> List[float]:
 def gasteiger_charge(atom: Chem.Atom) -> List[float]:
     mol = atom.GetOwningMol()
     rdPartialCharges.ComputeGasteigerCharges(mol)
-    return encode(
-        x=atom.GetDoubleProp('_GasteigerCharge')
-    )
+    try:
+        res = atom.GetDoubleProp('_GasteigerCharge')
+    except:
+        res = None
+    return encode(x=res)
 
 def get_node_features(mol, exclude_feature=[]):
     node_features = np.array([
