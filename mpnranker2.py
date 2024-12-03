@@ -20,18 +20,21 @@ logger = logging.getLogger('rtranknet.mpnranker2')
 info = logger.info
 warning = logger.warning
 
+from utils_newbg import SPECIAL_FEATURES
+
 class MPNranker(nn.Module):
     def __init__(self, encoder='dmpnn', extra_features_dim=0, sys_features_dim=0,
                  hidden_units=[16, 8], hidden_units_pv=[16, 2], encoder_size=300,
                  depth=3, dropout_rate_encoder=0.0, dropout_rate_pv=0.0,
                  dropout_rate_rank=0.0, res_conn_enc=True, add_sys_features=False,
-                 add_sys_features_mode=None, no_sys_layers=False, sys_blowup=False):
+                 add_sys_features_mode=None, include_special_atom_features=False,
+                 no_sys_layers=False, sys_blowup=False):
         super(MPNranker, self).__init__()
         if (encoder == 'dmpnn'):
             from dmpnn import dmpnn
             self.encoder = dmpnn(encoder_size=encoder_size, depth=depth, dropout_rate=dropout_rate_encoder,
                                  add_sys_features=add_sys_features, add_sys_features_mode=add_sys_features_mode,
-                                 add_sys_features_dim=sys_features_dim)
+                                 add_sys_features_dim=sys_features_dim + (len(SPECIAL_FEATURES) if include_special_atom_features else 0))
         elif (encoder.lower() in ['dualmpnnplus', 'dualmpnn']):
             from cdmvgnn import cdmvgnn
             self.encoder = cdmvgnn(encoder, encoder_size=encoder_size,
@@ -52,6 +55,7 @@ class MPNranker(nn.Module):
         self.res_conn_enc = res_conn_enc
         self.add_sys_features = add_sys_features
         self.add_sys_features_mode = add_sys_features_mode
+        self.include_special_atom_features = include_special_atom_features
         self.no_sys_layers = no_sys_layers
         self.sys_blowup = sys_blowup
         if (not self.no_sys_layers):

@@ -104,7 +104,8 @@ class TrainArgs(Tap):
     smiles_for_graphs: bool = False # always use SMILES internally, compute graphs only on demand
     mpn_no_residual_connections_encoder: bool = False # last stack for mpn model only takes the encoding convolved with sys features
     mpn_add_sys_features: bool = False                # add sys features to the graphs themselves
-    mpn_add_sys_features_mode: Literal['bond', 'atom'] = 'bond' # whether to add sys featues as 'bond' and 'atom' features
+    mpn_add_sys_features_mode: Literal['bond', 'atom'] = 'atom' # whether to add sys featues as 'bond' and 'atom' features
+    mpn_add_special_atom_features: bool = False
     mpn_no_sys_layers: bool = False # don't add any layers for sys features to the MPN (for example when sys features are already part of the graphs)
     mpn_sys_blowup: bool = False # extra layer which blows up sysfeatures dimension to encoder size
     # rankformer model
@@ -531,7 +532,8 @@ if __name__ == '__main__':
                                 conflicting_smiles_pairs=conflicting_smiles_pairs,
                                 confl_weight=args.confl_weight,
                                 add_sysfeatures_to_graphs=args.mpn_add_sys_features,
-                                sysfeatures_graphs_mode=args.mpn_add_sys_features_mode)
+                                sysfeatures_graphs_mode=args.mpn_add_sys_features_mode,
+                                include_special_atom_features=args.mpn_add_special_atom_features)
         valdata = RankDataset(x_mols=val_graphs, x_extra=val_x, x_sys=val_sys,
                               x_ids=data.df.iloc[data.val_indices].smiles.tolist(),
                               y=val_y, x_sys_global_num=data.x_info_global_num,
@@ -558,7 +560,8 @@ if __name__ == '__main__':
                               conflicting_smiles_pairs=conflicting_smiles_pairs,
                               confl_weight=args.confl_weight,
                               add_sysfeatures_to_graphs=args.mpn_add_sys_features,
-                              sysfeatures_graphs_mode=args.mpn_add_sys_features_mode)
+                              sysfeatures_graphs_mode=args.mpn_add_sys_features_mode,
+                              include_special_atom_features=args.mpn_add_special_atom_features)
         if (args.clean_data or args.check_data):
             print('training data check:')
             stats_train, clean_train, _ = check_integrity(traindata, clean=args.clean_data)
@@ -638,6 +641,7 @@ if __name__ == '__main__':
                                        res_conn_enc=(not args.mpn_no_residual_connections_encoder),
                                        add_sys_features=args.mpn_add_sys_features,
                                        add_sys_features_mode=args.mpn_add_sys_features_mode,
+                                       include_special_atom_features=args.mpn_add_special_atom_features,
                                        no_sys_layers=args.mpn_no_sys_layers,
                                        sys_blowup=args.mpn_sys_blowup)
                 elif (args.model_type == 'rankformer'):

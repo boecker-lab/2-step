@@ -17,12 +17,34 @@ logger = logging.getLogger('rtranknet.utils')
 info = logger.info
 warning = logger.warning
 
-def sysfeature_graph(smiles, graph, sysfeatures, bond_or_atom='bond'):
+from deepgcnrt_features import crippen_log_p_contrib, crippen_molar_refractivity_contrib, gasteiger_charge, labute_asa_contrib, tpsa_contrib
+SPECIAL_FEATURES = [crippen_log_p_contrib,
+                    crippen_molar_refractivity_contrib,
+                    gasteiger_charge,
+                    labute_asa_contrib,
+                    tpsa_contrib]
+
+def compute_special_features(mol, sysfeatures):
+    features = np.zeros((mol.GetNumAtoms(), len(SPECIAL_FEATURES) + (len(sysfeatures) if sysfeatures is not None else 0)))
+    for i, a in enumerate(mol.GetAtoms()):
+        for j, f in enumerate(SPECIAL_FEATURES):
+            features[i, j] = f(a)[0]
+        if sysfeatures is not None:
+            features[i, len(SPECIAL_FEATURES):] = sysfeatures
+    return features
+
+
+def sysfeature_graph(smiles, graph, sysfeatures, bond_or_atom='bond', special_features=False):
     from dmpnn_graph import dmpnn_graph as mol2graph
     if bond_or_atom == 'bond':
         return mol2graph(smiles, bond_features_extra=np.array([sysfeatures] * int(graph.n_bonds / 2)))
     elif bond_or_atom == 'atom':
-        return mol2graph(smiles, atom_features_extra=np.array([sysfeatures] * graph.n_atoms))
+        if not special_features:
+            return mol2graph(smiles, atom_features_extra=np.array([sysfeatures] * graph.n_atoms))
+        else:
+            from chemprop.rdkit import make_mol
+            mol = make_mol(smiles, False, False, False)
+            return mol2graph(mol, atom_features_extra=compute_special_features(mol, sysfeatures))
 
 @dataclass
 class RankDataset(Dataset):
@@ -61,6 +83,7 @@ class RankDataset(Dataset):
     confl_weight: float=1.                                          # weight modifier for conflicting pairs
     add_sysfeatures_to_graphs: bool=False
     sysfeatures_graphs_mode: Literal['bond', 'atom']='bond'
+    include_special_atom_features: bool=False
 
     def __post_init__(self):
         if (isinstance(self.x_extra, np.ndarray)):
@@ -85,11 +108,13 @@ class RankDataset(Dataset):
         self.weights = transformed['weights']
         self.is_confl = transformed['is_confl']
         # for including sysfeatures into graphs, graphs have to be recomputed
-        if (self.add_sysfeatures_to_graphs):
+        if (self.add_sysfeatures_to_graphs or self.include_special_atom_features):
             print('add system features to graphs')
+            print('add special atom features to graphs')
             for i in range(len(self.x_mols)):
-                self.x_mols[i] = sysfeature_graph(self.x_ids[i], self.x_mols[i], self.x_sys[i],
-                                                  bond_or_atom=self.sysfeatures_graphs_mode)
+                self.x_mols[i] = sysfeature_graph(self.x_ids[i], self.x_mols[i], self.x_sys[i] if self.add_sysfeatures_to_graphs else None,
+                                                  bond_or_atom=self.sysfeatures_graphs_mode,
+                                                  special_features=self.include_special_atom_features)
 
     def _transform_pairwise(self):
         x1_indices = []
