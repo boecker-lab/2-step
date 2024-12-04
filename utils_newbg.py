@@ -115,8 +115,10 @@ class RankDataset(Dataset):
         self.is_confl = transformed['is_confl']
         # for including sysfeatures into graphs, graphs have to be recomputed
         if (self.add_sysfeatures_to_graphs or self.include_special_atom_features):
-            print('add system features to graphs')
-            print('add special atom features to graphs')
+            if self.add_sysfeatures_to_graphs:
+                print('add system features to graphs')
+            if self.include_special_atom_features:
+                print('add special atom features to graphs')
             for i in range(len(self.x_mols)):
                 self.x_mols[i] = sysfeature_graph(self.x_ids[i], self.x_mols[i], self.x_sys[i] if self.add_sysfeatures_to_graphs else None,
                                                   bond_or_atom=self.sysfeatures_graphs_mode,

@@ -32,9 +32,11 @@ class MPNranker(nn.Module):
         super(MPNranker, self).__init__()
         if (encoder == 'dmpnn'):
             from dmpnn import dmpnn
+            add_dim = (sys_features_dim if add_sys_features else 0) + (SPECIAL_FEATURES_SIZE if include_special_atom_features else 0)
             self.encoder = dmpnn(encoder_size=encoder_size, depth=depth, dropout_rate=dropout_rate_encoder,
-                                 add_sys_features=add_sys_features, add_sys_features_mode=add_sys_features_mode,
-                                 add_sys_features_dim=sys_features_dim + (SPECIAL_FEATURES_SIZE if include_special_atom_features else 0))
+                                 add_sys_features=add_sys_features or include_special_atom_features,
+                                 add_sys_features_mode=add_sys_features_mode,
+                                 add_sys_features_dim=add_dim)
         elif (encoder.lower() in ['dualmpnnplus', 'dualmpnn']):
             from cdmvgnn import cdmvgnn
             self.encoder = cdmvgnn(encoder, encoder_size=encoder_size,

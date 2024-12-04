@@ -870,25 +870,28 @@ if __name__ == '__main__':
         elif (args.model_type == 'mpn' or args.model_type == 'rankformer'):
             # NOTE: for rankformer only works with the `transformer_individual_cls` setting
             graphs = np.concatenate((train_graphs, test_graphs, val_graphs))
+            add_sys_features = hasattr(model, 'add_sys_features') and model.add_sys_features
             include_special_features = (hasattr(model, 'include_special_atom_features')
                                         and model.include_special_atom_features)
-            if ((hasattr(model, 'add_sys_features') and model.add_sys_features)
-                or include_special_features):
+            if (add_sys_features or include_special_features):
                 from utils_newbg import sysfeature_graph
                 from utils_newbg import SPECIAL_FEATURES_SIZE
-                info('add system features to graphs')
-                print('add special atom features to graphs')
+                if add_sys_features:
+                    info('add system features to graphs')
+                if include_special_features:
+                    info('add special atom features to graphs')
                 smiles_list = d.df.iloc[np.concatenate((d.train_indices, d.test_indices, d.val_indices))]['smiles'].tolist()
                 assert len(graphs) == len(smiles_list)
                 assert np.isclose(Y, d.df.iloc[np.concatenate((d.train_indices, d.test_indices, d.val_indices))]['rt'].tolist()).all()
                 from chemprop.features import set_extra_atom_fdim, set_extra_bond_fdim
+                extra_dim = (train_sys.shape[1] if add_sys_features else 0) + (SPECIAL_FEATURES_SIZE if include_special_features else 0)
                 if (model.add_sys_features_mode == 'bond'):
-                    set_extra_bond_fdim(train_sys.shape[1])
+                    set_extra_bond_fdim(extra_dim)
                 elif (model.add_sys_features_mode == 'atom'):
-                    set_extra_atom_fdim(train_sys.shape[1] + (
-                        SPECIAL_FEATURES_SIZE if include_special_features else 0))
+                    set_extra_atom_fdim(extra_dim)
                 for i in range(len(graphs)):
-                    graphs[i] = sysfeature_graph(smiles_list[i], graphs[i], X_sys[i],
+                    graphs[i] = sysfeature_graph(smiles_list[i], graphs[i],
+                                                 X_sys[i] if add_sys_features else None,
                                                  bond_or_atom=model.add_sys_features_mode,
                                                  special_features=include_special_features)
             if (not args.model_type == 'rankformer' and args.export_embeddings):
