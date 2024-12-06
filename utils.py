@@ -29,6 +29,17 @@ simplefilter(action='ignore', category=pd.errors.PerformanceWarning)
 REL_COLUMNS = ['column.length', 'column.id', 'column.particle.size', 'column.temperature',
                'column.flowrate']
 REL_ONEHOT_COLUMNS = ['class.pH.A', 'class.pH.B', 'class.solvent']
+ONE_HOT_COLUMNS = ['Waters ACQUITY UPLC HSS T3', 'Thermo Scientific Hypersil GOLD', 'Hichrom Alltima HP C18',
+                   'Waters ACQUITY UPLC BEH C18', 'Merck Supelco Ascentis Express C18', 'Phenomenex Kinetex C18',
+                   'Waters Atlantis T3', 'Waters XBridge C18', 'Waters Symmetry C18', 'Agilent ZORBAX RRHD Eclipse Plus C18',
+                   'Phenomenex Synergi Hydro-RP', 'Waters ACQUITY UPLC BEH Shield RP18', 'Phenomenex Luna Omega Polar C18',
+                   'Phenomenex Luna C18', 'Merck Supelco SUPELCOSIL LC-C18', 'Merck LiChrospher RP-18', 'Phenomenex Kinetex EVO C18',
+                   'Agilent ZORBAX Eclipse XDB-C18', 'Agilent InfinityLab Poroshell 120 EC-C18', 'Agilent ZORBAX Eclipse Plus C18',
+                   'Thermo Scientific Accucore C18', 'Merck Supelco Ascentis Express ES-Cyano', 'Merck Supelco Ascentis Express Phenyl-Hexyl',
+                   'Waters CORTECS T3', 'Thermo Scientific Hypercarb', 'Agilent ZORBAX Extend-C18', 'Advanced Chromatography Technologies ACE C18',
+                   'Waters ACQUITY UPLC BEH C8', 'Phenomenex Kinetex XB-C18', 'Phenomenex Synergi Polar-RP',
+                   'Phenomenex Kinetex PS C18', 'Waters CORTECS UPLC C18', 'Restek Raptor Biphenyl', 'Waters ACQUITY UPLC HSS C18',
+                   'Thermo Scientific Acclaim RSLC 120 C18', 'Waters ACQUITY Premier BEH C18']
 
 
 class Standardizer(StandardScaler):
@@ -175,6 +186,7 @@ class Data:
     use_tanaka: bool = False
     use_newonehot: bool = False # NOTE: deprecated
     use_ph: bool = False
+    use_column_onehot: bool = False
     use_gradient: bool = False
     repo_root_folder: str = '/home/fleming/Documents/Projects/RtPredTrainingData_mostcurrent'
     custom_column_fields: Optional[list] = None
@@ -213,6 +225,18 @@ class Data:
         self.datasets_df = None
         self.descriptors = None
         self.ph = None
+
+    # def get_all_columns(self, only_rp=True):
+    #     # NOTE: order is important!
+    #     columns = []
+    #     for column, method_type in pd.read_csv(f'{self.repo_root_folder}/raw_data/studies.tsv', sep='\t')[['column.name', 'method.type']].values:
+    #         if (only_rp and method_type.strip().upper() != 'RP'):
+    #             continue
+    #         if pd.isna(column) or column in columns:
+    #             continue
+    #         columns.append(column)
+    #     print(f'one-hot column encoding uses {len(columns)} columns, hash: {hash(tuple(columns))}')
+    #     return columns
 
 
     def compute_graphs(self):
@@ -349,6 +373,7 @@ class Data:
     """computes and sets all kinds of chr. system features; order is fixed and saved in Data.system_features"""
     def compute_system_information(self, onehot_ids=False, other_dataset_ids=None,
                                    use_usp_codes=False, use_hsm=False, use_tanaka=False, use_newonehot=False, use_ph=False,
+                                   use_column_onehot=False,
                                    use_gradient=False, custom_column_fields=None, remove_na=True,
                                    tanaka_match='best_match', tanaka_ignore_spp_particle_size=True,
                                    col_fields_fallback=True, fallback_metadata='0045'):
@@ -425,6 +450,13 @@ class Data:
             print('using onehot fields', ', '.join(onehot_fields))
             fields.append(self.df[onehot_fields].astype(float).values)
             system_features.extend(onehot_fields)
+        if (use_column_onehot):
+            columns = ONE_HOT_COLUMNS
+            columns_onehot_vector = (lambda column: np.eye(len(columns) + 1)[columns.index(column)]
+                              if column in columns else np.eye(len(columns) + 1)[len(columns)])
+            columns_onehot_fields = np.array([columns_onehot_vector(c) for c in self.df['column.name']])
+            fields.append(columns_onehot_fields)
+            system_features.extend([f'column_{column}' for column in columns] + ['column_nan'])
         if (use_ph):
             fields.append(self.df[['ph']].astype(float).values)
             system_features.extend(['ph'])
@@ -459,6 +491,7 @@ class Data:
             self.compute_system_information(use_usp_codes=self.use_usp_codes,
                                             use_hsm=self.use_hsm, use_tanaka=self.use_tanaka,
                                             use_newonehot=self.use_newonehot, use_ph=self.use_ph,
+                                            use_column_onehot=self.use_column_onehot,
                                             use_gradient=self.use_gradient,
                                             custom_column_fields=self.custom_column_fields,
                                             remove_na=self.columns_remove_na,
