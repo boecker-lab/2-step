@@ -767,6 +767,8 @@ if __name__ == '__main__':
         data_args['sys_scales'] = data.sys_scales
     if (hasattr(data, 'solvent_order')):
         data_args['solvent_order'] = data.solvent_order
+    if (hasattr(data, 'use_column_onehot')):
+        data_args['use_column_onehot'] = data.use_column_onehot
     info('model preprocessing done')
     if (args.confl_pairs):
         info('loading conflicting pairs')
