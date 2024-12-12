@@ -4,9 +4,16 @@ import pandas as pd
 from mapping import LADModel
 from sklearn.model_selection import KFold, ShuffleSplit
 import re
+import numpy as np
 
 def anchors_split(n_anchors=15):
     return ShuffleSplit
+
+def lowest_split(data_novoid, lowest_perc=80):
+    df = data_novoid.reset_index(drop=True).sort_values('roi')
+    cutoff = np.floor(len(df) * (lowest_perc / 100)).astype(int)
+    return (df[:cutoff].index.tolist(), df[cutoff:].index.tolist())
+
 
 if __name__ == '__main__':
     parser = ArgumentParser()
@@ -14,8 +21,10 @@ if __name__ == '__main__':
     parser.add_argument('--void_factor', default=2, type=float)
     parser.add_argument('--repo_root', default='/home/fleming/Documents/Projects/RtPredTrainingData_mostcurrent/')
     parser.add_argument('--anchors', default=None, type=int)
+    parser.add_argument('--lowest_rois_as_training_perc', default=None, type=int)
     parser.add_argument('--folds', default=10, type=int)
     args = parser.parse_args()
+    # args = parser.parse_args('--lowest_rois_as_training_perc 80 /home/fleming/Documents/Projects/rtranknet/runs/FEaio/benchmark/feaiobenchmarktestnostdaltsysl_reporthsmtanakaph_leaveoneout_onlybds/feaiobenchmarktestnostdaltsysl_reporthsmtanakaph_leaveoneout_onlybds_0002_ep10_0002.tsv /home/fleming/Documents/Projects/rtranknet/runs/FEaio/benchmark/feaiobenchmarktestnostdaltsysl_reporthsmtanakaph_leaveoneout_onlybds/feaiobenchmarktestnostdaltsysl_reporthsmtanakaph_leaveoneout_onlybds_0003_ep9_0003.tsv /home/fleming/Documents/Projects/rtranknet/runs/FEaio/benchmark/feaiobenchmarktestnostdaltsysl_reporthsmtanakaph_leaveoneout_onlybds/feaiobenchmarktestnostdaltsysl_reporthsmtanakaph_leaveoneout_onlybds_0018_ep10_0018.tsv /home/fleming/Documents/Projects/rtranknet/runs/FEaio/benchmark/feaiobenchmarktestnostdaltsysl_reporthsmtanakaph_leaveoneout_onlybds/feaiobenchmarktestnostdaltsysl_reporthsmtanakaph_leaveoneout_onlybds_0019_ep10_0019.tsv /home/fleming/Documents/Projects/rtranknet/runs/FEaio/benchmark/feaiobenchmarktestnostdaltsysl_reporthsmtanakaph_leaveoneout_onlybds/feaiobenchmarktestnostdaltsysl_reporthsmtanakaph_leaveoneout_onlybds_0054_ep9_0054.tsv /home/fleming/Documents/Projects/rtranknet/runs/FEaio/benchmark/feaiobenchmarktestnostdaltsysl_reporthsmtanakaph_leaveoneout_onlybds/feaiobenchmarktestnostdaltsysl_reporthsmtanakaph_leaveoneout_onlybds_0055_ep10_0055.tsv'.split())
 
     sys.path.append(args.repo_root)
     from pandas_dfs import get_dataset_df
@@ -32,10 +41,12 @@ if __name__ == '__main__':
         data_novoid = df.loc[df.rt > void_t]
         records_i = []
         if (args.anchors is not None):
-            split_fun = ShuffleSplit(n_splits=args.folds, train_size=args.anchors).split
+            splits = ShuffleSplit(n_splits=args.folds, train_size=args.anchors).split(data_novoid)
+        elif (args.lowest_rois_as_training_perc is not None):
+            splits = [lowest_split(data_novoid, lowest_perc=args.lowest_rois_as_training_perc)]
         else:
-            split_fun = KFold(n_splits=args.folds, shuffle=True).split
-        for i, (train_index, test_index) in enumerate(split_fun(data_novoid)):
+            splits = KFold(n_splits=args.folds, shuffle=True).split(data_novoid)
+        for i, (train_index, test_index) in enumerate(splits):
             data_train = data_novoid.iloc[train_index]
             data_test = data_novoid.iloc[test_index]
             print(f'{i=}, {len(data_train)=}, {i=}, {len(data_test)=}')
