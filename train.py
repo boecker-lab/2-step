@@ -21,7 +21,7 @@ from evaluate import predict, export_predictions, load_model
 from utils_newbg import RankDataset, check_integrity
 from sampling import CustomWeightedRandomSampler, calc_sampling_weights
 
-logger = logging.getLogger('rtranknet')
+logger = logging.getLogger('twosteprt')
 info = logger.info
 
 class TrainArgs(Tap):
@@ -142,8 +142,8 @@ class TrainArgs(Tap):
     check_data: bool = False                       # check how many pairs are conflicting/unpredictable
     clean_data: bool = False                       # remove unpredictable pairs
     # data locations
-    repo_root_folder: str = '/home/fleming/Documents/Projects/RtPredTrainingData_mostcurrent/'
-    add_desc_file: str = '/home/fleming/Documents/Projects/rtranknet/data/qm_merged.csv'
+    repo_root_folder: str = '../RepoRT/'
+    add_desc_file: str = 'data/qm_merged.csv'
     cache_file: str = 'cached_descs.pkl'
     # output control
     verbose: bool = False
@@ -293,7 +293,7 @@ if __name__ == '__main__':
         args = TrainArgs().parse_args()
     if (args.run_name is None):
         run_name = generic_run_name()
-        print(f'preparing rtranknet model "{run_name}"')
+        print(f'preparing ROI prediction model "{run_name}"')
     else:
         run_name = args.run_name
     # logging
@@ -302,7 +302,7 @@ if __name__ == '__main__':
     logger.addHandler(ch)
     if (args.verbose):
         logger.setLevel(logging.INFO)
-        logging.getLogger('rtranknet.utils').setLevel(logging.INFO)
+        logging.getLogger('twosteprt.utils').setLevel(logging.INFO)
         fh = logging.FileHandler(run_name + '.log')
         fh.setLevel(logging.INFO)
         fh.setFormatter(logging.Formatter('%(asctime)s %(name)s %(levelname)s: %(message)s'))

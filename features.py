@@ -4,7 +4,7 @@ from rdkit.Chem import AllChem, Descriptors, Descriptors3D
 import multiprocessing as mp
 import logging
 
-logger = logging.getLogger('rtranknet.features')
+logger = logging.getLogger('twosteprt.features')
 info = logger.info
 warning = logger.warning
 
@@ -43,43 +43,6 @@ def compute_morgan(smile, bits=1024, radius=2):
     mol = Chem.AddHs(Chem.MolFromSmiles(smile))
     AllChem.EmbedMolecule(mol)
     return np.array(AllChem.GetMorganFingerprintAsBitVect(mol, radius, nBits=bits))
-
-def load_ae_features():
-    with open('/home/fleming/Documents/Projects/rtranknet/data/smiles_ae.txt') as f:
-        smiles = [l.strip() for l in f.readlines()]
-    ae = np.load('/home/fleming/Documents/Projects/rtranknet/data/metlin_retention_times_ae.npy')
-    return smiles, ae
-
-
-def get_ae_features(smile, s1, s2):
-    if (not hasattr(get_ae_features, 'smiles')):
-        print('loading store AE features...', end=' ')
-        get_ae_features.smiles, get_ae_features.ae = load_ae_features()
-        print('done.')
-    if (smile in get_ae_features.smiles):
-        return get_ae_features.ae[s1, s2, get_ae_features.smiles.index(smile)]
-    if (not hasattr(get_ae_features, 'm')):
-        print('loading AE model...', end=' ')
-        import sys
-        sys.path.append('/home/fleming/Documents/Projects/custom_guacamol/')
-        import torch
-        from smiles_lstm_hc.rnn_utils import load_rnn_model, load_smiles_from_list
-        m_file = '/home/fleming/Documents/Projects/autoencoder/pretrained_models/concat_with_MINE/model_118_0.32227'
-        get_ae_features.m = load_rnn_model(m_file + '.json', m_file + '.pt', 'cpu')
-        print('done.')
-    import torch
-    from smiles_lstm_hc.rnn_utils import load_rnn_model, load_smiles_from_list
-    smile_enc = load_smiles_from_list([smile])
-    out = get_ae_features.m.forward(torch.from_numpy(smile_enc[0]).long(), None)[1][s1][s2].detach().numpy()
-    return (out[0])
-
-
-def get_add_descs(smiles, add_desc_file='/home/fleming/Documents/Projects/rtranknet/data/qm_merged.csv'):
-    if (not hasattr(get_add_descs, 'd')):
-        import pandas as pd
-        get_add_descs.d = pd.read_csv(add_desc_file, index_col=0)
-        get_add_descs.d = get_add_descs.d[~get_add_descs.d.index.duplicated()]
-    return get_add_descs.d.loc[smiles].values, get_add_descs.d.columns.tolist()
 
 def features(smiles, filter_='rdk', overwrite_cache=False, verbose=False,
              custom_features=[], mode='rdkit', load_factor=0.75,

@@ -126,11 +126,3 @@ class LADModel:
         for coefficient, basis in zip(self.coefficients, self.bases):
             result += coefficient * self.apply_basis_fun(x, basis)
         return result
-
-if __name__ == '__main__':
-    import pandas as pd
-    ols_neg_data = pd.read_csv('/home/fleming/Documents/Projects/rtranknet/runs/FE_sys_eval/predictions/FE_setup_disjoint_sys_yes_cluster_yes_fold1_ep10_0271.tsv',
-                               sep='\t', header=None, names=['smiles', 'rt', 'roi'])
-    mini_data = pd.DataFrame({'roi': [1.], 'rt': [1.]})
-    import doctest
-    doctest.testmod(globs=globals() | dict(ols_neg_data=ols_neg_data, mini_data=mini_data))

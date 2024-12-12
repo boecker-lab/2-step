@@ -23,7 +23,7 @@ from features import features, parse_feature_spec
 
 BENCHMARK_DATASETS = ['0003', '0010', '0018', '0055', '0054', '0019', '0002']
 
-def get_authors(ds, repo_root_dir='/home/fleming/Documents/Projects/RtPredTrainingData_mostcurrent/'):
+def get_authors(ds, repo_root_dir='../RepoRT/'):
     return str(pd.read_csv(repo_root_dir + f'/processed_data/{ds}/{ds}_info.tsv', sep='\t')['authors'].item())
 
 class NpEncoder(json.JSONEncoder):
@@ -334,7 +334,7 @@ class EvalArgs(Tap):
     gpu: bool = False
     batch_size: int = 256
     no_isomeric: bool = False
-    repo_root_folder: str = '/home/fleming/Documents/Projects/RtPredTrainingData_mostcurrent/' # location of the dataset github repository
+    repo_root_folder: str = '../RepoRT/' # location of the dataset github repository
     add_desc_file: str = '/home/fleming/Documents/Projects/rtranknet/data/qm_merged.csv' # csv with additional features with smiles as identifier
     output: Optional[str] = None # write output to json file
     verbose: bool = False
@@ -704,13 +704,7 @@ def confl_eval(ds, preds, test_data, train_data, confl_pairs,
     return pd.DataFrame.from_records(records)
 
 if __name__ == '__main__':
-    if '__file__' in globals():
-        args = EvalArgs().parse_args()
-    else:
-        args = EvalArgs().parse_args('--model external_test_eval_run --test_sets 0343 0344 /home/fleming/Documents/Uni/RTpred/evaluation/split_datasets/0054_test.tsv /home/fleming/Documents/Uni/RTpred/evaluation/split_datasets/0002_test.tsv /home/fleming/Documents/Uni/RTpred/evaluation/split_datasets/0003_test.tsv /home/fleming/Documents/Uni/RTpred/evaluation/split_datasets/0010_test.tsv /home/fleming/Documents/Uni/RTpred/evaluation/split_datasets/0018_test.tsv /home/fleming/Documents/Uni/RTpred/evaluation/split_datasets/0055_test.tsv /home/fleming/Documents/Uni/RTpred/evaluation/split_datasets/0019_test.tsv --epsilon 10s --test_stats --confl_pairs /home/fleming/Documents/Uni/RTpred/pairs6.pkl --export_rois --get_more_dataset_info'.split())
-        args = EvalArgs().parse_args("--model runs/FE_sys/FE_columnph_disjoint_sys_no_fold1_ep10 --test_sets 0004 0017 0018 0048 0049 0052 0079 0080 0101 0158 0179 0180 0181 0182 0226 --epsilon 10s --test_stats --confl_pairs /home/fleming/Documents/Uni/RTpred/pairs6.pkl --overwrite_system_features 'H' 'S*' 'A' 'B' 'C (pH 2.8)' 'C (pH 7.0)' 'kPB' 'αCH2' 'αT/O' 'αC/P' 'αB/P' 'αB/P.1' 'ph' --repo_root_folder /home/fleming/Documents/Projects/RtPredTrainingData_mostcurrent/".split())
-        args = EvalArgs().parse_args('--model runs/FE_sys/FE_setup_disjoint_sys_yes_cluster_yes_fold1_ep10 --test_sets 0002 0009 0038 0043 0049 0050 0052 0060 0062 0066 0082 0098 0100 0201 0202 0203 0204 0206 0236 0237 0264 0270 0271 0342 0343 0387 --epsilon 10s --test_stats --confl_pairs /home/fleming/Documents/Uni/RTpred/pairs6.pkl'.split())
-        args = EvalArgs().parse_args('--model runs/nores/dmpnn_encpv_no_residual3_ep10 --test_sets 0003 0018 0055 0054 0019 0002 --epsilon 10s --test_stats --confl_pairs /home/fleming/Documents/Uni/RTpred/pairs6.pkl --repo_root_folder /home/fleming/Documents/Projects/RtPredTrainingData_mostcurrent/ --preds_from_exported_rois runs/dmpnn_encpv_no_residual3_ep10/dmpnn_encpv_no_residual3_ep10_0003_real.tsv runs/dmpnn_encpv_no_residual3_ep10/dmpnn_encpv_no_residual3_ep10_0018_real.tsv runs/dmpnn_encpv_no_residual3_ep10/dmpnn_encpv_no_residual3_ep10_0055_real.tsv runs/dmpnn_encpv_no_residual3_ep10/dmpnn_encpv_no_residual3_ep10_0054_real.tsv runs/dmpnn_encpv_no_residual3_ep10/dmpnn_encpv_no_residual3_ep10_0019_real.tsv runs/dmpnn_encpv_no_residual3_ep10/dmpnn_encpv_no_residual3_ep10_0002_real.tsv --overwrite_system_features'.split() + ['H', 'S*', 'A', 'B', 'C (pH 2.8)', 'C (pH 7.0)', 'kPB', 'αCH2', 'αT/O', 'αC/P', 'αB/P', 'αB/P.1', 'ph'])
+    args = EvalArgs().parse_args()
 
     if (args.verbose):
         basicConfig(level=INFO)

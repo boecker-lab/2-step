@@ -66,7 +66,7 @@ if __name__ == '__main__':
     parser.add_argument('--accs_file', default=None)
     parser.add_argument('--errorlabels', action='store_true')
     parser.add_argument('--dont_show', action='store_true')
-    parser.add_argument('--repo_root', default='/home/fleming/Documents/Projects/RtPredTrainingData_mostcurrent/')
+    parser.add_argument('--repo_root', default='../RepoRT/')
     parser.add_argument('--void_factor', default=2, type=float)
     parser.add_argument('--hide_void', action='store_true', help='don\'t show data in void volume in plot')
     parser.add_argument('--overwrite_void_thresholds', default=None, help='yaml file containing estimations with dataset IDs as key')
@@ -90,7 +90,6 @@ if __name__ == '__main__':
     parser.add_argument('--normal_mapping_anchors_perc', default=90, type=int)
     # parser.add_argument('--bases', nargs='+', default=['1', 'x', 'x**2'], type=str, help='supported are 1, x, x**2, sqrt(x), x*sqrt(x)')
     args = parser.parse_args()
-    # args = parser.parse_args('/home/fleming/Documents/Projects/rtranknet/runs/FEbenchmark/FEbenchmark_reporthsmtanakaph_benchmarkpartly/FEbenchmark_reporthsmtanakaph_benchmarkpartly_0002_train.tsv.tsv /home/fleming/Documents/Projects/rtranknet/runs/FEbenchmark/FEbenchmark_reporthsmtanakaph_benchmarkpartly/FEbenchmark_reporthsmtanakaph_benchmarkpartly_0002_test.tsv.tsv --repo_root /home/fleming/Documents/Projects/RtPredTrainingData_mostcurrent/ --errorlabels --anchor 15'.split())
     sys.path.append(args.repo_root)
     from pandas_dfs import get_dataset_df
     dss = get_dataset_df()

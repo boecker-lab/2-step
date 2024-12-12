@@ -29,7 +29,7 @@ class SplittingArgs(Tap):
     setup_cluster_fields: List[str] = ['column.name', 'column.length', 'column.id', 'column.particle.size',
                                        'column.temperature', 'column.flowrate', 'mobilephase']
     k_fold: int = 5
-    repo_root_folder: str = '/home/fleming/Documents/Projects/RtPredTrainingData_mostcurrent/'
+    repo_root_folder: str = '../RepoRT/'
     test_arg: List[str] = []
     nr_initial_datasets: int = -1
     out_dir: Optional[str] = None

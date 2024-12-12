@@ -16,7 +16,7 @@ import logging
 from functools import reduce
 from torch.utils.data import default_collate, default_convert
 
-logger = logging.getLogger('rtranknet.mpnranker2')
+logger = logging.getLogger('twosteprt.mpnranker2')
 info = logger.info
 warning = logger.warning
 

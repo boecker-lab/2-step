@@ -20,7 +20,7 @@ if __name__ == '__main__':
     parser.add_argument('--final_accs_over', help='final stats determined by test or train datasets',
                         choices=['train', 'test'], default='test')
     parser.add_argument('--splits_dir', help='directory containing dataset-split files',
-                        default='/home/fleming/Documents/Projects/rtranknet/splits/FE')
+                        default='splits/FE')
     parser.add_argument('--splits_prefixes', help='filename prefixes for dataset-split files',
                         default=['setup_disjoint_fold_', 'columnph_disjoint_fold_', 'columnphdiff_disjoint_fold_'], nargs='+')
     parser.add_argument('--ignore_missing_datasets', help='make stats even when datasets are missing from eval',
@@ -34,8 +34,6 @@ if __name__ == '__main__':
     parser.add_argument('--final_metric', default='acc')
     parser.add_argument('--final_stats_over_all_sets', help='final stats not over folds but over all (test) datasets',
                         action='store_true')
-
-    # args = parser.parse_args(list(glob('/home/fleming/Documents/Projects/rtranknet/runs/FE_newepsilonacc/FE_columnphdiff_disjoint_sys_yes_cluster_no_fold*_ep*_eval_acc_ignore_epsilon.json')))
     args = parser.parse_args()
 
 

@@ -53,7 +53,7 @@ class PredictArgs(Tap):
 
 if __name__ == '__main__':
     args = PredictArgs().parse_args()
-    # args = PredictArgs().parse_args('--input_compounds /home/fleming/Documents/Projects/rtranknet/test/input_0002.tsv --input_metadata /home/fleming/Documents/Projects/RtPredTrainingData_mostcurrent/processed_data/0002/0002_metadata.yaml --out /home/fleming/Documents/Projects/rtranknet/test/predicted_0002.tsv --model /home/fleming/Documents/Projects/rtranknet/test/FE_setup_disjoint_sys_yes_cluster_no_fold1_new.pt --verbose'.split())
+    # args = PredictArgs().parse_args('--input_compounds /home/fleming/Documents/Projects/rtranknet/test/input_0002.tsv --input_metadata ../RepoRT/processed_data/0002/0002_metadata.yaml --out /home/fleming/Documents/Projects/rtranknet/test/predicted_0002.tsv --model /home/fleming/Documents/Projects/rtranknet/test/FE_setup_disjoint_sys_yes_cluster_no_fold1_new.pt --verbose'.split())
     if (args.verbose):
         basicConfig(level=INFO)
     if (args.gpu):

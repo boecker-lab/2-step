@@ -44,29 +44,3 @@ def calc_sampling_weights(td: RankDataset, method: Literal['compounds', 'pairs']
               + (', using sqrt' if sqrt_weights else '')
               + f': {sets.weights.agg(["min", "max", "mean", "median"])}')
     return sets.weights.values
-
-if __name__ == '__main__':
-    with open('/home/fleming/Documents/Projects/rtranknet/bigdata.pkl', 'rb') as f:
-        td = pickle.load(f)
-    clusters = {ds: [i for i, c in enumerate(td.dataset_clusters) if ds in c][0]
-                for ds in [ds for c in td.dataset_clusters for ds in c]}
-
-    from itertools import product
-    for method, cluster, sqrt in product(['compounds', 'pairs'], [False, True], [False, True]):
-        weights = calc_sampling_weights(td, method, cluster_informed=cluster, sqrt_weights=sqrt, verbose=True)
-        records = []
-        for i in CustomWeightedRandomSampler(weights, 100, replacement=False):
-            ds = td.dataset_info[td.x1_indices[i]]
-            records.append(dict(ds=ds, cluster=clusters[ds]))
-        df = pd.DataFrame.from_records(records)
-        print(df.ds.value_counts())
-        print(df.cluster.value_counts())
-
-    weights = calc_sampling_weights(td, 'pairs', True, False)
-    s = CustomWeightedRandomSampler(weights, 32, replacement=True)
-    from torch.utils.data.dataloader import DataLoader
-    tl = DataLoader(td, 8, sampler=s, collate_fn=custom_collate)
-    for epoch in range(4):
-        print('epoch', epoch+1)
-        for batch in tl:
-            print(batch[0][0][2])

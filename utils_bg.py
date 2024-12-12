@@ -136,46 +136,6 @@ class BatchGenerator(tf.keras.utils.Sequence):
         y_trans = []
         weights = []
 
-        ###############
-        # DEBUG START #
-        ###############
-
-        """
-        pairs = pickle.load(open('/home/fleming/Documents/Uni/RTpred/pairs_0068_0138.pkl', 'rb'))
-        from itertools import permutations, combinations
-        for n, (i, j) in enumerate(combinations(range(len(y)), 2)):
-            id1, id2 = ids[i], ids[j]
-            if (dataset_info[i] != dataset_info[j]):
-                continue
-            if (frozenset([id1, id2]) not in pairs):
-                continue
-            if (np.abs(y[i] - y[j]) < 0.5):
-                print('void continue', dataset_info[i], y[i], y[j])
-                continue
-            y_res = 1 if y[i] > y[j] else (-1 if self.y_neg else 0)
-            if (-1**n == 1):
-                x1_indices.append(i)
-                x2_indices.append(j)
-                y_trans.append(y_res)
-            else:
-                x1_indices.append(j)
-                x2_indices.append(i)
-                y_trans.append(1 if y_res != 1 else (-1 if self.y_neg else 0))
-            weights.append(1.0)
-        from time import time
-        pickle.dump([(tuple([ids[x1_indices[i]], ids[x2_indices[i]]]), y_trans[i], dataset_info[x1_indices[i]])
-                      for i in range(len(y_trans))],
-                    open(f'/tmp/rtranknet_weights_dump_{int(time() * 1000)}.pkl', 'wb'))
-        return np.asarray(x1_indices), np.asarray(x2_indices), np.asarray(
-            y_trans), np.asarray(weights)
-
-        """
-
-        #############
-        # DEBUG END #
-        #############
-
-
         # group by dataset
         groups = {}
         pair_nrs = {}

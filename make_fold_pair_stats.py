@@ -12,13 +12,12 @@ if __name__ == '__main__':
     parser.add_argument('--out_file')
     parser.add_argument('--fold_files', nargs='+')
     parser.add_argument('--scenario', default='columnph')
-    parser.add_argument('--repo_root', default='/home/fleming/Documents/Projects/RtPredTrainingData_mostcurrent/')
-    parser.add_argument('--conflicting_smiles_pairs', default='/home/fleming/Documents/Uni/RTpred/pairs6.pkl')
+    parser.add_argument('--repo_root', default='../RepoRT/')
+    parser.add_argument('--conflicting_smiles_pairs', default='data/pairs6.pkl')
     parser.add_argument('--epsilon', default=0.5, type=float)
     parser.add_argument('--qualifiers', default=['H', 'S*', 'A', 'B', 'C (pH 2.8)', 'C (pH 7.0)', 'kPB', 'αCH2', 'αT/O', 'αC/P', 'αB/P', 'αB/P.1', 'ph'],
                         nargs='+', type=str)
     parser.add_argument('--contradictory_strict', action='store_true')
-    args = parser.parse_args('--fold_file /home/fleming/Documents/Projects/rtranknet/setup_disjoint_fold_1_test.txt /home/fleming/Documents/Projects/rtranknet/setup_disjoint_fold_2_test.txt /home/fleming/Documents/Projects/rtranknet/setup_disjoint_fold_3_test.txt /home/fleming/Documents/Projects/rtranknet/setup_disjoint_fold_4_test.txt /home/fleming/Documents/Projects/rtranknet/setup_disjoint_fold_5_test.txt /home/fleming/Documents/Projects/rtranknet/setup_disjoint_fold_1_train.txt /home/fleming/Documents/Projects/rtranknet/setup_disjoint_fold_2_train.txt /home/fleming/Documents/Projects/rtranknet/setup_disjoint_fold_3_train.txt /home/fleming/Documents/Projects/rtranknet/setup_disjoint_fold_4_train.txt /home/fleming/Documents/Projects/rtranknet/setup_disjoint_fold_5_train.txt --scenario setup --epsilon 0.166666666667 --out_file /tmp/bla.tsv'.split())
     args = parser.parse_args()
 
     splits = {}

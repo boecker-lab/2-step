@@ -13,7 +13,7 @@ import pandas as pd
 from collections import Counter, defaultdict
 from pprint import pprint
 
-logger = logging.getLogger('rtranknet.utils')
+logger = logging.getLogger('twosteprt.utils')
 info = logger.info
 warning = logger.warning
 
@@ -534,7 +534,7 @@ def check_integrity(x: RankDataset, clean=False):
         print(f'conflicting pairs percentage (averaged): {(stats.nr_confl / stats.nr_combs).mean():.2%}')
         print(f'invalid conflicting pairs percentage: {stats.nr_invalid.sum() / stats.nr_confl.sum():.2%}')
         print(f'invalid pairs percentage (of total): {stats.nr_invalid.sum() / stats.nr_combs.sum():.2%}')
-    # dss = pd.merge(dss, pd.read_csv(os.path.join('/home/fleming/Documents/Projects/RtPredTrainingData_mostcurrent/', 'ph_info.csv'), sep='\t', index_col=0)[REL_ONEHOT_COLUMNS], how='left', left_index=True, right_index=True)
+    # dss = pd.merge(dss, pd.read_csv(os.path.join('../RepoRT/', 'ph_info.csv'), sep='\t', index_col=0)[REL_ONEHOT_COLUMNS], how='left', left_index=True, right_index=True)
     # for ds1, ds2 in same_settings_datasets:
     #     assert all(x[0][0] == x[0][1] or np.isnan(x[0][0]) and np.isnan(x[0][1]) for x in
     #                zip(dss.loc[[ds1, ds2], ['column.id', 'column.flowrate', 'column.length'] +

@@ -18,7 +18,7 @@ import json
 
 from features import features
 
-logger = logging.getLogger('rtranknet.utils')
+logger = logging.getLogger('twosteprt.utils')
 info = logger.info
 warning = logger.warning
 
@@ -106,7 +106,7 @@ def pair_weights(smiles1: str, smiles2: str, rt_diff: float,
 #     plt.show()
 
 
-def get_column_scaling(cols, repo_root_folder='/home/fleming/Documents/Projects/RtPredTrainingData_mostcurrent/',
+def get_column_scaling(cols, repo_root_folder='../RepoRT/',
                        scale_dict={}):
     if (any(c not in scale_dict for c in cols)):
         # load stored info
@@ -188,7 +188,7 @@ class Data:
     use_ph: bool = False
     use_column_onehot: bool = False
     use_gradient: bool = False
-    repo_root_folder: str = '/home/fleming/Documents/Projects/RtPredTrainingData_mostcurrent'
+    repo_root_folder: str = '../RepoRT/'
     custom_column_fields: Optional[list] = None
     columns_remove_na: bool = True
     hsm_fields: List[str] = field(default_factory=lambda: ['H', 'S*', 'A', 'B', 'C (pH 2.8)', 'C (pH 7.0)'])
@@ -274,7 +274,7 @@ class Data:
                          mode='rdkit',
                          verbose=False,
                          add_descs=False,
-                         add_desc_file='/home/fleming/Documents/Projects/rtranknet/data/qm_merged.csv'):
+                         add_desc_file='data/qm_merged.csv'):
         if (self.x_features is not None and self.get_y() is not None and not recompute):
             print(
                 'features are already computed and `recompute` is not specified, do nothing'
