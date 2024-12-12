@@ -1,5 +1,6 @@
 import logging
 import numpy as np
+import torch
 from torch.utils.data.dataloader import DataLoader
 # from tensorboardX import SummaryWriter
 from torch.utils.tensorboard import SummaryWriter
@@ -26,12 +27,12 @@ info = logger.info
 
 class TrainArgs(Tap):
     input: List[str]            # Either CSV or dataset ids
-    model_type: Literal['ranknet', 'mpn', 'rankformer', 'rankformer_sep', 'rankformer_rt'] = 'mpn'
+    model_type: Literal['mpn'] = 'mpn'
     feature_type: Literal['None', 'rdkall', 'rdk2d', 'rdk3d'] = 'None' # type of features to use
     # training
     gpu: bool = False
-    batch_size: int = 64
-    epochs: int = 5
+    batch_size: int = 512
+    epochs: int = 10
     early_stopping_patience: Optional[int] = None # stop training when val loss doesn't improve for this number of times
     test_split: float = 0                         # not needed when testing on exclusive test datasets afterwards
     val_split: float = 0.05
@@ -46,17 +47,17 @@ class TrainArgs(Tap):
     # data
     no_isomeric: bool = False # do not use isomeric data (if available)
     balance: bool = False       # balance data by dataset
-    no_group_weights: bool = False # don't scale weights by number of dataset pairs
+    no_group_weights: bool = False # don't scale weights by number of dataset pairs; use this option when *sampling*
     cluster: bool = False          # cluster datasets with same column params for calculating group weights
     downsample_groups: bool = False       # min number of pairs will be used as the max pair nr for each group
     downsample_always_confl: bool = False # include all conflicting pairs also when downsampling
     downsample_factor: float=1.0          # if greater than 1, some clusters may have less pairs
     group_weights_only_intra_cluster: bool=False  # group-weights are used, but only for weighing within a cluster
     sample: bool=False                            # sample the RankDataset based on group weights
-    sampling_count: int=100_000                      # how many pairs per epoch when using the `sample` option
+    sampling_count: int=500_000                      # how many pairs per epoch when using the `sample` option
     sampling_mode: Literal['compounds', 'pairs']='pairs' # compute sampling probabilities based on dataset compounds or pairs
     sampling_sqrt_weights: bool=False                    # use sqrt on compounds/pair counts to prevent extreme probability distributions
-    void_rt: float = 0.0        # void time threshold; used for ALL datasets
+    void_rt: float = 0.0        # void time threshold; used for ALL datasets (if > 0)
     no_metadata_void_rt: bool = False # do not use t0 value from repo metadata (times void_factor)
     remove_void_compounds: bool = False # throw out all compounds eluting in the void volume
     void_factor: float = 2              # factor for 'column.t0' value to use as void threshold
@@ -64,12 +65,11 @@ class TrainArgs(Tap):
     validation_datasets: List[str] = [] # datasets to use for validation (instead of split of training data)
     test_datasets: List[str] = [] # datasets to use for test (instead of split of training data)
     # features
-    features: List[str] = ['MolLogP']                                     # custom features
-    no_standardize: bool = False                                    # do not standardize features
+    features: List[str] = []                                     # custom descriptors
+    no_standardize: bool = False                                    # do not standardize system features + descriptors
     reduce_features: bool = False                                    # reduce features
     num_features: Optional[int] = None
     # additional features
-    comp_classes: bool = False  # use classyfire compound classes as add. features
     sysinfo: bool = False       # use column information as add. features
     columns_use_hsm: bool = False
     columns_use_tanaka: bool = False
@@ -81,19 +81,16 @@ class TrainArgs(Tap):
     fallback_metadata: str = '0045' # repository metadata to use when needed and no data available; can also be 'average' or 'zeros'
     usp_codes: bool = False     # use column usp codes as onehot system features (only for `--sysinfo`)
     use_ph: bool = False        # use pH estimations of mobilephase if available
-    use_gradient: bool = False  # use mobile phase solvent concentrations at specific gradient positions
+    use_gradient: bool = False  # use mobile phase solvent concentrations at specific gradient positions WARNING: can lead to rt being leaked
     debug_onehot_sys: bool = False # onehot dataset encoding
     onehot_test_sets: List[str] = [] # test set IDs to include in onehot encoding
-    add_descs: bool = False     # use additional stored descriptors (e.g, qm8)
-    classes_l_thr: float = 0.005
-    classes_u_thr: float = 0.25
     columns_use_newonehot: bool = False
     tanaka_match: Literal['best_match', 'exact'] = 'best_match' # 'exact': only allow tanaka parameters with the matching particle size
     tanaka_ignore_spp_particle_size: bool = True
     # model general
-    sizes: List[int] = [128, 16] # hidden layer sizes for ranking: [mol, sysxmol] -> ROI
-    sizes_sys: List[int] = [256] # hidden layer sizes for system feature vs. molecule encoding
-    encoder_size: int = 256 # MPNencoder size
+    sizes: List[int] = [256, 65] # hidden layer sizes for ranking: [mol, sysxmol] -> ROI
+    sizes_sys: List[int] = [256, 256] # hidden layer sizes for system feature vs. molecule encoding
+    encoder_size: int = 512 # MPNencoder size
     mpn_depth: int = 3      # Number of message-passing steps
     dropout_rate_encoder: float = 0.0   # MPN dropout rate
     dropout_rate_pv: float = 0.0   # system preference encoding dropout rate
@@ -101,33 +98,17 @@ class TrainArgs(Tap):
     # mpn model
     mpn_loss: Literal['margin', 'bce'] = 'margin'
     mpn_margin: float = 0.1
-    mpn_encoder: Literal['dmpnn', 'dualmpnnplus', 'dualmpnn', 'deepgcnrt', 'graphformer', 'deepergcn'] = 'dmpnn'
+    mpn_encoder: Literal['dmpnn'] = 'dmpnn'
     smiles_for_graphs: bool = False # always use SMILES internally, compute graphs only on demand
     mpn_no_residual_connections_encoder: bool = False # last stack for mpn model only takes the encoding convolved with sys features
     mpn_add_sys_features: bool = False                # add sys features to the graphs themselves
     mpn_add_sys_features_mode: Literal['bond', 'atom'] = 'atom' # whether to add sys featues as 'bond' and 'atom' features
-    mpn_add_special_atom_features: bool = False
     mpn_no_sys_layers: bool = False # don't add any layers for sys features to the MPN (for example when sys features are already part of the graphs)
     mpn_sys_blowup: bool = False # extra layer which blows up sysfeatures dimension to encoder size
-    # rankformer model
-    # TODO: all the hyperparams
-    transformer_nhead: int = 4
-    transformer_nhid: int = 1024
-    transformer_nlayers: int = 6
-    transformer_multiple_sys_tokens: bool = False
-    transformer_one_token_per_graph: bool = False
-    transformer_no_special_tokens: bool = False
-    transformer_dropout: float = 0.1
-    transformer_rank_hidden_sizes: List[int] = []
-    transformer_fake: bool = False # TODO: DEBUG
-    transformer_individual_cls: bool = False
-    transformer_rt_hidden_sizes: List[int] = [16]
-    transformer_no_sqrt: bool=False
-    transformer_no_sigmoid: bool=False
     # pairs
-    epsilon: Union[str, float] = '30s' # difference in evaluation measure below which to ignore falsely predicted pairs
-    pair_step: int = 3
-    pair_stop: Optional[Union[int, str]] = 128
+    epsilon: Union[str, float] = '10s' # difference in evaluation measure below which to ignore falsely predicted pairs
+    pair_step: int = 1
+    pair_stop: Optional[Union[int, str]] = None
     no_rtdiff_pair_weights: bool=False            # don't weigh pairs according to rt difference
     weight_steep: float = 20
     weight_mid: float = 0.75
@@ -150,9 +131,8 @@ class TrainArgs(Tap):
     no_progbar: bool = False
     run_name: Optional[str] = None
     export_rois: bool = False
-    plot_weights: bool = False
     save_data: bool = False
-    ep_save: bool = False       # save after each epoch (only for mpn models)
+    ep_save: bool = False       # save after each epoch
     no_train_acc_all: bool = False # can save memory; this metric is pretty useless anyways
     no_train_acc: bool = False # can save memory; this metric is pretty useless anyways
 
@@ -191,8 +171,7 @@ def generic_run_name():
 
 
 def preprocess(data: Data, args: TrainArgs):
-    data.compute_features(**parse_feature_spec(args.feature_type), n_thr=args.num_features, verbose=args.verbose,
-                          add_descs=args.add_descs, add_desc_file=args.add_desc_file)
+    data.compute_features(**parse_feature_spec(args.feature_type), n_thr=args.num_features, verbose=args.verbose)
     if (data.train_y is not None):
         # assume everything was computed, split etc. already
         return ((data.train_graphs, data.train_x, data.train_sys, data.train_y),
@@ -204,7 +183,7 @@ def preprocess(data: Data, args: TrainArgs):
         pickle.dump(features.cached, open(args.cache_file, 'wb'))
     if args.debug_onehot_sys:
         sorted_dataset_ids = sorted(set(args.input) | set(args.onehot_test_sets))
-        data.compute_system_information(True, sorted_dataset_ids, repo_root_folder=args.repo_root_folder)
+        data.compute_system_information(True, sorted_dataset_ids)
     info('done. preprocessing...')
     if (data.graph_mode):
         data.compute_graphs()
@@ -218,59 +197,6 @@ def preprocess(data: Data, args: TrainArgs):
     if (args.fallback_metadata == 'zeros' or args.fallback_column == 'zeros'):
         data.nan_columns_to_zeros()
     return data.get_split_data((args.test_split, args.val_split))
-
-def prepare_rt_data(data, train_graphs, train_sys, train_y, val_graphs, val_sys, val_y,
-                    use_weights=True):
-    from ranknet_transformer import RTDataset
-    # drop doublets and void compounds from data
-    train_df = data.df.iloc[data.train_indices]
-    val_df = data.df.iloc[data.val_indices]
-    train_void_thr = train_df.dataset_id.apply(lambda x: data.void_info[x])
-    val_void_thr = val_df.dataset_id.apply(lambda x: data.void_info[x])
-    train_doublets = train_df.duplicated(subset=['dataset_id', 'smiles.std'], keep=False)
-    val_doublets = val_df.duplicated(subset=['dataset_id', 'smiles.std'], keep=False)
-    train_select = ~((train_y < train_void_thr) | train_doublets)
-    val_select = ~((val_y < val_void_thr) | val_doublets)
-    train_graphs = train_graphs[train_select]
-    train_sys = train_sys[train_select]
-    train_y = train_y[train_select]
-    val_graphs = val_graphs[val_select]
-    val_sys = val_sys[val_select]
-    val_y = val_y[val_select]
-    if (use_weights):
-        # weights: by dataset size (1 -- approx. 500)
-        train_counts = train_df[train_select].groupby('dataset_id')['smiles.std'].transform('count')
-        train_weights = (train_counts.max() / train_counts).values
-        val_counts = val_df[val_select].groupby('dataset_id')['smiles.std'].transform('count')
-        val_weights = (val_counts.max() / val_counts).values
-    else:
-        train_weights = np.ones_like(train_y).astype('float32')
-        val_weights = np.ones_like(val_y).astype('float32')
-    train_dataset = RTDataset(train_graphs, train_sys.astype('float32'), train_y.astype('float32'), train_weights.astype('float32'))
-    val_dataset = RTDataset(val_graphs, val_sys.astype('float32'), val_y.astype('float32'), val_weights.astype('float32'))
-    return train_dataset, val_dataset
-
-def prepare_tf_model(args: TrainArgs, input_size: int):
-    if (args.device is not None and re.match(r'[cg]pu:\d', args.device.lower())):
-        print(f'attempting to use device {args.device}')
-        strategy = tf.distribute.OneDeviceStrategy(f'/{args.device.lower()}')
-        context = strategy.scope()
-    elif (len([dev for dev in tf.config.get_visible_devices() if dev.device_type == 'GPU']) > 1
-        or args.device == 'mirrored'):
-        # more than one gpu -> MirroredStrategy
-        print('Using MirroredStrategy')
-        strategy = tf.distribute.MirroredStrategy()
-        context = strategy.scope()
-    else:
-        context = contextlib.nullcontext()
-    with context:
-        v = tf.Variable(1.0)
-        info(f'using {v.device}')
-        return RankNetNN(input_size=input_size,
-                         hidden_layer_sizes=args.sizes,
-                         activation=(['relu'] * len(args.sizes)),
-                         solver='adam',
-                         dropout_rate=args.dropout_rate_encoder)
 
 def rename_old_writer_logs(prefix):
     suffixes = ['_train', '_val', '_confl']
@@ -318,23 +244,10 @@ if __name__ == '__main__':
             torch.set_default_device('cuda')
         print('torch device:', torch.tensor([1.2, 3.4]).device, file=sys.stderr)
         graphs = True
-    elif ('rankformer' in args.model_type):
-        from ranknet_transformer import (RankformerEncoder, Rankformer, RankformerRTPredictor,
-                                         rankformer_train, rankformer_rt_train, FFNEncoder,
-                                         RankformerEncoderSub, RankformerEncoderPart, RankformerSeparate,
-                                         rankformer_separate_train)
-        import torch
-        if (args.gpu):
-            torch.set_default_device('cuda')
-        print('torch device:', torch.tensor([1.2, 3.4]).device, file=sys.stderr)
-        graphs = True
     else:
-        import tensorflow as tf
-        from LambdaRankNN import RankNetNN
-        graphs = True
+        raise NotImplementedError(args.model_type)
     # additional parameters taken from args
-    y_neg = (False if 'rankformer' in args.model_type and args.model_type != 'rankformer_sep'
-             and not args.transformer_individual_cls else args.mpn_loss == 'margin')
+    y_neg = (args.mpn_loss == 'margin')
     # caching
     if (args.cache_file is not None and args.feature_type != 'None'):
         features.write_cache = False # flag for reporting changes to cache
@@ -355,17 +268,16 @@ if __name__ == '__main__':
     if (len(args.input) == 1 and os.path.exists(input_ := args.input[0]) and re.match(r'.*\.(tf|pt)$', input_)):
         if (input_.endswith('.tf')):
             print('input is trained Tensorflow model')
-            ranker, data, config = load_model(input_, 'keras')
+            raise NotImplementedError('Tensorflow model')
         elif (input_.endswith('.pt')):
             print('input is trained PyTorch model')
             ranker, data, config = load_model(input_, 'mpn')
     else:
         print('input from RepoRT dataset IDs and/or external datasets')
-        data = Data(use_compound_classes=args.comp_classes, use_system_information=args.sysinfo,
+        data = Data(use_system_information=args.sysinfo,
                     metadata_void_rt=(not args.no_metadata_void_rt),
                     remove_void_compounds=args.remove_void_compounds,
                     void_factor=args.void_factor,
-                    classes_l_thr=args.classes_l_thr, classes_u_thr=args.classes_u_thr,
                     use_usp_codes=args.usp_codes, custom_features=args.features,
                     use_hsm=args.columns_use_hsm, use_tanaka=args.columns_use_tanaka,
                     use_newonehot=args.columns_use_newonehot, use_ph=args.use_ph,
@@ -438,10 +350,7 @@ if __name__ == '__main__':
      (test_graphs, test_x, test_sys, test_y)) = preprocess(data, args)
 
     if (args.mpn_encoder == 'dmpnn'):
-        if (args.model_type == 'rankformer_rt'):
-            from mpnranker2 import custom_collate_single as custom_collate
-        else:
-            from mpnranker2 import custom_collate
+        from mpnranker2 import custom_collate
         from dmpnn_graph import dmpnn_batch
         if (args.mpn_add_sys_features):
             from chemprop.features import set_extra_atom_fdim, set_extra_bond_fdim
@@ -450,14 +359,8 @@ if __name__ == '__main__':
             elif (args.mpn_add_sys_features_mode == 'atom'):
                 set_extra_atom_fdim(train_sys.shape[1])
         custom_collate.graph_batch = dmpnn_batch
-    elif (args.mpn_encoder == 'graphformer'):
-        from mpnranker2 import custom_collate
-        from graphformer_graph import graphformer_batch
-        custom_collate.graph_batch = graphformer_batch
-    elif (args.mpn_encoder == 'deepergcn'):
-        from mpnranker2 import custom_collate
-        from generic_gnn_graph import gnn_batch
-        custom_collate.graph_batch = gnn_batch
+    else:
+        raise NotImplementedError(args.mpn_encoder)
     rename_old_writer_logs(f'runs/{run_name}')
     writer = SummaryWriter(f'runs/{run_name}_train')
     val_writer = SummaryWriter(f'runs/{run_name}_val') if len(val_y) > 0 else None
@@ -467,286 +370,150 @@ if __name__ == '__main__':
         json.dump({'train_sets': args.input, 'name': run_name,
                    'args': args._log_all()},
                   open(f'{run_name}_config.json', 'w'), indent=2)
-    if (args.model_type == 'rankformer_rt'):
-        # no need for ranking pairs
-        rankformer_encoder = ranker.ranknet_encoder
-        rankformer_rt = RankformerRTPredictor(rankformer_encoder, args.transformer_rt_hidden_sizes)
-        if args.verbose:
-            print(rankformer_rt)
-        train_dataset, val_dataset = prepare_rt_data(data=data, train_graphs=train_graphs, train_sys=train_sys,
-                                                     train_y=train_y, val_graphs=val_graphs, val_sys=val_sys,
-                                                     val_y=val_y, use_weights=(not args.no_group_weights))
-        trainloader = DataLoader(train_dataset, args.batch_size, shuffle=True,
-                                 generator=torch.Generator(device='cuda' if args.gpu else 'cpu'),
-                                 collate_fn=custom_collate if (args.mpn_encoder in ['dmpnn', 'graphformer', 'deepergcn']) else None)
-        if len(val_dataset) > 0:
-            valloader = DataLoader(val_dataset, args.batch_size, shuffle=True,
-                                   generator=torch.Generator(device='cuda' if args.gpu else 'cpu'),
-                                   collate_fn=custom_collate if (args.mpn_encoder in ['dmpnn', 'graphformer', 'deepergcn']) else None)
-        else:
-            valloader = None
-        # testloader = DataLoader(test_dataset, args.batch_size, shuffle=True,
-        #                          generator=torch.Generator(device='cuda' if args.gpu else 'cpu'),
-        #                          collate_fn=custom_collate if (args.mpn_encoder in ['dmpnn', 'graphformer']) else None)
-        try:
-            rankformer_rt_train(rankformer_rt=rankformer_rt, bg=trainloader, epochs=args.epochs,
-                                epochs_start=ranker.max_epoch,
-                                writer=writer, val_g=valloader, val_writer=val_writer,
-                                steps_train_loss=np.ceil(len(trainloader) / 100).astype(int),
-                                steps_val_loss=np.ceil(len(trainloader) / 5).astype(int),
-                                early_stopping_patience=args.early_stopping_patience,
-                                learning_rate=args.learning_rate,
-                                no_encoder_train=args.no_encoder_train, ep_save=args.ep_save)
-        except KeyboardInterrupt:
-            print('interrupted training')
-        if (args.save_data):
-            import torch        # TODO: just torch everywhere
-            torch.save(rankformer_rt, run_name + '.pt')
+
+    conflicting_smiles_pairs = (pickle.load(open(args.conflicting_smiles_pairs, 'rb'))
+                                if args.conflicting_smiles_pairs is not None else {})
+    info('done. Initializing RankDatasets...')
+    print(f'{data.void_info=}')
+    print(f'training data shapes: {train_x.shape=}, {train_sys.shape=}')
+    traindata = RankDataset(x_mols=train_graphs, x_extra=train_x, x_sys=train_sys,
+                            x_ids=data.df.iloc[data.train_indices].smiles.tolist(),
+                            y=train_y, x_sys_global_num=data.x_info_global_num,
+                            dataset_info=data.df.dataset_id.iloc[data.train_indices].tolist(),
+                            void_info=data.void_info,
+                            pair_step=args.pair_step,
+                            pair_stop=args.pair_stop, use_pair_weights=(not args.no_rtdiff_pair_weights),
+                            discard_smaller_than_epsilon=args.discard_smaller_than_epsilon,
+                            use_group_weights=(not args.no_group_weights),
+                            cluster=args.cluster,
+                            downsample_groups=args.downsample_groups,
+                            downsample_always_confl=args.downsample_always_confl,
+                            downsample_factor=args.downsample_factor,
+                            group_weights_only_intra_cluster=args.group_weights_only_intra_cluster,
+                            no_inter_pairs=(not args.inter_pairs),
+                            no_intra_pairs=args.no_intra_pairs,
+                            max_indices_size=args.max_pair_compounds,
+                            max_num_pairs=args.max_num_pairs,
+                            weight_mid=args.weight_mid,
+                            weight_steepness=args.weight_steep,
+                            dynamic_weights=args.dynamic_weights,
+                            y_neg=y_neg,
+                            y_float=('rankformer' in args.model_type),
+                            conflicting_smiles_pairs=conflicting_smiles_pairs,
+                            confl_weight=args.confl_weight,
+                            add_sysfeatures_to_graphs=args.mpn_add_sys_features,
+                            sysfeatures_graphs_mode=args.mpn_add_sys_features_mode)
+    valdata = RankDataset(x_mols=val_graphs, x_extra=val_x, x_sys=val_sys,
+                          x_ids=data.df.iloc[data.val_indices].smiles.tolist(),
+                          y=val_y, x_sys_global_num=data.x_info_global_num,
+                          dataset_info=data.df.dataset_id.iloc[data.val_indices].tolist(),
+                          void_info=data.void_info,
+                          pair_step=args.pair_step,
+                          pair_stop=args.pair_stop, use_pair_weights=(not args.no_rtdiff_pair_weights),
+                          discard_smaller_than_epsilon=args.discard_smaller_than_epsilon,
+                          use_group_weights=(not args.no_group_weights),
+                          cluster=args.cluster,
+                          downsample_groups=args.downsample_groups,
+                          downsample_always_confl=args.downsample_always_confl,
+                          downsample_factor=args.downsample_factor,
+                          group_weights_only_intra_cluster=args.group_weights_only_intra_cluster,
+                          no_inter_pairs=(not args.inter_pairs),
+                          no_intra_pairs=args.no_intra_pairs,
+                          max_indices_size=args.max_pair_compounds,
+                          max_num_pairs=args.max_num_pairs,
+                          weight_mid=args.weight_mid,
+                          weight_steepness=args.weight_steep,
+                          dynamic_weights=args.dynamic_weights,
+                          y_neg=y_neg,
+                          y_float=('rankformer' in args.model_type),
+                          conflicting_smiles_pairs=conflicting_smiles_pairs,
+                          confl_weight=args.confl_weight,
+                          add_sysfeatures_to_graphs=args.mpn_add_sys_features,
+                          sysfeatures_graphs_mode=args.mpn_add_sys_features_mode)
+    if (args.clean_data or args.check_data):
+        print('training data check:')
+        stats_train, clean_train, _ = check_integrity(traindata, clean=args.clean_data)
+        if (args.clean_data):
+            traindata.remove_indices(clean_train)
+            print(f'cleaning up {len(clean_train)} of {len(traindata.y_trans)} total '
+                  f'({len(clean_train)/len(traindata.y_trans):.0%}) pairs for being invalid')
+        print('validation data check:')
+        stats_val, clean_val, _ = check_integrity(valdata, clean=args.clean_data)
+        if (args.clean_data):
+            valdata.remove_indices(clean_val)
+            print(f'cleaning up {len(clean_val)} of {len(valdata.y_trans)} total '
+                  f'({np.divide(len(clean_val), len(valdata.y_trans)):.0%}) pairs for being invalid')
+    if (args.sample):
+        sampling_weights_train = calc_sampling_weights(traindata, method=args.sampling_mode, cluster_informed=args.cluster,
+                                                       sqrt_weights=args.sampling_sqrt_weights, verbose=args.verbose)
+        sampling_weights_val = calc_sampling_weights(valdata, method=args.sampling_mode, cluster_informed=args.cluster,
+                                                     sqrt_weights=args.sampling_sqrt_weights, verbose=args.verbose)
+        sampler_train = CustomWeightedRandomSampler(sampling_weights_train, args.sampling_count, replacement=True)
+        sampler_val = CustomWeightedRandomSampler(sampling_weights_val, args.sampling_count, replacement=True)
     else:
-        conflicting_smiles_pairs = (pickle.load(open(args.conflicting_smiles_pairs, 'rb'))
-                                    if args.conflicting_smiles_pairs is not None else {})
-        info('done. Initializing RankDatasets...')
-        print(f'{data.void_info=}')
-        print(f'training data shapes: {train_x.shape=}, {train_sys.shape=}')
-        traindata = RankDataset(x_mols=train_graphs, x_extra=train_x, x_sys=train_sys,
-                                x_ids=data.df.iloc[data.train_indices].smiles.tolist(),
-                                y=train_y, x_sys_global_num=data.x_info_global_num,
-                                dataset_info=data.df.dataset_id.iloc[data.train_indices].tolist(),
-                                void_info=data.void_info,
-                                pair_step=args.pair_step,
-                                pair_stop=args.pair_stop, use_pair_weights=(not args.no_rtdiff_pair_weights),
-                                discard_smaller_than_epsilon=args.discard_smaller_than_epsilon,
-                                use_group_weights=(not args.no_group_weights),
-                                cluster=args.cluster,
-                                downsample_groups=args.downsample_groups,
-                                downsample_always_confl=args.downsample_always_confl,
-                                downsample_factor=args.downsample_factor,
-                                group_weights_only_intra_cluster=args.group_weights_only_intra_cluster,
-                                no_inter_pairs=(not args.inter_pairs),
-                                no_intra_pairs=args.no_intra_pairs,
-                                max_indices_size=args.max_pair_compounds,
-                                max_num_pairs=args.max_num_pairs,
-                                weight_mid=args.weight_mid,
-                                weight_steepness=args.weight_steep,
-                                dynamic_weights=args.dynamic_weights,
-                                y_neg=y_neg,
-                                y_float=('rankformer' in args.model_type),
-                                conflicting_smiles_pairs=conflicting_smiles_pairs,
-                                confl_weight=args.confl_weight,
-                                add_sysfeatures_to_graphs=args.mpn_add_sys_features,
-                                sysfeatures_graphs_mode=args.mpn_add_sys_features_mode,
-                                include_special_atom_features=args.mpn_add_special_atom_features)
-        valdata = RankDataset(x_mols=val_graphs, x_extra=val_x, x_sys=val_sys,
-                              x_ids=data.df.iloc[data.val_indices].smiles.tolist(),
-                              y=val_y, x_sys_global_num=data.x_info_global_num,
-                              dataset_info=data.df.dataset_id.iloc[data.val_indices].tolist(),
-                              void_info=data.void_info,
-                              pair_step=args.pair_step,
-                              pair_stop=args.pair_stop, use_pair_weights=(not args.no_rtdiff_pair_weights),
-                              discard_smaller_than_epsilon=args.discard_smaller_than_epsilon,
-                              use_group_weights=(not args.no_group_weights),
-                              cluster=args.cluster,
-                              downsample_groups=args.downsample_groups,
-                              downsample_always_confl=args.downsample_always_confl,
-                              downsample_factor=args.downsample_factor,
-                              group_weights_only_intra_cluster=args.group_weights_only_intra_cluster,
-                              no_inter_pairs=(not args.inter_pairs),
-                              no_intra_pairs=args.no_intra_pairs,
-                              max_indices_size=args.max_pair_compounds,
-                              max_num_pairs=args.max_num_pairs,
-                              weight_mid=args.weight_mid,
-                              weight_steepness=args.weight_steep,
-                              dynamic_weights=args.dynamic_weights,
-                              y_neg=y_neg,
-                              y_float=('rankformer' in args.model_type),
-                              conflicting_smiles_pairs=conflicting_smiles_pairs,
-                              confl_weight=args.confl_weight,
-                              add_sysfeatures_to_graphs=args.mpn_add_sys_features,
-                              sysfeatures_graphs_mode=args.mpn_add_sys_features_mode,
-                              include_special_atom_features=args.mpn_add_special_atom_features)
-        if (args.clean_data or args.check_data):
-            print('training data check:')
-            stats_train, clean_train, _ = check_integrity(traindata, clean=args.clean_data)
-            if (args.clean_data):
-                traindata.remove_indices(clean_train)
-                print(f'cleaning up {len(clean_train)} of {len(traindata.y_trans)} total '
-                      f'({len(clean_train)/len(traindata.y_trans):.0%}) pairs for being invalid')
-            print('validation data check:')
-            stats_val, clean_val, _ = check_integrity(valdata, clean=args.clean_data)
-            if (args.clean_data):
-                valdata.remove_indices(clean_val)
-                print(f'cleaning up {len(clean_val)} of {len(valdata.y_trans)} total '
-                      f'({np.divide(len(clean_val), len(valdata.y_trans)):.0%}) pairs for being invalid')
-        if (args.sample):
-            sampling_weights_train = calc_sampling_weights(traindata, method=args.sampling_mode, cluster_informed=args.cluster,
-                                                           sqrt_weights=args.sampling_sqrt_weights, verbose=args.verbose)
-            sampling_weights_val = calc_sampling_weights(valdata, method=args.sampling_mode, cluster_informed=args.cluster,
-                                                         sqrt_weights=args.sampling_sqrt_weights, verbose=args.verbose)
-            sampler_train = CustomWeightedRandomSampler(sampling_weights_train, args.sampling_count, replacement=True)
-            sampler_val = CustomWeightedRandomSampler(sampling_weights_val, args.sampling_count, replacement=True)
+        sampler_train = sampler_val = None
+    trainloader = DataLoader(traindata, args.batch_size, shuffle=(not args.sample), sampler=sampler_train,
+                             generator=torch.Generator(device='cuda' if args.gpu else 'cpu'),
+                             collate_fn=custom_collate)
+    valloader = DataLoader(valdata, args.batch_size, shuffle=(not args.sample), sampler=sampler_val,
+                           generator=torch.Generator(device='cuda' if args.gpu else 'cpu'),
+                           collate_fn=custom_collate) if len(valdata) > 0 else None
+    if ('ranker' not in vars() or ranker is None):    # otherwise loaded already
+        if (args.model_type == 'mpn'):
+            ranker = MPNranker(encoder=args.mpn_encoder,
+                               extra_features_dim=train_x.shape[1],
+                               sys_features_dim=train_sys.shape[1],
+                               hidden_units=args.sizes, hidden_units_pv=args.sizes_sys,
+                               encoder_size=args.encoder_size,
+                               depth=args.mpn_depth,
+                               dropout_rate_encoder=args.dropout_rate_encoder,
+                               dropout_rate_pv=args.dropout_rate_pv,
+                               dropout_rate_rank=args.dropout_rate_rank,
+                               res_conn_enc=(not args.mpn_no_residual_connections_encoder),
+                               add_sys_features=args.mpn_add_sys_features,
+                               add_sys_features_mode=args.mpn_add_sys_features_mode,
+                               include_special_atom_features=args.mpn_add_special_atom_features,
+                               no_sys_layers=args.mpn_no_sys_layers,
+                               sys_blowup=args.mpn_sys_blowup)
         else:
-            sampler_train = sampler_val = None
-        # print(f'{traindata.y_trans.mean()=}') DEBUG
-        trainloader = DataLoader(traindata, args.batch_size, shuffle=(not args.sample), sampler=sampler_train,
-                                 generator=torch.Generator(device='cuda' if args.gpu else 'cpu'),
-                                 collate_fn=custom_collate if (args.mpn_encoder in ['dmpnn', 'graphformer', 'deepergcn']) else None)
-        valloader = DataLoader(valdata, args.batch_size, shuffle=(not args.sample), sampler=sampler_val,
-                               generator=torch.Generator(device='cuda' if args.gpu else 'cpu'),
-                               collate_fn=custom_collate if (args.mpn_encoder in ['dmpnn', 'graphformer', 'deepergcn']) else None
-                               ) if len(valdata) > 0 else None
-        if (args.plot_weights):
-            plot_x = np.linspace(0, 10 * args.weight_mid, 100)
-            import matplotlib.pyplot as plt
-            plt.plot(plot_x, [bg.weight_fn(_, args.weight_steep, args.weight_mid) for _ in plot_x])
-            plt.show()
-        if (not graphs):
-            if ('ranker' not in vars() or ranker is None):    # otherwise loaded already
-                ranker = prepare_tf_model(args, train_x.shape[1])
-            es = tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience=2,
-                                                  restore_best_weights=True)
-            try:
-                ranker.model.fit(bg,
-                                 callbacks=[es,
-                                            # tf.keras.callbacks.TensorBoard(update_freq='epoch', histogram_freq=1,)
-                                    ],
-                                 epochs=args.epochs,
-                                 verbose=1 if not args.no_progbar else 2,
-                                 validation_data=vg)
-            except KeyboardInterrupt:
-                print('interrupted training, evaluating...')
-            if (args.save_data):
-                path = run_name + '.tf'
-                ranker.model.save(path, overwrite=True)
-                pickle.dump(data, open(os.path.join(path, 'assets', 'data.pkl'), 'wb'))
-                json.dump({'train_sets': args.input, 'name': run_name,
-                           'args': vars(args)},
-                          open(os.path.join(path, 'assets', 'config.json'), 'w'), indent=2)
-                print(f'model written to {path}')
-            train_preds = predict(train_x, ranker.model, args.batch_size)
-            if (len(val_x) > 0):
-                val_preds = predict(val_x, ranker.model, args.batch_size)
-            if (len(test_x) > 0):
-                test_preds = predict(test_x, ranker.model, args.batch_size)
+            raise NotImplementedError(args.model_type)
+        print(ranker)
+        print('total params', sum(p.numel() for p in ranker.parameters()))
+        print('total params (trainable)', sum(p.numel() for p in ranker.parameters() if p.requires_grad))
+    try:
+        if (args.model_type == 'mpn'):
+            mpn_train(ranker=ranker, bg=trainloader, epochs=args.epochs,
+                      epochs_start=ranker.max_epoch,
+                      writer=writer, val_g=valloader, val_writer=val_writer,
+                      confl_writer=confl_writer, # TODO:
+                      steps_train_loss=np.ceil(len(trainloader) / 100).astype(int),
+                      steps_val_loss=np.ceil(len(trainloader) / 5).astype(int),
+                      batch_size=args.batch_size, epsilon=args.epsilon,
+                      sigmoid_loss=(args.mpn_loss == 'bce'), margin_loss=args.mpn_margin,
+                      early_stopping_patience=args.early_stopping_patience,
+                      learning_rate=args.learning_rate,
+                      adaptive_lr=args.adaptive_learning_rate,
+                      no_encoder_train=args.no_encoder_train, ep_save=args.ep_save,
+                      eval_train_all=(not args.no_train_acc_all),
+                      accs=(not args.no_train_acc))
         else:
-            # MPNranker
-            if ('ranker' not in vars() or ranker is None):    # otherwise loaded already
-                if (args.model_type == 'mpn'):
-                    ranker = MPNranker(encoder=args.mpn_encoder,
-                                       extra_features_dim=train_x.shape[1],
-                                       sys_features_dim=train_sys.shape[1],
-                                       hidden_units=args.sizes, hidden_units_pv=args.sizes_sys,
-                                       encoder_size=args.encoder_size,
-                                       depth=args.mpn_depth,
-                                       dropout_rate_encoder=args.dropout_rate_encoder,
-                                       dropout_rate_pv=args.dropout_rate_pv,
-                                       dropout_rate_rank=args.dropout_rate_rank,
-                                       res_conn_enc=(not args.mpn_no_residual_connections_encoder),
-                                       add_sys_features=args.mpn_add_sys_features,
-                                       add_sys_features_mode=args.mpn_add_sys_features_mode,
-                                       include_special_atom_features=args.mpn_add_special_atom_features,
-                                       no_sys_layers=args.mpn_no_sys_layers,
-                                       sys_blowup=args.mpn_sys_blowup)
-                elif (args.model_type == 'rankformer'):
-                    if (args.transformer_individual_cls):
-                        ranker = RankformerEncoderSub(
-                            ninp=args.encoder_size, nhead=args.transformer_nhead, nhid=args.transformer_nhid,
-                            nlayers=args.transformer_nlayers, dropout=args.transformer_dropout,
-                            nsysf=train_sys.shape[1], gnn_depth=args.mpn_depth,
-                            gnn_dropout=args.dropout_rate_encoder,
-                            multiple_sys_tokens=args.transformer_multiple_sys_tokens)
-                    else:
-                        if (not args.transformer_fake):
-                            rankformer_encoder = RankformerEncoder(
-                                ninp=args.encoder_size, nhead=args.transformer_nhead, nhid=args.transformer_nhid,
-                                nlayers=args.transformer_nlayers, dropout=args.transformer_dropout,
-                                nsysf=train_sys.shape[1], gnn_depth=args.mpn_depth,
-                                gnn_dropout=args.dropout_rate_encoder,
-                                no_special_tokens=args.transformer_no_special_tokens,
-                                multiple_sys_tokens=args.transformer_multiple_sys_tokens,
-                                one_token_per_graph=args.transformer_one_token_per_graph)
-                        else:
-                            rankformer_encoder = FFNEncoder(args.encoder_size, train_sys.shape[1],
-                                                            no_special_tokens=args.transformer_no_special_tokens,)
-                        ranker = Rankformer(rankformer_encoder, sigmoid_output=True,
-                                            hidden_dims=args.transformer_rank_hidden_sizes)
-                elif (args.model_type == 'rankformer_sep'):
-                    rankformer_encoder = RankformerEncoderPart(
-                                ninp=args.encoder_size, nhead=args.transformer_nhead, nhid=args.transformer_nhid,
-                                nlayers=args.transformer_nlayers, dropout=args.transformer_dropout,
-                                nsysf=train_sys.shape[1], gnn_depth=args.mpn_depth,
-                                gnn_dropout=args.dropout_rate_encoder,
-                                gnn_add_sys_features=args.mpn_add_sys_features,
-                                gnn_add_sys_features_mode=args.mpn_add_sys_features_mode,
-                                no_special_tokens=args.transformer_no_special_tokens,
-                                multiple_sys_tokens=args.transformer_multiple_sys_tokens,
-                                one_token_per_graph=args.transformer_one_token_per_graph,
-                                use_sqrt=(not args.transformer_no_sqrt))
-                    ranker = RankformerSeparate(rankformer_encoder, sigmoid=(not args.transformer_no_sigmoid))
-                else:
-                    raise NotImplementedError(args.model_type)
-                print(ranker)
-                print('total params', sum(p.numel() for p in ranker.parameters()))
-                print('total params (trainable)', sum(p.numel() for p in ranker.parameters() if p.requires_grad))
-            try:
-                if (args.model_type == 'mpn'):
-                    mpn_train(ranker=ranker, bg=trainloader, epochs=args.epochs,
-                              epochs_start=ranker.max_epoch,
-                              writer=writer, val_g=valloader, val_writer=val_writer,
-                              confl_writer=confl_writer, # TODO:
-                              steps_train_loss=np.ceil(len(trainloader) / 100).astype(int),
-                              steps_val_loss=np.ceil(len(trainloader) / 5).astype(int),
-                              batch_size=args.batch_size, epsilon=args.epsilon,
-                              sigmoid_loss=(args.mpn_loss == 'bce'), margin_loss=args.mpn_margin,
-                              early_stopping_patience=args.early_stopping_patience,
-                              learning_rate=args.learning_rate,
-                              adaptive_lr=args.adaptive_learning_rate,
-                              no_encoder_train=args.no_encoder_train, ep_save=args.ep_save,
-                              eval_train_all=(not args.no_train_acc_all),
-                              accs=(not args.no_train_acc))
-                elif (args.model_type == 'rankformer'):
-                    rankformer_train(rankformer=ranker, bg=trainloader, epochs=args.epochs,
-                                     epochs_start=ranker.max_epoch,
-                                     writer=writer, val_g=valloader, val_writer=val_writer,
-                                     confl_writer=confl_writer,
-                                     steps_train_loss=np.ceil(len(trainloader) / 100).astype(int),
-                                     steps_val_loss=np.ceil(len(trainloader) / 5).astype(int),
-                                     early_stopping_patience=args.early_stopping_patience,
-                                     learning_rate=args.learning_rate,
-                                     sigmoid_loss=False,
-                                     no_weights=False, # TODO:
-                                     no_encoder_train=args.no_encoder_train, ep_save=args.ep_save,
-                                     margin_loss=args.mpn_margin)
-                elif (args.model_type == 'rankformer_sep'):
-                    rankformer_separate_train(rankformer=ranker, bg=trainloader, epochs=args.epochs,
-                                              epochs_start=ranker.max_epoch,
-                                              writer=writer, val_g=valloader, val_writer=val_writer,
-                                              confl_writer=confl_writer,
-                                              steps_train_loss=np.ceil(len(trainloader) / 100).astype(int),
-                                              steps_val_loss=np.ceil(len(trainloader) / 5).astype(int),
-                                              early_stopping_patience=args.early_stopping_patience,
-                                              learning_rate=args.learning_rate,
-                                              no_weights=False, # TODO:
-                                              no_encoder_train=args.no_encoder_train, ep_save=args.ep_save,
-                                              margin_loss=args.mpn_margin)
-                else:
-                    raise NotImplementedError(args.model_type)
-            except KeyboardInterrupt:
-                print('caught interrupt; stopping training')
-            if (args.save_data):
-                import torch        # TODO: just torch everywhere
-                torch.save(ranker, run_name + '.pt')
-            if hasattr(ranker, 'predict'):
-                train_preds = ranker.predict(train_graphs, train_x.astype(np.float32), train_sys.astype(np.float32),
-                                             batch_size=args.batch_size * 2,
-                                             prog_bar=args.verbose)
-                if (len(val_x) > 0):
-                    val_preds = ranker.predict(val_graphs, val_x.astype(np.float32), val_sys.astype(np.float32), batch_size=args.batch_size * 2)
-                if (len(test_x) > 0):
-                    test_preds = ranker.predict(test_graphs, test_x.astype(np.float32), test_sys.astype(np.float32), batch_size=args.batch_size * 2)
-                    if (args.export_rois):
-                        if not os.path.isdir('runs'):
-                            os.mkdir('runs')
-                        export_predictions(data, test_preds, f'runs/{run_name}_test.tsv', 'test')
+            raise NotImplementedError(args.model_type)
+    except KeyboardInterrupt:
+        print('caught interrupt; stopping training')
+    if (args.save_data):
+        torch.save(ranker, run_name + '.pt')
+    if hasattr(ranker, 'predict'):
+        train_preds = ranker.predict(train_graphs, train_x.astype(np.float32), train_sys.astype(np.float32),
+                                     batch_size=args.batch_size * 2,
+                                     prog_bar=args.verbose)
+        if (len(val_x) > 0):
+            val_preds = ranker.predict(val_graphs, val_x.astype(np.float32), val_sys.astype(np.float32), batch_size=args.batch_size * 2)
+        if (len(test_x) > 0):
+            test_preds = ranker.predict(test_graphs, test_x.astype(np.float32), test_sys.astype(np.float32), batch_size=args.batch_size * 2)
+            if (args.export_rois):
+                if not os.path.isdir('runs'):
+                    os.mkdir('runs')
+                export_predictions(data, test_preds, f'runs/{run_name}_test.tsv', 'test')
     if (args.cache_file is not None and hasattr(features, 'write_cache') and features.write_cache):
         print('writing cache, don\'t interrupt!!')
         pickle.dump(features.cached, open(args.cache_file, 'wb'))
