@@ -489,7 +489,6 @@ class Data:
             for component in self.mobile_phase_components:
                 column_information[f'has_{component}'] = float((column_information[
                     [c for c in column_information.columns if c in [f'eluent.{part}.{component}' for part in 'ABCD']]].sum() > 0).any())
-            print(column_information.iloc[0])
             del column_information['id']
             df = df.merge(column_information, on='dataset_id')
             # gradient
