@@ -49,12 +49,11 @@ class PredictArgs(Tap):
     model: str                  # model to load
     gpu: bool = False           # whether to use GPU for predictions
     batch_size: int = 256       # adjust according to available VRAM
-    repo_root_folder: str = '../RepoRT/' # location of the dataset github repository
+    repo_root_folder: str = '../RepoRT/' # location of RepoRT, needed for HSM/Tanaka database
     verbose: bool = False       # more info on what is being done internally
 
 if __name__ == '__main__':
     args = PredictArgs().parse_args()
-    # args = PredictArgs().parse_args('--input_compounds /home/fleming/Documents/Projects/rtranknet/test/input_0002.tsv --input_metadata ../RepoRT/processed_data/0002/0002_metadata.yaml --out /home/fleming/Documents/Projects/rtranknet/test/predicted_0002.tsv --model /home/fleming/Documents/Projects/rtranknet/test/FE_setup_disjoint_sys_yes_cluster_no_fold1_new.pt --verbose'.split())
     if (args.verbose):
         basicConfig(level=INFO)
     if (args.gpu):

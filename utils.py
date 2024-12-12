@@ -170,7 +170,7 @@ class Data:
     use_ph: bool = False
     use_column_onehot: bool = False
     use_gradient: bool = False
-    repo_root_folder: str = '../RepoRT/'
+    repo_root_folder: str = '../RepoRT/' # location of RepoRT
     custom_column_fields: Optional[list] = None
     columns_remove_na: bool = True
     hsm_fields: List[str] = field(default_factory=lambda: ['H', 'S*', 'A', 'B', 'C (pH 2.8)', 'C (pH 7.0)'])

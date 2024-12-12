@@ -150,7 +150,7 @@ class TrainArgs(Tap):
     check_data: bool = False                       # check how many pairs are conflicting/unpredictable
     clean_data: bool = False                       # remove unpredictable pairs
     # data locations
-    repo_root_folder: str = '../RepoRT/'
+    repo_root_folder: str = '../RepoRT/' # location of RepoRT
     add_desc_file: str = 'data/qm_merged.csv'
     cache_file: str = 'cached_descs.pkl'
     # output control

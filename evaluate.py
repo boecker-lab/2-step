@@ -228,7 +228,7 @@ class EvalArgs(Tap):
     gpu: bool = False
     batch_size: int = 512
     no_isomeric: bool = False
-    repo_root_folder: str = '../RepoRT/' # location of the dataset github repository
+    repo_root_folder: str = '../RepoRT/' # location of RepoRT, needed for HSM/Tanaka database
     add_desc_file: str = 'data/qm_merged.csv' # csv with additional features with smiles as identifier
     output: Optional[str] = None # write output to json file
     verbose: bool = False
