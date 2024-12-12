@@ -18,12 +18,13 @@ FAULTY = ["0006", "0008", "0023", "0024", "0027", "0046", "0056", "0057", "0059"
 
 class SplittingArgs(Tap):
     run_name: str
-    mode: Literal['random', 'study', 'setup', 'column', 'columnph', 'columnphdiff', 'columnorphdiff', 'all'] = 'random'
+    mode: Literal['random', 'study', 'setup', 'setup2', 'column', 'columnph', 'columnphdiff', 'columnphdiff2', 'columnorphdiff', 'all'] = 'random'
     dataset_blacklist: Optional[List[str]] = ['0186']  + FAULTY # exclude SMRT and faulty list by default
     dataset_whitelist: Optional[List[str]] = None
     hsm_required: bool = False
     tanaka_required: bool = False
     ph_required: bool = False
+    columnname_required: bool = False
     gradient_required: bool = False
     setup_cluster_fields: List[str] = ['column.name', 'column.length', 'column.id', 'column.particle.size',
                                        'column.temperature', 'column.flowrate', 'mobilephase']
@@ -31,6 +32,7 @@ class SplittingArgs(Tap):
     repo_root_folder: str = '/home/fleming/Documents/Projects/RtPredTrainingData_mostcurrent/'
     test_arg: List[str] = []
     nr_initial_datasets: int = -1
+    out_dir: Optional[str] = None
 
 def get_gradient_missing_sets(repo_root_folder, verbose=True):
     sets = []
@@ -122,6 +124,8 @@ if __name__ == '__main__':
         sets = dss.loc[sets].loc[~pd.isna(dss.loc[sets, 'αCH2'])].index.tolist()
     if (args.ph_required):
         sets = dss.loc[sets].loc[~pd.isna(dss.loc[sets, 'ph'])].index.tolist()
+    if (args.columnname_required):
+        sets = dss.loc[sets].loc[~pd.isna(dss.loc[sets, 'column.name'])].index.tolist()
     if (args.nr_initial_datasets != -1):
         sets = sample(sets, args.nr_initial_datasets)
     # make two cluster sets: 1) author-based, 2) setup-based
@@ -159,6 +163,8 @@ if __name__ == '__main__':
                      sets, groups=dss.loc[sets, 'authors'].tolist()), 'authors'),
                  'setup': (GroupShuffleSplit(args.k_fold, test_size=0.2).split(
                      sets, groups=dss.loc[sets, 'setup'].tolist()), 'setup'),
+                 'setup2': (GroupKFold(args.k_fold).split(
+                     sets, groups=dss.loc[sets, 'setup'].tolist()), 'setup'),
                  # 'setup': KFold(args.k_fold).split(sets, groups=dss.loc[sets, 'setup'].tolist()),
                  'column': (GroupShuffleSplit(args.k_fold, test_size=0.2).split(
                      sets, groups=dss.loc[sets, 'column.name'].tolist()), 'column.name'),
@@ -167,9 +173,11 @@ if __name__ == '__main__':
                      sets, groups=dss.loc[sets, 'columnph'].tolist()), 'columnph'),
                  'columnphdiff': (GroupShuffleSplit(args.k_fold, test_size=0.2).split(
                      sets, groups=dss.loc[sets, 'columnphdiff'].tolist()), 'columnphdiff'),
+                 'columnphdiff2': (GroupKFold(args.k_fold).split(
+                     sets, groups=dss.loc[sets, 'columnphdiff'].tolist()), 'columnphdiff'),
                  'all': ([(range(len(sets)), [])], 'authors'),
                  }[args.mode]
-    prefix = f'{args.run_name}_fold'
+    prefix = (args.out_dir or '') + f'{args.run_name}_fold'
     pd.options.display.max_rows = len(sets)
     for i, (train, test) in enumerate(split_gen):
         train_sets = [sets[_] for _ in train]
