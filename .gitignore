@@ -1,6 +1,7 @@
 /__pycache__/
 /.dir-locals.el
 /runs/
+/preds/
 /*.sh*
 /*.pt
 /*.pkl
