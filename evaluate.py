@@ -21,11 +21,6 @@ import torch
 from utils import REL_COLUMNS, Data, export_predictions
 from features import features, parse_feature_spec
 
-BENCHMARK_DATASETS = ['0003', '0010', '0018', '0055', '0054', '0019', '0002']
-
-def get_authors(ds, repo_root_dir='../RepoRT/'):
-    return str(pd.read_csv(repo_root_dir + f'/processed_data/{ds}/{ds}_info.tsv', sep='\t')['authors'].item())
-
 class NpEncoder(json.JSONEncoder):
     def default(self, obj):
         if isinstance(obj, np.integer):
@@ -185,105 +180,6 @@ def lcs_results(df, mode='lis'):
     lcs_fun = {'lcs': lcs, 'lis':lis}[mode]
     return lcs_fun(order_true, order_pred)
 
-def rt_roi_diffs(data, y, preds, k=3):
-    """for all pairs x, y:
-    is |rt_x - rt_y| very different from |roi_x - roi_y|?
-    - increment outl[x], outl[y]
-    - at the end return k u_i's with highest outl[u_i]
-    """
-    from pygam import LinearGAM
-    assert len(y) == len(preds)
-    scale_roi = max(preds) - min(preds)
-    scale_rt = max(y) - min(y)
-    df = pd.DataFrame(data.df.iloc[np.concatenate((data.train_indices, data.test_indices, data.val_indices))])
-    df['roi'] = preds
-    df.dropna(subset=['roi', 'rt'], inplace=True)
-    df.sort_values(by='rt', inplace=True)
-    # diffs = np.zeros((len(df)))
-    # for i, j in combinations(range(len(y)), 2):
-    #     diff_roi = np.abs(preds[i] - preds[j]) * scale_roi
-    #     diff_rt = np.abs(y[i] - y[j]) * scale_rt
-    #     diffs[i] += np.abs(diff_roi - diff_rt) / (len(y) ** 2)
-    #     diffs[j] += np.abs(diff_roi - diff_rt) / (len(y) ** 2)
-    # for i in range(k, len(df) - k):
-    #     window = np.concatenate((df.roi[i-k:i], df.roi[i+1:i+k+1]))
-    #     roi_mean = np.mean(window)
-    #     diffs[i] = np.abs(df.roi[i] - roi_mean)
-    gam = LinearGAM().fit(df.rt, df.roi)
-    df['diffs'] = np.abs(df.roi - gam.predict(df.rt))
-    df['rt_gam'] = LinearGAM().fit(df.roi, df.rt).predict(df.roi)
-    df['diffs'] = (df['diffs'] > 0.2 * (np.sum(np.abs([min(df.roi), max(df.roi)])))).astype(int)
-    return df
-
-def visualize_df(df, x_axis='rt'):
-    import matplotlib.pyplot as plt
-    from matplotlib.offsetbox import OffsetImage, AnnotationBbox
-    from PIL import Image
-    fig = plt.figure()
-    ax = fig.add_subplot(111)
-    x, y = ('rt', 'roi') if x_axis == 'rt' else ('roi', 'rt')
-    points = ax.scatter(df[x], df[y], c=df.diffs, cmap='coolwarm')
-    ax.set_xlabel(x)
-    ax.set_ylabel(y)
-    ax.set_title(df.id[0].split('_')[0])
-
-    # blank image
-    imm = Image.new('RGBA', (300, 300))
-    im = OffsetImage(np.array(imm), zoom=0.5)
-    xybox=(100., 100.)
-    ab = AnnotationBbox(im, (0,0), xybox=xybox, xycoords='data',
-            boxcoords="offset points",  pad=0.3,  arrowprops=dict(arrowstyle="->"))
-    # add it to the axes and make it invisible
-    ax.add_artist(ab)
-    ab.set_visible(False)
-
-    def recolor(df, ind, points, k=5):
-        # find k points with closest rt
-        rts = df.rt.values
-        rt = rts[ind]
-        rt_inds = np.argsort(np.abs(rts - rt))[:k]
-        # find k points with closest roi
-        rois = df.roi.values
-        roi = rois[ind]
-        roi_inds = np.argsort(np.abs(rois - roi))[:k]
-        cols = {(True, False): [0, 0, 1, 1],
-                (False, True): [1, 1, 0, 1],
-                (True, True): [0, 1, 0, 1],
-                (False, False): [0, 0, 0, 1]}
-        colors = [cols[(p in rt_inds, p in roi_inds)] for p in range(len(rts))]
-        return colors
-
-
-    def hover(event):
-        if (not hasattr(points, 'def_colors')):
-            points.def_colors = points.get_facecolors()
-        # if the mouse is over the scatter points
-        if points.contains(event)[0]:
-            # find out the index within the array from the event
-            ind = points.contains(event)[1]["ind"][0]
-            points.set_facecolors(recolor(df, ind, points))
-            # get the figure size
-            w,h = fig.get_size_inches()*fig.dpi
-            ws = (event.x > w/2.)*-1 + (event.x <= w/2.)
-            hs = (event.y > h/2.)*-1 + (event.y <= h/2.)
-            # if event occurs in the top or right quadrant of the figure,
-            # change the annotation box position relative to mouse.
-            ab.xybox = (xybox[0]*ws, xybox[1]*hs)
-            # make annotation box visible
-            ab.set_visible(True)
-            # place it at the position of the hovered scatter point
-            ab.xy =(df.rt.iloc[ind], df.roi.iloc[ind])
-            # set the image corresponding to that point
-            im.set_data(np.array(MolToImage(MolFromSmiles(df.smiles.iloc[ind]), (300, 300))))
-        else:
-            #if the mouse is not over a scatter point
-            ab.set_visible(False)
-            points.set_facecolors(points.def_colors)
-        fig.canvas.draw_idle()
-
-    fig.canvas.mpl_connect('motion_notify_event', hover)
-    plt.show()
-
 
 def data_stats(d, data, custom_column_fields=None, validation_counts_as_train=False, compound_identifier='smiles'):
     ds = d.df.dataset_id.unique().item()
@@ -307,8 +203,6 @@ def data_stats(d, data, custom_column_fields=None, validation_counts_as_train=Fa
             'column_occurences': same_column,
             'config_occurences': same_config}
     flags = {
-        'our_datasets': 'harrieder' in get_authors(ds, d.repo_root_folder).lower(),
-        'benchmark_dataset': ds in BENCHMARK_DATASETS,
         'structure_disjoint': stats['compound_overlap_all'] == 0,
         'setup_disjoint': stats['config_occurences'] == 0,
         'column_disjoint': stats['column_occurences'] == 0
@@ -330,12 +224,12 @@ def predict(X, model, batch_size):
 class EvalArgs(Tap):
     model: str # model to load
     test_sets: List[str] # either CSV or dataset IDs to evaluate on
-    model_type: Literal['ranknet', 'mpn', 'rankformer_rt', 'rankformer'] = 'mpn'
+    model_type: Literal['mpn'] = 'mpn'
     gpu: bool = False
-    batch_size: int = 256
+    batch_size: int = 512
     no_isomeric: bool = False
     repo_root_folder: str = '../RepoRT/' # location of the dataset github repository
-    add_desc_file: str = '/home/fleming/Documents/Projects/rtranknet/data/qm_merged.csv' # csv with additional features with smiles as identifier
+    add_desc_file: str = 'data/qm_merged.csv' # csv with additional features with smiles as identifier
     output: Optional[str] = None # write output to json file
     verbose: bool = False
     no_progbar: bool = False # no progress-bar
@@ -354,16 +248,12 @@ class EvalArgs(Tap):
     remove_train_compounds: bool = False
     remove_train_compounds_mode: Literal['all', 'column', 'print'] = 'all'
     compound_identifier: Literal['smiles', 'inchi.std', 'inchikey.std'] = 'smiles' # how to identify compounds for statistics
-    plot_diffs: bool = False    # plot for every dataset with outliers marked
     test_stats: bool = False    # overview stats for all datasets
     dataset_stats: bool = False # stats for each dataset
     no_optional_stats: bool = False   # don't do optional stats for conflicting pairs
-    diffs: bool = False         # compute outliers
-    classyfire: bool = False    # compound class stats
     confl_pairs: Optional[str] = None # pickle file with conflicting pairs (smiles)
     overwrite_system_features: List[str] = [] # use these system descriptors for confl pairs stats instead of those from the training data
     preds_from_exported_rois: List[str] = []
-    get_more_dataset_info: bool = False # attempt to get more info from RepoRT on the datasets for more detailed stats
     mcd_method: Literal['lcs', 'lis'] = 'lis' # how to compute minimum compound deletion
 
     def process_args(self):
@@ -395,11 +285,7 @@ class DataUnpickler(pickle.Unpickler):
 
 def load_model(path: str, type_='mpn'):
     if (type_ == 'keras'):
-        # NOTE: might be broken because of missing .tf, but not used anyways anymore
-        import tensorflow as tf
-        model = tf.keras.models.load_model(path)
-        data = pickle.load(open(os.path.join(path, 'assets', 'data.pkl'), 'rb'))
-        config = json.load(open(os.path.join(path, 'assets', 'config.json')))
+        raise NotImplementedError(type_)
     else:
         path = path + '.pt' if not path.endswith('pt') else path
         if (torch.cuda.is_available()):
@@ -417,79 +303,6 @@ def load_model(path: str, type_='mpn'):
         data = DataUnpickler(open(f'{path}_data.pkl', 'rb')).load()
         config = json.load(open(f'{path}_config.json'))
     return model, data, config
-
-
-def classyfire_stats(d: Data, args: EvalArgs, plot=False, compound_identifier='smiles'):
-    acc2, results, matches = eval2(d.df, args.epsilon, 'classyfire.class')
-    print(f'{ds}: {acc2:.2%} accuracy)')
-    groups = results.groupby('classyfire.class')
-    results['matches_perc'] = results.matches_perc * len(results)
-    # print(groups.matches_perc.agg(['mean', 'median', 'std', 'count']))
-    # print(results.groupby('classyfire.class').matches_perc.agg(['mean', 'median', 'std', 'count']))
-    matches_df = pd.DataFrame.from_dict(matches['matches_perc'], orient='index', columns=['acc_without'])
-    matches_df['acc_without_diff'] = matches_df.acc_without - acc2
-    matches_df['num_compounds'] = ([len(d.df.loc[d.df['classyfire.class'] == c])
-                                    for c in matches_df.index.tolist()[:-1]]
-                                   + [len(d.df)])
-    matches_df['class_perc'] = matches_df.num_compounds / len(d.df)
-    train_compounds = []
-    train_compounds_all = len(set(data.df[compound_identifier].tolist()))
-    for c in matches_df.index.tolist()[:-1]:
-        compounds_perc = len(set(data.df.loc[data.df['classyfire.class'] == c,
-                                             compound_identifier].tolist())) / train_compounds_all
-        train_compounds.append(compounds_perc)
-    matches_df['class_perc_train'] = train_compounds + [1.0]
-    matches_df.index = [re.sub(r' \(CHEMONTID:\d+\)', '', i) for i in matches_df.index]
-    print(matches_df.sort_values(by='acc_without_diff', ascending=False)[
-        ['acc_without_diff', 'num_compounds', 'class_perc', 'class_perc_train']])
-    if (plot):       # plotting
-        matches_df.drop('total').sort_values(by='acc_without_diff', ascending=False)[
-            ['acc_without_diff', 'class_perc', 'class_perc_train']].plot(rot=20)
-        import matplotlib.pyplot as plt
-        plt.tight_layout()
-        plt.show()
-
-def compound_acc(y, preds, comp_index, epsilon=0.5):
-    matches = 0
-    total = 0
-    for j in range(len(y)):
-        diff = (y[comp_index] - y[j]) * - np.sign(preds[comp_index] - preds[j])
-        if (diff < epsilon):
-            matches += 1
-        total += 1
-    return matches / total
-
-def compound_stats(d: Data, args:EvalArgs):
-    # logp
-    from rdkit.Chem.Descriptors import MolLogP
-    d.df['MolLogP'] = [MolLogP(MolFromSmiles(s)) for s in d.df.smiles]
-    # mean compound acc
-    d.df['mean_acc'] = [compound_acc(d.df.rt.tolist(), d.df.roi.tolist(), i, epsilon=args.epsilon)
-                        for i in range(len(d.df))]
-
-def density_plot(df: pd.DataFrame, x, y):
-    from scipy.stats import gaussian_kde
-    import matplotlib.pyplot as plt
-    toplot = df.sort_values(by=x)[[x, y]].rolling(len(df) / 100).mean().dropna()
-    xy = np.vstack([toplot[x], toplot[y]])
-    z = gaussian_kde(xy)(xy)
-    toplot.plot.scatter(x, y, c=z)
-    plt.show()
-
-def pair_stats(d: Data, verbose=False):
-    fields = {}
-    it = combinations(range(len(d.df)), 2)
-    if (verbose):
-        it = tqdm(it)
-    for i, j in it:
-        row_i, row_j = d.df.iloc[i], d.df.iloc[j]
-        fields.setdefault('indices', []).append((i, j))
-        fields.setdefault('abs_rt_diff', []).append(np.abs(row_i.rt - row_j.rt))
-        fields.setdefault('abs_roi_diff', []).append(np.abs(row_i.roi - row_j.roi))
-        fields.setdefault('prediction_correct', []).append(np.sign(row_i.rt - row_j.rt) == np.sign(row_i.roi - row_j.roi))
-        if ('MolLogP' in d.df.columns):
-            fields.setdefault('MolLogP_diff', []).append(np.abs(row_i.MolLogP - row_j.MolLogP))
-    return pd.DataFrame(fields)
 
 def get_pair_consensus_order(pair, train_df, epsilon=0.5):
     s1, s2 = sorted(pair)
@@ -708,7 +521,7 @@ if __name__ == '__main__':
 
     if (args.verbose):
         basicConfig(level=INFO)
-    if (args.model_type != 'ranknet' and args.gpu):
+    if (args.gpu):
         torch.set_default_device('cuda')
 
     # load model
@@ -732,13 +545,10 @@ if __name__ == '__main__':
             warning('cache file does not exist yet')
 
     test_stats = []
-    data_args = {'use_compound_classes': data.use_compound_classes,
-                 'use_system_information': data.use_system_information,
+    data_args = {'use_system_information': data.use_system_information,
                  'metadata_void_rt': (not args.no_metadata_void_rt),
                  'remove_void_compounds': args.remove_void_compounds,
                  'void_factor': args.void_factor,
-                 'classes_l_thr': data.classes_l_thr,
-                 'classes_u_thr': data.classes_u_thr,
                  'use_usp_codes': data.use_usp_codes,
                  'custom_features': data.descriptors,
                  'use_hsm': data.use_hsm,
@@ -749,7 +559,6 @@ if __name__ == '__main__':
                  'custom_column_fields': data.custom_column_fields,
                  'columns_remove_na': False,
                  'hsm_fields': data.hsm_fields,
-                 'graph_mode': args.model_type != 'ranknet',
                  'encoder': (config['args']['mpn_encoder'] if 'mpn_encoder' in config['args']
                              else 'dmpnn'),
                  'remove_doublets': True}
@@ -777,13 +586,7 @@ if __name__ == '__main__':
         print(f'only keeping those that conflict for any dataset from train/test data, leaving: {len(confl_pairs)}')
     else:
         confl_pairs = None
-    if (args.get_more_dataset_info):
-        import sys
-        sys.path.append(args.repo_root_folder)
-        from pandas_dfs import get_dataset_df
-        dataset_iall = get_dataset_df()
-    else:
-        dataset_iall = None
+    dataset_iall = None
     for ds in args.test_sets:
         info(f'loading data for {ds}')
         d = Data(**data_args)
@@ -863,8 +666,7 @@ if __name__ == '__main__':
             d.df = pd.merge(d.df, rois_df, on='smiles', how='left', suffixes=('', '_from_roi'))
             assert (d.df.dropna(subset=['rt'])['rt'] == d.df.dropna(subset=['rt'])['rt_from_roi']).all()
             preds = d.df.roi
-        elif (args.model_type == 'mpn' or args.model_type == 'rankformer'):
-            # NOTE: for rankformer only works with the `transformer_individual_cls` setting
+        elif (args.model_type == 'mpn'):
             graphs = np.concatenate((train_graphs, test_graphs, val_graphs))
             add_sys_features = hasattr(model, 'add_sys_features') and model.add_sys_features
             include_special_features = (hasattr(model, 'include_special_atom_features')
@@ -902,11 +704,6 @@ if __name__ == '__main__':
             else:
                 preds = model.predict(graphs, X, X_sys, batch_size=args.batch_size,
                                       **(dict(ret_features=False, prog_bar=args.verbose) if not args.model_type == 'rankformer' else {}))
-        elif (args.model_type == 'rankformer_rt'):
-            from ranknet_transformer import rankformer_rt_predict
-            graphs = np.concatenate((train_graphs, test_graphs, val_graphs))
-            preds = rankformer_rt_predict(model, graphs, X, X_sys, batch_size=args.batch_size,
-                                          prog_bar=args.verbose)
         else:
             preds = predict(X, model, args.batch_size)
         info('done predicting. evaluation...')
@@ -950,16 +747,6 @@ if __name__ == '__main__':
         mcd_ratio = mcd / (len(df_mcd) - 1) # subtract one because a single compound cannot be in conflict
 
         # acc2, results = eval2(d.df, args.epsilon)
-        if (args.classyfire):
-            info('computing classyfire stats')
-            classyfire_stats(d, args, compound_identifier=args.compound_identifier)
-        if (args.dataset_stats): # NOTE: DEPRECATED?
-            raise Exception('Deprecated for now')
-            info('computing dataset stats')
-            dataset_stats(d)
-            compound_stats(d, args)
-            pair_stats(d, True)
-            pass
         if (args.test_stats):
             info('computing test stats')
             stats = data_stats(d, data, data.custom_column_fields, compound_identifier=args.compound_identifier)
@@ -970,15 +757,6 @@ if __name__ == '__main__':
             test_stats.append(stats)
         else:
             print(f'{ds}: {acc:.3f}, MCD {mcd:.0f}, MCD ratio {mcd_ratio:.3f}, acc_ignore_epsilon {acc_ignore_epsilon:.3f} \t (#data: {len(Y)})')
-        if (args.diffs):
-            info('computing outlier stats')
-            df = rt_roi_diffs(d, Y, preds)
-            # with pd.option_context('display.max_rows', None):
-            #     print(df.sort_values(by='rt')[['id', 'rt', 'roi', 'diffs']])
-            print('outliers:')
-            print(df.loc[df.diffs == 1, ['id', 'roi', 'rt', 'rt_gam']])
-            if (args.plot_diffs):
-                visualize_df(df)
         if (args.export_rois):
             info('exporting ROIs')
             # TODO: don't overwrite
@@ -990,11 +768,6 @@ if __name__ == '__main__':
             else:
                 roi_dir = args.export_rois_dir
             export_predictions(d, preds, f'{roi_dir}/{model_spec}_{ds}.tsv')
-        if (False and args.classyfire):
-            fig = px.treemap(d.df.dropna(subset=['classyfire.kingdom', 'classyfire.superclass', 'classyfire.class']),
-                             path=['classyfire.kingdom', 'classyfire.superclass', 'classyfire.class'],
-                             title=f'{ds} data ({acc:.2%} accuracy)')
-            fig.show(renderer='browser')
     if (args.test_stats and len(test_stats) > 0):
         test_stats_df = pd.DataFrame.from_records(test_stats, index='id')
         pd.set_option('display.max_columns', 100)
