@@ -5,12 +5,9 @@ import torch
 from predict import load_model
 
 def get_data_args(data):
-    data_args = {'use_compound_classes': data.use_compound_classes,
-                 'use_system_information': data.use_system_information,
+    data_args = {'use_system_information': data.use_system_information,
                  'metadata_void_rt': False,
                  'remove_void_compounds': False,
-                 'classes_l_thr': data.classes_l_thr,
-                 'classes_u_thr': data.classes_u_thr,
                  'use_usp_codes': data.use_usp_codes,
                  'custom_features': data.descriptors,
                  'use_hsm': data.use_hsm,
@@ -39,5 +36,5 @@ if __name__ == '__main__':
     model, data, config = load_model(in_path)
     data_args = get_data_args(data)
     model.extra_storage = {'config': config, 'data_args': data_args,
-                           'sysfeature_scaler': data.sysfeature_scaler}
+                           'sysfeature_scaler': data.sysfeature_scaler if hasattr(data, 'sysfeature_scaler') else None}
     torch.save(model, out_path)
