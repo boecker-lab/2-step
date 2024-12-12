@@ -136,8 +136,8 @@ def split_arrays(arrays, sizes: tuple, split_info=None, stratify=None):
         train_indices, val_indices = (train_test_split(train_indices, test_size=sizes[1],
                                                        stratify=np.asarray(stratify)[train_indices])
                                       if sizes[1] > 0 else (train_indices, train_indices[:0]))
-    print(f'split {len(arrays[0])} into {len(train_indices)} train data, '
-          f'{len(val_indices)} validation data and {len(test_indices)} test data')
+    # print(f'split {len(arrays[0])} into {len(train_indices)} train data, '
+    #       f'{len(val_indices)} validation data and {len(test_indices)} test data')
     return ([a[train_indices] for a in arrays],
             [a[val_indices] for a in arrays],
             [a[test_indices] for a in arrays],
@@ -397,7 +397,7 @@ class Data:
             hsm = to_get.join(pd.DataFrame.from_records([{'id': i} | dict(self.get_hsm_params(r))
                                                          for i, r in to_get.iterrows()]).set_index('id'))
             data_with_hsm = pd.merge(self.df, hsm, how='left', on=['column.name', 'column.particle.size'])
-            print('HSM parameters matching:\n' + data_with_hsm.drop_duplicates('dataset_id')['hsm_how'].value_counts().to_string())
+            # print('HSM parameters matching:\n' + data_with_hsm.drop_duplicates('dataset_id')['hsm_how'].value_counts().to_string())
             self.df = data_with_hsm
             fields.append(data_with_hsm[self.hsm_fields].astype(float).values)
             system_features.extend(self.hsm_fields)
@@ -407,7 +407,7 @@ class Data:
                 r, how=tanaka_match, ignore_spp_particle_size=tanaka_ignore_spp_particle_size))
                                                             for i, r in to_get.iterrows()]).set_index('id'))
             data_with_tanaka = pd.merge(self.df, tanaka, how='left', on=['column.name', 'column.particle.size'])
-            print('Tanaka parameters matching:\n' + data_with_tanaka.drop_duplicates('dataset_id')['tanaka_how'].value_counts().to_string())
+            # print('Tanaka parameters matching:\n' + data_with_tanaka.drop_duplicates('dataset_id')['tanaka_how'].value_counts().to_string())
             self.df = data_with_tanaka
             fields.append(data_with_tanaka[self.tanaka_fields].astype(float).values)
             system_features.extend(self.tanaka_fields)
@@ -462,7 +462,6 @@ class Data:
             system_features.extend(['ph'])
         # NOTE: gradient (or other compound-specific system features) HAVE TO BE LAST!
         self.x_info_global_num = np.concatenate(fields, axis=1).shape[1]
-        print(f'{self.x_info_global_num=}')
         if (use_gradient):
             if self.solvent_order is not None:
                 solvent_cols = self.solvent_order
@@ -582,9 +581,9 @@ class Data:
         old_len1 = len(df)
         if (self.remove_doublets):
             df = df.drop_duplicates('smiles', keep=False)
-            print(f'{dataset_id}: removing doublets and duplicates, {old_len0}→{old_len1}→{len(df)}')
+            info(f'{dataset_id}: removing doublets and duplicates, {old_len0}→{old_len1}→{len(df)}')
         else:
-            print(f'{dataset_id}: removing duplicates, {old_len0}→{old_len1}')
+            info(f'{dataset_id}: removing duplicates, {old_len0}→{old_len1}')
         if (self.metadata_void_rt and 'column.t0' in df.columns):
             metadata_void_rt_guess = df['column.t0'].iloc[0] * self.void_factor
             void_rt = metadata_void_rt_guess if metadata_void_rt_guess > 0 else void_rt
@@ -645,9 +644,9 @@ class Data:
         old_len1 = len(df)
         if (self.remove_doublets):
             df = df.drop_duplicates('smiles', keep=False)
-            print(f'{data_path}: removing doublets and duplicates, {old_len0}→{old_len1}→{len(df)}')
+            info(f'{data_path}: removing doublets and duplicates, {old_len0}→{old_len1}→{len(df)}')
         else:
-            print(f'{data_path}: removing duplicates, {old_len0}→{old_len1}')
+            info(f'{data_path}: removing duplicates, {old_len0}→{old_len1}')
         if (self.metadata_void_rt and 'column.t0' in df.columns):
             metadata_void_rt_guess = df['column.t0'].iloc[0] * self.void_factor
             void_rt = metadata_void_rt_guess if metadata_void_rt_guess > 0 else void_rt

@@ -23,12 +23,12 @@ OLS can also fail with too few data points
 from typing import Literal
 import numpy as np
 from pulp import LpMinimize, LpProblem, LpVariable, lpSum, getSolver
-from logging import warning
+from logging import warning, info
 
 class LADModel:
     def __init__(self, data, void=0, ols_after=False, ols_discard_if_negative=False,
                  ols_drop_mode:Literal['50%', '2*median']='2*median', bases=['1', 'x', 'x**2'],
-                 verbose=True):
+                 verbose=False):
         self.data_input = data
         self.void = void
         self.ols_after = ols_after
@@ -56,14 +56,15 @@ class LADModel:
             elif (self.ols_drop_mode == '2*median'):
                 median_error = ols_data.MAE.median()
                 ols_data = ols_data.loc[ols_data.MAE <= 2 * median_error]
-            print(f'dropped {pre_drop_len - len(ols_data)} data points for OLS [{self.ols_drop_mode}]')
+            if (self.verbose):
+                print(f'dropped {pre_drop_len - len(ols_data)} data points for OLS [{self.ols_drop_mode}]')
             self.ols_data = ols_data
             self.ols_coefficients = self._get_ols_refined_coefficients(ols_data)
             if self.ols_coefficients is not None:
                 if (self.verbose):
                     print('OLS coefficients:', ', '.join(f'{c:.1f}' for c in self.ols_coefficients))
                 if (any([coefficient < 0 for coefficient in self.ols_coefficients])):
-                    warning('Applying the OLS leads to negative coefficients: '
+                    info('Applying the OLS leads to negative coefficients: '
                             ', '.join(f'{c:.1f}({c_orig:.1f})' for c, c_orig in zip(self.ols_coefficients, self.lad_coefficients)))
                     if (self.ols_discard_if_negative):
                         self.no_ols = True
