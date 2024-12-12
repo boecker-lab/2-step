@@ -49,6 +49,7 @@ class PredictArgs(Tap):
     model: str                  # model to load
     gpu: bool = False           # whether to use GPU for predictions
     batch_size: int = 256       # adjust according to available VRAM
+    repo_root_folder: str = '../RepoRT/' # location of the dataset github repository
     verbose: bool = False       # more info on what is being done internally
 
 if __name__ == '__main__':
@@ -63,6 +64,7 @@ if __name__ == '__main__':
     info('load model...')
     model = load_model(args.model, all_in_one=True)
     data_args = model.extra_storage['data_args']
+    data_args['repo_root_folder'] =  args.repo_root_folder
     sysfeature_scaler = model.extra_storage['sysfeature_scaler']
 
     info('load input data...')
