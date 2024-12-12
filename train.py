@@ -25,6 +25,33 @@ from sampling import CustomWeightedRandomSampler, calc_sampling_weights
 logger = logging.getLogger('twosteprt')
 info = logger.info
 
+def time_to_min(timestr):
+    timestr = str(timestr)
+    if (match_ := re.match(r'[\d\.]+ *(min|s)', timestr)):
+        unit = match_.groups()[0]
+        if unit == 's':
+            timestr = float(timestr.replace('s', '').strip()) / 60
+        elif unit == 'min':
+            timestr = float(timestr.replace('min', '').strip())
+        else:
+            raise ValueError(f'wrong unit for epsilon ({timestr}): {unit}')
+    elif (re.match(r'[\d\.]+', timestr)):
+        timestr = float(timestr.strip())
+    else:
+        raise ValueError(f'wrong format for epsilon ({timestr})')
+    return timestr
+
+def none_arg(none_arg):
+    if (none_arg is None or str(none_arg).lower() == 'none'):
+        none_arg = None
+    else:
+        try:
+            none_arg = int(none_arg)
+        except:
+            raise ValueError(f'{none_arg=}')
+    return none_arg
+
+
 class TrainArgs(Tap):
     input: List[str]            # Either CSV or dataset ids
     model_type: Literal['mpn'] = 'mpn'
@@ -39,7 +66,7 @@ class TrainArgs(Tap):
     device: Optional[str] = None  # either `mirrored` or specific device name like gpu:1 or None (auto)
     remove_test_compounds: List[str] = [] # remove compounds occurring in the specified (test) datasets
     remove_test_compounds_mode: Literal['exact', '2d'] = '2d' # remove exact structures or those with same canonical SMILES
-    remove_test_compounds_rarest: bool = False # only remove rarest 50% of test compounds
+    remove_test_compounds_rarest: bool = False # only remove rarest 50 percent of test compounds
     exclude_compounds_list: Optional[str] = None # list of compounds to exclude from training
     learning_rate: float = 5e-4
     adaptive_learning_rate: bool = False
@@ -136,33 +163,9 @@ class TrainArgs(Tap):
     no_train_acc_all: bool = False # can save memory; this metric is pretty useless anyways
     no_train_acc: bool = False # can save memory; this metric is pretty useless anyways
 
-    def process_args(self):
-        # process epsilon unit
-        self.epsilon = str(self.epsilon)
-        if (match_ := re.match(r'[\d\.]+ *(min|s)', self.epsilon)):
-            unit = match_.groups()[0]
-            if unit == 's':
-                self.epsilon = float(self.epsilon.replace('s', '').strip()) / 60
-            elif unit == 'min':
-                self.epsilon = float(self.epsilon.replace('min', '').strip())
-            else:
-                raise ValueError(f'wrong unit for epsilon ({self.epsilon}): {unit}')
-        elif (re.match(r'[\d\.]+', self.epsilon)):
-            self.epsilon = float(self.epsilon.strip())
-        else:
-            raise ValueError(f'wrong format for epsilon ({self.epsilon})')
-        # process pair stop
-        if (self.pair_stop is None or str(self.pair_stop).lower() == 'none'):
-            self.pair_stop = None
-        else:
-            try:
-                self.pair_stop = int(self.pair_stop)
-            except:
-                raise ValueError(f'{self.pair_stop=}')
-
     def configure(self) -> None:
-        self.add_argument('--epsilon', type=str)
-        self.add_argument('--pair_stop', type=str)
+        self.add_argument('--epsilon', type=time_to_min)
+        self.add_argument('--pair_stop', type=none_arg)
 
 def generic_run_name():
     from datetime import datetime
@@ -472,7 +475,6 @@ if __name__ == '__main__':
                                res_conn_enc=(not args.mpn_no_residual_connections_encoder),
                                add_sys_features=args.mpn_add_sys_features,
                                add_sys_features_mode=args.mpn_add_sys_features_mode,
-                               include_special_atom_features=args.mpn_add_special_atom_features,
                                no_sys_layers=args.mpn_no_sys_layers,
                                sys_blowup=args.mpn_sys_blowup)
         else:

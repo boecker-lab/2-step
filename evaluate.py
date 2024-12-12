@@ -256,24 +256,24 @@ class EvalArgs(Tap):
     preds_from_exported_rois: List[str] = []
     mcd_method: Literal['lcs', 'lis'] = 'lis' # how to compute minimum compound deletion
 
-    def process_args(self):
-        # process epsilon unit
-        self.epsilon = str(self.epsilon)
-        if (match_ := re.match(r'[\d\.]+ *(min|s)', self.epsilon)):
+    def time_to_min(self, timestr):
+        timestr = str(timestr)
+        if (match_ := re.match(r'[\d\.]+ *(min|s)', timestr)):
             unit = match_.groups()[0]
             if unit == 's':
-                self.epsilon = float(self.epsilon.replace('s', '').strip()) / 60
+                timestr = float(timestr.replace('s', '').strip()) / 60
             elif unit == 'min':
-                self.epsilon = float(self.epsilon.replace('min', '').strip())
+                timestr = float(timestr.replace('min', '').strip())
             else:
-                raise ValueError(f'wrong unit for epsilon ({self.epsilon}): {unit}')
-        elif (re.match(r'[\d\.]+', self.epsilon)):
-            self.epsilon = float(self.epsilon.strip())
+                raise ValueError(f'wrong unit for epsilon ({timestr}): {unit}')
+        elif (re.match(r'[\d\.]+', timestr)):
+            timestr = float(timestr.strip())
         else:
-            raise ValueError(f'wrong format for epsilon ({self.epsilon})')
+            raise ValueError(f'wrong format for epsilon ({timestr})')
+        return timestr
 
     def configure(self) -> None:
-        self.add_argument('--epsilon', type=str)
+        self.add_argument('--epsilon', type=self.time_to_min)
 
 class DataUnpickler(pickle.Unpickler):
     def find_class(self, module, name):
@@ -289,9 +289,9 @@ def load_model(path: str, type_='mpn'):
     else:
         path = path + '.pt' if not path.endswith('pt') else path
         if (torch.cuda.is_available()):
-            model = torch.load(path)
+            model = torch.load(path, weights_only=False)
         else:
-            model = torch.load(path, map_location=torch.device('cpu'))
+            model = torch.load(path, map_location=torch.device('cpu'), weights_only=False)
             if hasattr(model, 'ranknet_encoder'):
                 model.ranknet_encoder.embedding.gnn.device = torch.device('cpu')
                 model.ranknet_encoder.embedding.gnn.encoder[0].device = torch.device('cpu')
@@ -528,7 +528,6 @@ if __name__ == '__main__':
     info('load model...')
     model, data, config = load_model(args.model, args.model_type)
     features_type = parse_feature_spec(config['args']['feature_type'])['mode']
-    features_add = config['args']['add_descs']
     n_thr = config['args']['num_features']
     # change paths if necessary for loading additional data
     if (not os.path.exists(data.repo_root_folder)):
@@ -633,7 +632,7 @@ if __name__ == '__main__':
             print(f'too few compounds ({len(d.df)}), skipping ...')
             continue
         info('computing features')
-        d.compute_features(verbose=args.verbose, mode=features_type, add_descs=features_add,
+        d.compute_features(verbose=args.verbose, mode=features_type,
                            add_desc_file=args.add_desc_file, n_thr=n_thr)
         if (args.model_type != 'ranknet'):
             info('computing graphs')
@@ -707,7 +706,8 @@ if __name__ == '__main__':
         else:
             preds = predict(X, model, args.batch_size)
         info('done predicting. evaluation...')
-        print(ds, d.void_info[ds])
+        if args.verbose:
+            print(ds, d.void_info[ds])
         acc = eval_(Y, preds, args.epsilon, void_rt=d.void_info[ds], dont_count_low_epsilon=False)
         acc_ignore_epsilon = eval_(Y, preds, args.epsilon, void_rt=d.void_info[ds], dont_count_low_epsilon=True)
         optional_stats = {}
