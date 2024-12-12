@@ -25,9 +25,9 @@ class DataUnpickler(pickle.Unpickler):
 def load_model(path: str, all_in_one:bool=False):
     path = path + '.pt' if not path.endswith('pt') else path
     if (torch.cuda.is_available()):
-        model = torch.load(path)
+        model = torch.load(path, weights_only=False)
     else:
-        model = torch.load(path, map_location=torch.device('cpu'))
+        model = torch.load(path, map_location=torch.device('cpu'), weights_only=False)
         if hasattr(model, 'ranknet_encoder'):
             model.ranknet_encoder.embedding.gnn.device = torch.device('cpu')
             model.ranknet_encoder.embedding.gnn.encoder[0].device = torch.device('cpu')
@@ -70,8 +70,9 @@ if __name__ == '__main__':
     metadata = yaml.load(open(args.input_metadata), yaml.SafeLoader)
     # flatten metadata
     [metadata] = pd.json_normalize(metadata, sep='.').to_dict(orient='records')
+    original_input_columns = open(args.input_compounds).readlines()[0].strip().split('\t')
     d.add_external_data(args.input_compounds, metadata=metadata,
-                        remove_nan_rts=False, tab_mode=False,
+                        remove_nan_rts=False, tab_mode=True,
                         isomeric=True, split_type='evaluate')
 
     # TODO: warn about missing metadata (or even error?)
@@ -117,10 +118,13 @@ if __name__ == '__main__':
     d.df['roi2'] = d.df.roi ** 2 # for LAD model
     # anchors are all data points with annotated retention time, discarding the void volume
     data_anchors = d.df.loc[d.df.rt > metadata['column.t0']]
-    data_to_predict = d.df.loc[pd.isna(d.df.rt)]
+    data_to_predict = d.df.loc[pd.isna(d.df.rt)].copy()
     info(f'building mapping using {len(data_anchors)} anchors, predicting {len(data_to_predict)} retention times...')
     mapping_model = LADModel(data_anchors, ols_after=True, ols_discard_if_negative=True, ols_drop_mode='2*median')
     data_to_predict['rt_pred'] = mapping_model.get_mapping(data_to_predict.roi)
     # TODO: output anchors, too?
     info(f'done. saving to {args.out}.')
-    data_to_predict.to_csv(args.out, sep='\t')
+    data_to_predict[
+        # [c for c in data_to_predict.columns if any(['smiles' in c, 'inchi' in c.lower(), 'name' in c, c.startswith('rt_pred'), c.startswith('id')])]
+        original_input_columns + ['rt_pred']
+                    ].to_csv(args.out, sep='\t')

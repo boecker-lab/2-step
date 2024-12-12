@@ -603,7 +603,8 @@ class Data:
                           remove_nan_rts=True, metadata=None):
         global REL_ONEHOT_COLUMNS
         df = pd.read_csv(data_path, sep='\t' if tab_mode else ',', dtype={'dataset_id': str})
-        df['smiles'] = df['smiles.std']
+        if ('smiles.std' in df.columns):
+            df['smiles'] = df['smiles.std']
         if (metadata is not None):
             for k, v in metadata.items():
                 df[k] = v
