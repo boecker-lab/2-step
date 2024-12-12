@@ -37,19 +37,6 @@ class MPNranker(nn.Module):
                                  add_sys_features=add_sys_features or include_special_atom_features,
                                  add_sys_features_mode=add_sys_features_mode,
                                  add_sys_features_dim=add_dim)
-        elif (encoder.lower() in ['dualmpnnplus', 'dualmpnn']):
-            from cdmvgnn import cdmvgnn
-            self.encoder = cdmvgnn(encoder, encoder_size=encoder_size,
-                                   depth=depth, dropout_rate=dropout_rate_encoder)
-        elif (encoder == 'deepgcnrt'):
-            from deepgcnrt import deepgcnrt
-            self.encoder = deepgcnrt(num_layers=depth, hid_dim=encoder_size, dropout=dropout_rate_encoder)
-        elif (encoder == 'graphformer'):
-            from graphformer import graphformer
-            self.encoder = graphformer(num_layers=depth, hid_dim=encoder_size, dropout=dropout_rate_encoder)
-        elif (encoder == 'deepergcn'):
-            from deeper_gcn import deeper_gcn
-            self.encoder = deeper_gcn(num_layers=depth, hid_dim=encoder_size)
         else:
             raise NotImplementedError(f'{encoder} encoder')
         self.extra_features_dim = extra_features_dim
@@ -92,21 +79,6 @@ class MPNranker(nn.Module):
         for graphs, extra, sysf in batch:       # normally 1 or 2
             if (self.encoder.name == 'dmpnn'):
                 enc = self.encoder([graphs]) # [batch_size x encoder size]
-            elif (self.encoder.name.lower() in ['dualmpnnplus', 'dualmpnn']):
-                # just assume cd-mvgnn model
-                # NOTE: has two outputs: for bonds and atom
-                # TODO: just ADD for now
-                enc = torch.cat([reduce(torch.Tensor.add_,
-                                        self.encoder(g.get_components(), None)) for g in graphs], 0)
-            elif (self.encoder.name == 'deepgcnrt'):
-                enc = torch.cat([self.encoder(g) for g in graphs], 0)
-            elif (self.encoder.name == 'graphformer'):
-                out = self.encoder(**graphs)
-                # two versions: mean of all nodes or virtual node output
-                # enc = out.last_hidden_state.mean(axis=0)
-                enc = out.last_hidden_state[:, 0, :] # node at pos 0 is virtual node
-            elif (self.encoder.name == 'deepergcn'):
-                enc = self.encoder(graphs)
             else:
                 raise NotImplementedError(f'{self.encoder} encoder')
             if (not (hasattr(self, 'no_sys_layers') and self.no_sys_layers)):
@@ -131,7 +103,7 @@ class MPNranker(nn.Module):
             # apply dropout to last ranking layer
             enc = self.dropout_rank(enc)
             # single ROI value
-            roi = self.ident(enc)                          # TODO: relu?
+            roi = self.ident(enc)
             res.append(roi.transpose(0, 1)[0])      # [batch_size]
         if (len(res) > 2):
             raise Exception('only one or two molecules are supported for now, not ', len(res))
@@ -140,14 +112,10 @@ class MPNranker(nn.Module):
 
     def predict(self, graphs, extra, sysf, batch_size=8192,
                 prog_bar=False, ret_features=False):
-        if (self.encoder.name in ['dmpnn', 'deepgcnrt', 'graphformer', 'deepergcn']):
+        if (self.encoder.name == 'dmpnn'):
             self.eval()
-        elif (self.encoder.name.lower() in ['dualmpnnplus', 'dualmpnn']):
-            # TODO: necessary because dualmpnn(plus) has different `forward` outputs
-            # depending on training/eval
-            self.train()
         else:
-            raise NotImplementedError(f'{encoder} encoder')
+            raise NotImplementedError(self.encoder)
         preds = []
         features = []
         it = range(np.ceil(len(graphs) / batch_size).astype(int))
@@ -161,12 +129,8 @@ class MPNranker(nn.Module):
                 if (self.encoder.name == 'dmpnn'):
                     from dmpnn_graph import dmpnn_batch
                     graphs_batch = dmpnn_batch(graphs_batch)
-                elif (self.encoder.name == 'graphformer'):
-                    from graphformer_graph import graphformer_batch
-                    graphs_batch = graphformer_batch(graphs_batch)
-                elif (self.encoder.name == 'deepergcn'):
-                    from generic_gnn_graph import gnn_batch
-                    graphs_batch = gnn_batch(graphs_batch)
+                else:
+                    raise NotImplementedError(self.encoder)
                 batch = (graphs_batch, default_convert(extra[start:end]),
                          default_convert(sysf[start:end]))
                 # if (input('pdb') == 'y'):
@@ -188,123 +152,6 @@ class MPNranker(nn.Module):
             loss = ((loss_fun(pred, y) * weights).mean(), loss_fun(pred, y) * weights)
         return loss
 
-def data_predict(ranker: MPNranker, data: Data, batch_size=8192):
-    preds = {}
-    for ds in data.df.dataset_id.unique():
-        indices = [data.df.index.get_loc(i) for i in
-                   data.df.loc[data.df.dataset_id == ds].index]
-        mols = data.df['smiles.std'].iloc[indices].tolist()
-        extraf = data.x_features[indices]
-        sysf = data.x_info[indices]
-        preds[ds] = (ranker.predict(mols, extraf, sysf, batch_size=batch_size),
-                     data.get_y()[indices])
-    return preds
-
-def data_eval(ranker: MPNranker, data: Data, batch_size=8192,
-              epsilon=0.5):
-    """returns ds_weighted_acc, mean_acc, {ds: acc}
-    """
-    preds = data_predict(ranker, data, batch_size)
-    accs = {}
-    for ds, (y_pred, y) in preds.items():
-        accs[ds] = eval_(y, y_pred, epsilon=epsilon, void_rt=data.void_info[ds])
-    total_num = sum(len(v[0]) for v in preds.values())
-    return (sum(accs[ds] * len(preds[ds][0]) for ds in accs) / total_num,
-            sum(accs.values()) / len(accs), accs)
-
-
-class RankerTwins(nn.Module):
-    def __init__(self, **ranker_args):
-        super(RankerTwins, self).__init__()
-        self.ranker = MPNranker(**ranker_args)
-        self.confl_hidden0 = nn.Linear(2, 8)
-        self.confl_hidden1 = nn.Linear(8, 1)
-        self.confl_rank = nn.Sigmoid()
-    def forward(self, batch):
-        batch1, batch2 = batch
-        y1, z1 = self.ranker(batch1)
-        y2, z2 = self.ranker(batch2)
-        # return y1, y2, self.confl_rank(torch.sum(torch.stack([*z1, *z2], axis=1), axis=1))
-        # return y1, y2, self.confl_rank(
-        #     self.confl_hidden1(self.confl_hidden0(torch.stack([z1[0] + z1[1], z2[0] + z2[1]], axis=1)))).transpose(0, 1)[0]
-        return y1, y2, self.confl_rank(z1[0] + z1[1] - z2[0] + z2[1])
-            # self.confl_hidden1(self.confl_hidden0(torch.stack([z1[0] + z1[1], z2[0] + z2[1]], axis=1)))).transpose(0, 1)[0]
-
-    def loss_step(self, x1, x2, y1, y2, p1weights, p2weights, yconfl,
-                  conflweights, loss_fun_rank, loss_fun_twin):
-        y1_pred, y2_pred, yconfl_pred = self((x1, x2))
-        y1, y2, yconfl,  p1weights, p2weights, conflweights = [
-            torch.as_tensor(_).float().to(self.ranker.encoder.device)
-            for _ in [y1, y2, yconfl, p1weights, p2weights, conflweights]]
-        # loss = (rank_loss1 + rank_loss2) / 2 + confl_mod * confl_loss
-        loss1 = ((
-            loss_fun_rank(y1_pred, y1) * p1weights
-            + loss_fun_rank(y2_pred, y2) * p2weights) / 2).mean()
-        loss2 = (loss_fun_twin(yconfl_pred, yconfl) * conflweights).mean()
-        return loss1, loss2
-
-def twin_train(twins: RankerTwins, epochs: int,
-               train_loader:DataLoader, val_loader:DataLoader=None,
-               writer:SummaryWriter=None, val_writer:SummaryWriter=None,
-               confl_mod=0.5, learning_rate=1e-4, steps_train_loss=10,
-               steps_val_loss=100, ep_save=False):
-    save_name = ('rankertwins' if writer is None else
-                 writer.get_logdir().split('/')[-1].replace('_train', ''))
-    optimizer = torch.optim.Adam(twins.parameters(), lr=learning_rate)
-    rank_loss_fun = nn.BCELoss(reduction='none')
-    twins_loss_fun = nn.BCELoss(reduction='none')
-    twins.train()
-    global_iter_count = 0
-    for epoch in range(epochs):
-        iter_count = val_iter_count = 0
-        loss_sum = val_loss_sum = 0
-        rank_loss_sum = val_rank_loss_sum = 0
-        confl_loss_sum = val_confl_loss_sum = 0
-        loop = tqdm(train_loader)
-        for pairs in loop:
-            twins.zero_grad()
-            loss_rank, loss_confl = twins.loss_step(
-                (pairs.p1.x1, pairs.p1.x2), (pairs.p2.x1, pairs.p2.x2),
-                pairs.p1.y, pairs.p2.y, pairs.p1.weights, pairs.p2.weights,
-                pairs.confl, pairs.weights, rank_loss_fun, twins_loss_fun)
-            loss = (1 - confl_mod) * loss_rank + confl_mod * loss_confl
-            loss_sum += loss.item()
-            rank_loss_sum += loss_rank.item()
-            confl_loss_sum += loss_confl.item()
-            iter_count += 1
-            global_iter_count += 1
-            loss.backward()
-            optimizer.step()
-            if (iter_count % steps_train_loss == (steps_train_loss - 1) and writer is not None):
-                writer.add_scalar('loss', loss_sum / iter_count, global_iter_count)
-                writer.add_scalar('rank_loss', rank_loss_sum / iter_count, global_iter_count)
-                writer.add_scalar('confl_loss', confl_loss_sum / iter_count, global_iter_count)
-            if (val_writer is not None and val_loader is not None and len(val_loader) > 0
-                and iter_count % steps_val_loss == (steps_val_loss - 1)):
-                twins.eval()
-                with torch.no_grad():
-                    for pairs in val_loader:
-                        loss_rank, loss_confl = twins.loss_step(
-                            (pairs.p1.x1, pairs.p1.x2), (pairs.p2.x1, pairs.p2.x2),
-                            pairs.p1.y, pairs.p2.y, pairs.p1.weights, pairs.p2.weights,
-                            pairs.confl, pairs.weights, rank_loss_fun, twins_loss_fun)
-                        loss = (1 - confl_mod) * loss_rank + confl_mod * loss_confl
-                        val_loss_sum += loss.item()
-                        val_rank_loss_sum += loss_rank.item()
-                        val_confl_loss_sum += loss_confl.item()
-                val_writer.add_scalar('loss', val_loss_sum / val_iter_count, global_iter_count)
-                val_writer.add_scalar('rank_loss', val_rank_loss_sum / val_iter_count, global_iter_count)
-                val_writer.add_scalar('confl_loss', val_confl_loss_sum / val_iter_count, global_iter_count)
-                val_writer.flush()
-                writer.flush()
-                twins.train()
-            loop.set_description(f'Epoch [{epoch+1}/{epochs}]')
-            loop.set_postfix(loss=loss_sum/iter_count if iter_count > 0 else np.infty,
-                             rank_loss=rank_loss_sum/iter_count if iter_count > 0 else np.infty,
-                             confl_loss=confl_loss_sum/iter_count if iter_count > 0 else np.infty,
-                             val_loss=val_loss_sum/val_iter_count if val_iter_count > 0 else np.infty)
-            if (ep_save):
-                torch.save(twins, f'{save_name}_ep{epoch + 1}.pt')
 
 def train(ranker: MPNranker, bg: DataLoader, epochs=2,
           epochs_start=0,
