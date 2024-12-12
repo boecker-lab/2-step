@@ -46,7 +46,7 @@ def compute_morgan(smile, bits=1024, radius=2):
 
 def features(smiles, filter_='rdk', overwrite_cache=False, verbose=False,
              custom_features=[], mode='rdkit', load_factor=0.75,
-             add_descs=False, add_desc_file='/home/fleming/Documents/Projects/rtranknet/data/qm_merged.csv'):
+             add_descs=False, add_desc_file='data/qm_merged.csv'):
     """computes and returns features as well as an ordered list of descriptors.
 
     If `custom_features` ~= ["morgan\d"], use morgan fingerprints, ignoring `filter_`
