@@ -1,14 +1,9 @@
-from argparse import Namespace
 import pandas as pd
 import numpy as np
-# import matplotlib.pyplot as plt
-# import seaborn as sn
-# import lightgbm as lgb
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 import pickle
 import os
-import re
 from dataclasses import dataclass, field
 from typing import Optional, List, Tuple, Union, Iterable, Callable, Literal
 import logging
@@ -91,19 +86,6 @@ def pair_weights(smiles1: str, smiles2: str, rt_diff: float,
     # if (random() * 100 < 1):
     #     print(f'weights:\t{rt_diff=:.2f}\t{max_rt=:.2f}\t->{base_weight:.2f}')
     return None if base_weight < cutoff else base_weight
-
-
-
-# def plot_fun(weights, fun):
-#     x = np.arange(0, 2, 0.001)
-#     for w in weights:
-#         plt.plot(x, [fun(xi, w) for xi in x], label=f'w={w}')
-#         plt.axvline(0.5)
-#         plt.axvline(1)
-#         print(f'{w=}: \t{fun(0.2, w)=:.5f}\t{fun(0.5, w)=:.5f}\t{fun(0.8, w)=:.5f}')
-#     # plt.yscale('log')
-#     plt.legend()
-#     plt.show()
 
 
 def get_column_scaling(cols, repo_root_folder='../RepoRT/',
@@ -247,25 +229,11 @@ class Data:
             t0 = time()
             if (self.encoder == 'dmpnn'):
                 from dmpnn_graph import dmpnn_graph as mol2graph
-            elif (self.encoder.lower() in ['dualmpnnplus', 'dualmpnn']):
-                from cdmvgnn_graph import cdmvgnn_graph as mol2graph
-            elif (self.encoder == 'deepgcnrt'):
-                from deepgcnrt_graph import deepgcnrt_graph as mol2graph
-            elif (self.encoder == 'graphformer'):
-                from graphformer_graph import graphformer_graph as mol2graph
-            elif (self.encoder == 'deepergcn'):
-                from generic_gnn_graph import gnn_graph as mol2graph
             else:
                 raise NotImplementedError(f'{self.encoder} encoder')
             graphs_unique = {s: mol2graph(s) for s in self.df.smiles.unique()}
             self.graphs = np.array([graphs_unique[s] for s in self.df.smiles])
             info(f'computing graphs done ({str(timedelta(seconds=time() - t0))} elapsed)')
-            # check graphs
-            if (self.encoder == 'deepgcnrt'):
-                assert not any([np.isinf(g.ndata['node_feat'].cpu().numpy()).any() for g in graphs_unique.values()])
-                assert not any([np.isnan(g.ndata['node_feat'].cpu().numpy()).any() for g in graphs_unique.values()])
-                assert not any([np.isinf(g.edata['edge_feat'].cpu().numpy()).any() for g in graphs_unique.values()])
-                assert not any([np.isnan(g.edata['edge_feat'].cpu().numpy()).any() for g in graphs_unique.values()])
 
     def compute_features(self,
                          filter_features=None,
@@ -288,38 +256,6 @@ class Data:
         self.x_features = features_unique[smiles_pos]
         if (n_thr is not None):
             self.x_features = self.x_features[:, :n_thr]
-
-    def df_classes(self):
-        def match_or_nan(id_pattern, field):
-            if (not isinstance(field, str) or field.strip() == ''):
-                return np.nan
-            match = re.search(id_pattern, field)
-            return match[0] if match is not None else np.nan
-
-        classyfire_columns = [
-            c for c in self.df.columns if c.startswith('classyfire.')
-        ]
-        if (len(classyfire_columns) == 0):
-            raise Exception('no classyfire classes in df!')
-        id_pattern = re.compile(r'CHEMONTID:\d+')
-        ids = self.df[classyfire_columns].apply(
-            lambda row:
-            [match_or_nan(id_pattern, field) for field in row],
-            axis=1)
-        return ids.to_list()
-
-    def compute_classes(self, classes=None, max_rank=None, all_classes=False):
-        from classyfire import get_onehot, get_binary
-        if (classes is None):
-            classes = self.df_classes()
-        if all_classes:
-            onehots = [[get_onehot(row[i], i) for i in range(
-                min((max_rank if max_rank is not None else len(row)), len(row)))]
-                       for row in classes]
-            self.x_classes = np.array([np.concatenate(row) for row in onehots])
-        else:
-            self.x_classes = np.array([get_binary(oids, l_thr=self.classes_l_thr, u_thr=self.classes_u_thr)
-                                       for oids in classes])
 
     def get_tanaka_params(self, ds, how='exact', ignore_spp_particle_size=True, verbose=False):
         assert how in ['exact',     # column and particle size have to match
@@ -470,7 +406,6 @@ class Data:
             fields.append(self.df[solvent_cols])
             self.solvent_order = solvent_cols
             system_features.extend(solvent_cols)
-        # np.savetxt('/tmp/sys_array.txt', np.concatenate(fields, axis=1), fmt='%.2f')
         self.x_info = np.concatenate(fields, axis=1)
         assert self.x_info.shape[1] == len(system_features)
         self.custom_column_fields = names
@@ -485,7 +420,6 @@ class Data:
         self.features_indices = [0, self.x_features.shape[1] - 1]
         if (self.use_compound_classes and self.x_classes is None):
             raise Exception('compound classes are not supported anymore')
-            self.compute_classes()
         if (self.x_info is None):
             self.compute_system_information(use_usp_codes=self.use_usp_codes,
                                             use_hsm=self.use_hsm, use_tanaka=self.use_tanaka,
@@ -668,42 +602,6 @@ class Data:
                       metadata_void_rt=False, remove_void_compounds=False,
                       **extra_data_args):
         raise DeprecationWarning()
-        # TODO: has not been used in a loong time, make sure everything from `add_dataset_id` is here, too
-        # TODO: void compounds removal is not implemented here, for instance
-        # get header
-        pot_header = open(f).readlines()[0].strip().split('\t')
-        if ('rt' not in pot_header):
-            # assume there is no header
-            df = pd.read_csv(f, sep='\t', header=None)
-            if (len(df.columns) == 3):
-                # minimal case
-                df.columns = ['inchikey', 'smiles', 'rt']
-            else:
-                raise NotImplementedError(
-                    f'raw file with {len(df.columns)} columns and no header (at least not with rt)')
-        else:
-            df = pd.read_csv(f, sep='\t')
-            if (metadata_void_rt and 'column.t0' in df.columns):
-                void_rt = df['column.t0'].iloc[0] * void_factor
-            if ('smiles.std' in df.columns):
-                df['smiles'] = df['smiles.std']
-        print(f'read raw file {f} with columns {df.columns.tolist()} ({void_rt=})')
-        df.file = f
-        # rows without RT data are useless
-        df = df[~pd.isna(df.rt)]
-        # get dataset ID(s) and void time(s)
-        if ('dataset_id' not in df.columns):
-            # add dummy dataset_id
-            df['dataset_id'] = os.path.basename(f)
-        if (not metadata_void_rt or 'column.t0' not in df.columns):
-            df['column.t0'] = void_rt
-        void_info = {t[0]: t[1] for t in set(
-            df[['dataset_id', 'column.t0']].itertuples(index=False))}
-        if (remove_void_compounds):
-            raise NotImplementedError('remove_void_compounds')
-        return Data(df=df, graph_mode=graph_mode,
-                    void_info=void_info,
-                    **extra_data_args)
 
     def balance(self):
         if ('dataset_id' not in self.df.columns):

@@ -17,13 +17,7 @@ logger = logging.getLogger('twosteprt.utils')
 info = logger.info
 warning = logger.warning
 
-from deepgcnrt_features import cip_code, crippen_log_p_contrib, crippen_molar_refractivity_contrib, gasteiger_charge, labute_asa_contrib, tpsa_contrib
-SPECIAL_FEATURES = [(cip_code, 2),
-                    (crippen_log_p_contrib, 1),
-                    (crippen_molar_refractivity_contrib, 1),
-                    (gasteiger_charge, 1),
-                    (labute_asa_contrib, 1),
-                    (tpsa_contrib, 1)]
+SPECIAL_FEATURES = []
 SPECIAL_FEATURES_SIZE = sum([x[1] for x in SPECIAL_FEATURES])
 
 def compute_special_features(mol, sysfeatures):
