@@ -70,7 +70,7 @@ An output with predicted retention times will be generated:
 5	COC1=C(C=CC(=C1)C=CC=O)O	24.9707
 ```
 
-## training ROI prediction models
+## Training ROI prediction models
 
 ```bash
 python train.py --input <IDs of RepoRT datasets> --epsilon 10s \
@@ -82,7 +82,7 @@ python train.py --input <IDs of RepoRT datasets> --epsilon 10s \
        --mpn_no_residual_connections_encoder --no_standardize
 ```
 
-## evaluation of retention order prediction accuracy
+## Evaluation of retention order prediction accuracy
 
 ```bash
 python evaluate.py --model <path to trained model> --test_sets <IDs of RepoRT datasets> \
