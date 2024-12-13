@@ -48,6 +48,8 @@ Two input files are needed:
    ```
    The column should have [HSM](https://github.com/michaelwitting/RepoRT/blob/master/resources/hsm_database/hsm_database.tsv) and [Tanaka](https://github.com/michaelwitting/RepoRT/blob/master/resources/tanaka_database/tanaka_database.tsv) parameters available. If provided, twice `t0` is used as the void threshold, anchors below will not be considered during mapping.
 
+Consider standardizing compound structures before, using e.g., [standardizeUtils](https://github.com/boecker-lab/standardizeUtils).
+
 To access HSM and Tanaka parameters, a copy of [RepoRT](https://github.com/michaelwitting/RepoRT) needs to be available.
 
 Use `predict.py` like this:
