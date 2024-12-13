@@ -170,7 +170,7 @@ class TrainArgs(Tap):
 def generic_run_name():
     from datetime import datetime
     time_str = datetime.now().strftime('%Y%m%d_%H-%M-%S')
-    return f'ranknet_{time_str}'
+    return f'twosteproi_{time_str}'
 
 
 def preprocess(data: Data, args: TrainArgs):
