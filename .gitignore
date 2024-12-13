@@ -1,16 +1,7 @@
 /__pycache__/
 /.dir-locals.el
 /runs/
-/preds/
-/*.sh*
 /*.pt
 /*.pkl
 /*.log
 /*.json
-/*.tsv
-/*.csv
-/*.txt
-/data/
-/runs.old
-/RtPredTrainingData
-/*.obo
