@@ -54,7 +54,7 @@ To access HSM and Tanaka parameters, a copy of [RepoRT](https://github.com/micha
 
 Use `predict.py` like this:
 ```bash
-python predict.py  --model models/twosteprt_RepoRT_full.pt  --repo_root_folder <path to RepoRT> \
+python predict.py  --model models/twostep_everything_predready.pt  --repo_root_folder <path to RepoRT> \
        --input_compounds test/test_input.tsv --input_metadata test/test_metdata.yaml \
        --out test/test_output.tsv
 ```
