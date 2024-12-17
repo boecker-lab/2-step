@@ -42,9 +42,9 @@ Two input files are needed:
   column:
     name: Waters ACQUITY UPLC HSS T3
     t0: 0.735
-    eluent:
-      A:
-        pH: 3
+  eluent:
+    A:
+      pH: 3
    ```
    The column should have [HSM](https://github.com/michaelwitting/RepoRT/blob/master/resources/hsm_database/hsm_database.tsv) and [Tanaka](https://github.com/michaelwitting/RepoRT/blob/master/resources/tanaka_database/tanaka_database.tsv) parameters available. If provided, twice `t0` is used as the void threshold, anchors below will not be considered during mapping.
 
