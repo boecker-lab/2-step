@@ -82,6 +82,21 @@ python train.py --input <IDs of RepoRT datasets> --epsilon 10s \
        --mpn_no_residual_connections_encoder --no_standardize
 ```
 
+Model training creates three files:
+1. The model itself, `twosteproi.pt` (with option `--ep_save` files for every epoch are created: `twosteproi_ep1.pt` etc.)
+2. Processed training data, `twosteproi_data.pkl`
+3. A JSON file detailing the training configuration, `twosteproi_config.json`
+
+To make the trained model ready for prediction, use the `repackage_model.py`-script:
+```bash
+python repackage_model.py twosteproi.pt twosteproi_predready.pt
+```
+
+This combines all information required for prediction into one file.
+
+A model trained on 172 manually curated reversed-phase datasets from RepoRT (version 94f43c1b) is
+provided in the `models` subdirectory (`models/twostep_everything_predready.pt`).
+
 ## Evaluation of retention order prediction accuracy
 
 ```bash
