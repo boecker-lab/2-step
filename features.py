@@ -49,7 +49,7 @@ def features(smiles, filter_='rdk', overwrite_cache=False, verbose=False,
              add_descs=False, add_desc_file='data/qm_merged.csv'):
     """computes and returns features as well as an ordered list of descriptors.
 
-    If `custom_features` ~= ["morgan\d"], use morgan fingerprints, ignoring `filter_`
+    If `custom_features` ~= ["morgan\\d"], use morgan fingerprints, ignoring `filter_`
     """
     assert (len(smiles) == len(set(smiles))), 'smiles have to be unique'
     if (not hasattr(features, 'cached')):

@@ -541,6 +541,8 @@ class Data:
         if (metadata is not None):
             for k, v in metadata.items():
                 df[k] = v
+            if ('column.particle.size' not in df.columns):
+                df['column.particle.size'] = None
         if not isomeric:
             # drop isomeric information from smiles
             # from rdkit import Chem
