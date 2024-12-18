@@ -1,0 +1,17 @@
+name: twosteprt-cuda
+channels:
+  - pytorch
+  - conda-forge
+  - nvidia
+dependencies:
+  - python=3.12
+  - chemprop=1.6.1
+  - pulp
+  - pytorch
+  - pytorch-cuda=11.8
+  - rdkit
+  - statsmodels
+  - tensorboard
+  - tqdm
+  - yaml
+  - numpy<2

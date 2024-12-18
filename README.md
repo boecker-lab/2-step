@@ -2,26 +2,6 @@
 
 Use `predict.py` to first predict retention order indices and then map these to retention times using anchor compounds.
 
-The following dependencies are required:
-```
-- python=3.12
-- chemprop=1.6.1
-- pulp
-- pytorch
-- rdkit
-- statsmodels
-- tensorboard
-- tqdm
-- yaml
-- numpy<2
-```
-
-A conda/mamba environment is provided:
-```bash
-mamba env create -n twosteprt -f env.yaml
-mamba activate twosteprt
-```
-
 Two input files are needed:
 - **Structures with retention times for anchor compounds** in TSV format:
   ```
@@ -59,6 +39,13 @@ python predict.py  --model models/twostep_everything_predready.pt  --repo_root_f
        --out test/test_output.tsv
 ```
 
+With docker:
+```bash
+docker run -v $(pwd)/test:/app/test -v <path to RepoRT>:/RepoRT -it --rm twosteprt \
+       python predict.py --model models/twostep_everything_predready.pt --repo_root_folder /RepoRT \
+       --input_compounds test/test_input.tsv --input_metadata test/test_metadata.yaml
+```
+
 An output with predicted retention times will be generated:
 ```
 	smiles	rt_pred
@@ -69,6 +56,32 @@ An output with predicted retention times will be generated:
 4	C1=CC=C(C(=C1)C(=O)O)N	16.751137
 5	COC1=C(C=CC(=C1)C=CC=O)O	24.9707
 ```
+
+## Dependencies
+
+The following dependencies are required:
+```
+- python=3.12
+- chemprop=1.6.1
+- pulp
+- pytorch
+- rdkit
+- statsmodels
+- tensorboard
+- tqdm
+- yaml
+- numpy<2
+```
+
+A conda/mamba environment is provided:
+```bash
+mamba env create -n twosteprt -f env.yaml
+mamba activate twosteprt
+```
+
+For GPU support, the `pytorch-cuda`-package has to be added with the appropriate version, e.g., `pytorch-cuda=11.8`. See [env_cuda.yaml](env_cuda.yaml).
+A [Dockerfile](Dockerfile) is provided as well.
+
 
 ## Training ROI prediction models
 
@@ -81,6 +94,8 @@ python train.py --input <IDs of RepoRT datasets> --epsilon 10s \
        --pair_step 1 --pair_stop None --sample --sampling_count 500_000 --no_group_weights \
        --mpn_no_residual_connections_encoder --no_standardize
 ```
+
+Add `--gpu` to enable training on GPU.
 
 Model training creates three files:
 1. The model itself, `twosteproi.pt` (with option `--ep_save` files for every epoch are created: `twosteproi_ep1.pt` etc.)
