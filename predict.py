@@ -10,6 +10,7 @@ import pickle
 import io
 import torch
 import yaml
+import sys
 
 from utils import Data
 from mapping import LADModel
@@ -43,14 +44,15 @@ def load_model(path: str, all_in_one:bool=False):
     return model, data, config
 
 class PredictArgs(Tap):
-    input_compounds: str        # TSV file with `smiles` and `rt` columns
-    input_metadata: str         # yaml file with at least `column.name`, `eluent.A.pH`, and `column.t0` specified
-    out: str                    # where to write the output (TSV format)
-    model: str                  # model to load
-    gpu: bool = False           # whether to use GPU for predictions
-    batch_size: int = 256       # adjust according to available VRAM
+    input_compounds: str                 # TSV file with `smiles` and `rt` columns
+    input_metadata: str                  # yaml file with at least `column.name`, `eluent.A.pH`, and `column.t0` specified
+    model: str                           # model to load
+    gpu: bool = False                    # whether to use GPU for predictions
+    output_anchors: bool = False         # include anchors in output
+    out: Optional[str] = None            # where to write the output (TSV format). If not specified, output will be written to screen.
+    batch_size: int = 256                # adjust according to available VRAM
     repo_root_folder: str = '../RepoRT/' # location of RepoRT, needed for HSM/Tanaka database
-    verbose: bool = False       # more info on what is being done internally
+    verbose: bool = False                # more info on what is being done internally
 
 if __name__ == '__main__':
     args = PredictArgs().parse_args()
@@ -124,8 +126,15 @@ if __name__ == '__main__':
     mapping_model = LADModel(data_anchors, ols_after=True, ols_discard_if_negative=True, ols_drop_mode='2*median')
     data_to_predict['rt_pred'] = mapping_model.get_mapping(data_to_predict.roi)
     # TODO: output anchors, too?
-    info(f'done. saving to {args.out}.')
-    data_to_predict[
+    out_df = data_to_predict[
         # [c for c in data_to_predict.columns if any(['smiles' in c, 'inchi' in c.lower(), 'name' in c, c.startswith('rt_pred'), c.startswith('id')])]
         original_input_columns + ['rt_pred']
-                    ].to_csv(args.out, sep='\t')
+    ]
+    if (args.output_anchors):
+        out_df = pd.concat([data_anchors[original_input_columns], out_df])
+    if (args.out is None):
+        info(f'done. showing output.')
+        out_df.to_csv(sys.stdout, sep='\t')
+    else:
+        info(f'done. saving to {args.out}.')
+        out_df.to_csv(args.out, sep='\t')
