@@ -1,0 +1,26 @@
+name: Build and push docker container
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - 'Dockerfile'
+      - '.github/workflows/build_container.yaml'
+      - 'env.yaml'
+
+jobs:
+  dockerloginbuildpush:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/checkout@v3
+      - name: Create image from repository
+        run: docker build -t ghcr.io/${{ github.repository }} .
+      - name: Push image to GitHub Container Registry
+        run: docker push ghcr.io/${{ github.repository }}:latest
