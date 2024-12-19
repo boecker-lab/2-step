@@ -109,7 +109,7 @@ python repackage_model.py twosteproi.pt twosteproi_predready.pt
 
 This combines all information required for prediction into one file.
 
-A model trained on 172 manually curated reversed-phase datasets from RepoRT (version 94f43c1b) is
+A model trained on 171 manually curated reversed-phase datasets from RepoRT (version 94f43c1b) is
 provided in the `models` subdirectory (`models/twostep_everything_predready.pt`).
 
 ## Evaluation of retention order prediction accuracy
