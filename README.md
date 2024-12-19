@@ -41,7 +41,7 @@ python predict.py  --model models/twostep_everything_predready.pt  --repo_root_f
 
 With docker:
 ```bash
-docker run -v $(pwd)/test:/app/test -v <path to RepoRT>:/RepoRT -it --rm twosteprt \
+docker run -v $(pwd)/test:/app/test -v <path to RepoRT>:/RepoRT -it --rm ghcr.io/boecker-lab/twosteprt:latest \
        python predict.py --model models/twostep_everything_predready.pt --repo_root_folder /RepoRT \
        --input_compounds test/test_input.tsv --input_metadata test/test_metadata.yaml
 ```
@@ -80,7 +80,7 @@ mamba activate twosteprt
 ```
 
 For GPU support, the `pytorch-cuda`-package has to be added with the appropriate version, e.g., `pytorch-cuda=11.8`. See [env_cuda.yaml](env_cuda.yaml).
-A [Dockerfile](Dockerfile) is provided as well.
+A [Dockerfile](Dockerfile) and [container](ghcr.io/boecker-lab/twosteprt:latest) is provided as well.
 
 
 ## Training ROI prediction models
