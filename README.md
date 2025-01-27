@@ -35,7 +35,7 @@ To access HSM and Tanaka parameters, a copy of [RepoRT](https://github.com/micha
 Use `predict.py` like this:
 ```bash
 python predict.py  --model models/twostep_everything_predready.pt  --repo_root_folder <path to RepoRT> \
-       --input_compounds test/test_input.tsv --input_metadata test/test_metdata.yaml \
+       --input_compounds test/test_input.tsv --input_metadata test/test_metadata.yaml \
        --out test/test_output.tsv
 ```
 This should take about 10 seconds on a normal laptop without GPU.
@@ -75,7 +75,7 @@ The following dependencies are required:
 ```
 
 
-A conda/mamba environment is provided (typical install time: ):
+A conda/mamba environment is provided (typical install time: 5 minutes):
 ```bash
 mamba env create -n twosteprt -f env.yaml
 mamba activate twosteprt
