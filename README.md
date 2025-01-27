@@ -38,6 +38,7 @@ python predict.py  --model models/twostep_everything_predready.pt  --repo_root_f
        --input_compounds test/test_input.tsv --input_metadata test/test_metdata.yaml \
        --out test/test_output.tsv
 ```
+This should take about 10 seconds on a normal laptop without GPU.
 
 With docker:
 ```bash
@@ -46,7 +47,7 @@ docker run -v $(pwd)/test:/app/test -v <path to RepoRT>:/RepoRT -it --rm ghcr.io
        --input_compounds test/test_input.tsv --input_metadata test/test_metadata.yaml
 ```
 
-An output with predicted retention times will be generated:
+An output with predicted retention times will be generated (full example output: [test/test_output.tsv](test/test_output.tsv)):
 ```
 	smiles	rt_pred
 0	C1=CC(=C(C=C1C2=C(C(=O)C3=C(C=C(C=C3O2)O)O)O)O)OC4C(C(C(C(O4)CO)O)O)O	26.192242
@@ -73,15 +74,30 @@ The following dependencies are required:
 - numpy<2
 ```
 
-A conda/mamba environment is provided:
+
+A conda/mamba environment is provided (typical install time: ):
 ```bash
 mamba env create -n twosteprt -f env.yaml
 mamba activate twosteprt
 ```
 
 For GPU support, the `pytorch-cuda`-package has to be added with the appropriate version, e.g., `pytorch-cuda=11.8`. See [env_cuda.yaml](env_cuda.yaml).
-A [Dockerfile](Dockerfile) and [container](ghcr.io/boecker-lab/twosteprt:latest) is provided as well.
+A [Dockerfile](Dockerfile) and [container](ghcr.io/boecker-lab/twosteprt:latest) is provided as well. GPU (or any other special hardware) is not required.
 
+
+The code should work on any operating system and was tested under Arch Linux@6.6.72-1-lts with the following package versions:
+```
+- python=3.12.8
+- chemprop=1.6.1
+- pulp=2.8.0
+- pytorch=2.5.1
+- rdkit=2024.09.3
+- statsmodels=0.14.4
+- tensorboard=2.18.0
+- tqdm=4.67.1
+- yaml=0.2.5
+- numpy=1.26.4
+```
 
 ## Training ROI prediction models
 
