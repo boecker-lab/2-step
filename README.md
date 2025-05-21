@@ -134,3 +134,5 @@ provided in the `models` subdirectory (`models/twostep_everything_predready.pt`)
 python evaluate.py --model <path to trained model> --test_sets <IDs of RepoRT datasets> \
        --repo_root_folder <path to RepoRT> --epsilon 10s
 ```
+
+Again, add `--gpu` for GPU mode.
