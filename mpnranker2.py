@@ -28,7 +28,7 @@ class MPNranker(nn.Module):
                  depth=3, dropout_rate_encoder=0.0, dropout_rate_pv=0.0,
                  dropout_rate_rank=0.0, res_conn_enc=True, add_sys_features=False,
                  add_sys_features_mode=None, include_special_atom_features=False,
-                 no_sys_layers=False, sys_blowup=False):
+                 no_sys_layers=False, sys_blowup=False, no_sigmoid_roi=False):
         super(MPNranker, self).__init__()
         if (encoder == 'dmpnn'):
             from dmpnn import dmpnn
@@ -47,6 +47,7 @@ class MPNranker(nn.Module):
         self.include_special_atom_features = include_special_atom_features
         self.no_sys_layers = no_sys_layers
         self.sys_blowup = sys_blowup
+        self.no_sigmoid_roi = no_sigmoid_roi
         if (not self.no_sys_layers):
             # System x molecule preference encoding
             if (self.sys_blowup):
@@ -108,7 +109,10 @@ class MPNranker(nn.Module):
         if (len(res) > 2):
             raise Exception('only one or two molecules are supported for now, not ', len(res))
         # return torch.sigmoid(res[0] - res[1] if len(res) == 2 else res[0])
-        return [torch.sigmoid(r) for r in res]
+        if (hasattr(self, 'no_sigmoid_roi') and self.no_sigmoid_roi):
+            return res
+        else:
+            return [torch.sigmoid(r) for r in res]
 
     def predict(self, graphs, extra, sysf, batch_size=8192,
                 prog_bar=False, ret_features=False):

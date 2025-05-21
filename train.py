@@ -132,6 +132,7 @@ class TrainArgs(Tap):
     mpn_add_sys_features_mode: Literal['bond', 'atom'] = 'atom' # whether to add sys featues as 'bond' and 'atom' features
     mpn_no_sys_layers: bool = False # don't add any layers for sys features to the MPN (for example when sys features are already part of the graphs)
     mpn_sys_blowup: bool = False # extra layer which blows up sysfeatures dimension to encoder size
+    mpn_no_sigmoid_roi: bool = False # don't use sigmoid as last step for keeping ROI in range [0, 1]
     # pairs
     epsilon: Union[str, float] = '10s' # difference in evaluation measure below which to ignore falsely predicted pairs
     pair_step: int = 1
@@ -476,7 +477,8 @@ if __name__ == '__main__':
                                add_sys_features=args.mpn_add_sys_features,
                                add_sys_features_mode=args.mpn_add_sys_features_mode,
                                no_sys_layers=args.mpn_no_sys_layers,
-                               sys_blowup=args.mpn_sys_blowup)
+                               sys_blowup=args.mpn_sys_blowup,
+                               no_sigmoid_roi=args.mpn_no_sigmoid_roi)
         else:
             raise NotImplementedError(args.model_type)
         print(ranker)

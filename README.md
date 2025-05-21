@@ -108,7 +108,7 @@ python train.py --input <IDs of RepoRT datasets> --epsilon 10s \
        --repo_root_folder <path to RepoRT> --clean_data \
        --encoder_size 512 --sizes 256 64 --sizes_sys 256 256 \
        --pair_step 1 --pair_stop None --sample --sampling_count 500_000 --no_group_weights \
-       --mpn_no_residual_connections_encoder --no_standardize
+       --mpn_no_residual_connections_encoder --no_standardize --mpn_no_sigmoid_roi
 ```
 
 Add `--gpu` to enable training on GPU.
