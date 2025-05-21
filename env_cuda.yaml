@@ -1,4 +1,4 @@
-name: twosteprt-cuda
+name: 2-step-cuda
 channels:
   - pytorch
   - conda-forge

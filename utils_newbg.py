@@ -13,7 +13,7 @@ import pandas as pd
 from collections import Counter, defaultdict
 from pprint import pprint
 
-logger = logging.getLogger('twosteprt.utils')
+logger = logging.getLogger('2-step.utils')
 info = logger.info
 warning = logger.warning
 

@@ -4,7 +4,7 @@ from rdkit.Chem import AllChem, Descriptors, Descriptors3D
 import multiprocessing as mp
 import logging
 
-logger = logging.getLogger('twosteprt.features')
+logger = logging.getLogger('2-step.features')
 info = logger.info
 warning = logger.warning
 

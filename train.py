@@ -22,7 +22,7 @@ from evaluate import predict, export_predictions, load_model
 from utils_newbg import RankDataset, check_integrity
 from sampling import CustomWeightedRandomSampler, calc_sampling_weights
 
-logger = logging.getLogger('twosteprt')
+logger = logging.getLogger('2-step')
 info = logger.info
 
 def time_to_min(timestr):
@@ -171,7 +171,7 @@ class TrainArgs(Tap):
 def generic_run_name():
     from datetime import datetime
     time_str = datetime.now().strftime('%Y%m%d_%H-%M-%S')
-    return f'twosteproi_{time_str}'
+    return f'2-step_{time_str}'
 
 
 def preprocess(data: Data, args: TrainArgs):
@@ -232,7 +232,7 @@ if __name__ == '__main__':
     logger.addHandler(ch)
     if (args.verbose):
         logger.setLevel(logging.INFO)
-        logging.getLogger('twosteprt.utils').setLevel(logging.INFO)
+        logging.getLogger('2-step.utils').setLevel(logging.INFO)
         fh = logging.FileHandler(run_name + '.log')
         fh.setLevel(logging.INFO)
         fh.setFormatter(logging.Formatter('%(asctime)s %(name)s %(levelname)s: %(message)s'))

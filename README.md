@@ -1,4 +1,4 @@
-# Two-step retention time prediction
+# 2-step retention time prediction
 
 Use `predict.py` to first predict retention order indices and then map these to retention times using anchor compounds.
 
@@ -34,7 +34,7 @@ To access HSM and Tanaka parameters, a copy of [RepoRT](https://github.com/micha
 
 Use `predict.py` like this:
 ```bash
-python predict.py  --model models/twostep_everything_predready.pt  --repo_root_folder <path to RepoRT> \
+python predict.py  --model models/2-step0525.pt  --repo_root_folder <path to RepoRT> \
        --input_compounds test/test_input.tsv --input_metadata test/test_metadata.yaml \
        --out test/test_output.tsv
 ```
@@ -42,8 +42,8 @@ This should take about 10 seconds on a normal laptop without GPU.
 
 With docker:
 ```bash
-docker run -v $(pwd)/test:/app/test -v <path to RepoRT>:/RepoRT -it --rm ghcr.io/boecker-lab/twosteprt:latest \
-       python predict.py --model models/twostep_everything_predready.pt --repo_root_folder /RepoRT \
+docker run -v $(pwd)/test:/app/test -v <path to RepoRT>:/RepoRT -it --rm ghcr.io/boecker-lab/2-step:latest \
+       python predict.py --model models/2-step0525.pt --repo_root_folder /RepoRT \
        --input_compounds test/test_input.tsv --input_metadata test/test_metadata.yaml
 ```
 
@@ -77,12 +77,12 @@ The following dependencies are required:
 
 A conda/mamba environment is provided (typical install time: 5 minutes):
 ```bash
-mamba env create -n twosteprt -f env.yaml
-mamba activate twosteprt
+mamba env create -n 2-step -f env.yaml
+mamba activate 2-step
 ```
 
 For GPU support, the `pytorch-cuda`-package has to be added with the appropriate version, e.g., `pytorch-cuda=11.8`. See [env_cuda.yaml](env_cuda.yaml).
-A [Dockerfile](Dockerfile) and [container](ghcr.io/boecker-lab/twosteprt:latest) is provided as well. GPU (or any other special hardware) is not required.
+A [Dockerfile](Dockerfile) and [container](ghcr.io/boecker-lab/2-step:latest) is provided as well. GPU (or any other special hardware) is not required.
 
 
 The code should work on any operating system and was tested under Arch Linux@6.6.72-1-lts with the following package versions:
@@ -103,7 +103,7 @@ The code should work on any operating system and was tested under Arch Linux@6.6
 
 ```bash
 python train.py --input <IDs of RepoRT datasets> --epsilon 10s \
-       --run_name twosteproi --save_data  \
+       --run_name 2-step --save_data  \
        --batch_size 512 --epochs 10 --sysinfo --columns_use_hsm --columns_use_tanaka --use_ph \
        --repo_root_folder <path to RepoRT> --clean_data \
        --encoder_size 512 --sizes 256 64 --sizes_sys 256 256 \
@@ -114,19 +114,19 @@ python train.py --input <IDs of RepoRT datasets> --epsilon 10s \
 Add `--gpu` to enable training on GPU.
 
 Model training creates three files:
-1. The model itself, `twosteproi.pt` (with option `--ep_save` files for every epoch are created: `twosteproi_ep1.pt` etc.)
-2. Processed training data, `twosteproi_data.pkl`
-3. A JSON file detailing the training configuration, `twosteproi_config.json`
+1. The model itself, `2-step.pt` (with option `--ep_save` files for every epoch are created: `2-step_ep1.pt` etc.)
+2. Processed training data, `2-step_data.pkl`
+3. A JSON file detailing the training configuration, `2-step_config.json`
 
 To make the trained model ready for prediction, use the `repackage_model.py`-script:
 ```bash
-python repackage_model.py twosteproi.pt twosteproi_predready.pt
+python repackage_model.py 2-step.pt 2-step_predready.pt
 ```
 
 This combines all information required for prediction into one file.
 
 A model trained on 171 manually curated reversed-phase datasets from RepoRT (version 94f43c1b) is
-provided in the `models` subdirectory (`models/twostep_everything_predready.pt`).
+provided in the `models` subdirectory (`models/2-step0525.pt`).
 
 ## Evaluation of retention order prediction accuracy
 
