@@ -38,7 +38,7 @@ python predict.py  --model models/2-step0525.pt  --repo_root_folder <path to Rep
        --input_compounds test/test_input.tsv --input_metadata test/test_metadata.yaml \
        --out test/test_output.tsv
 ```
-This should take about 10 seconds on a normal laptop without GPU.
+This should take about 10 seconds on a normal laptop without GPU. For GPU-support add the flag `--gpu`.
 
 With docker:
 ```bash
@@ -74,7 +74,6 @@ The following dependencies are required:
 - numpy<2
 ```
 
-
 A conda/mamba environment is provided (typical install time: 5 minutes):
 ```bash
 mamba env create -n 2-step -f env.yaml
@@ -108,6 +107,7 @@ python train.py --input <IDs of RepoRT datasets> --epsilon 10s \
        --repo_root_folder <path to RepoRT> --clean_data \
        --encoder_size 512 --sizes 256 64 --sizes_sys 256 256 \
        --pair_step 1 --pair_stop None --sample --sampling_count 500_000 --no_group_weights \
+       --no_train_acc_all --no_train_acc \
        --mpn_no_residual_connections_encoder --no_standardize --mpn_no_sigmoid_roi
 ```
 
