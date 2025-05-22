@@ -7,4 +7,4 @@ RUN micromamba install -y -n base -f /tmp/env.yaml && \
 WORKDIR /app
 COPY *.py /app
 COPY models /app/models
-ARG MAMBA_DOCKERFILE_ACTIVATE=1  # (otherwise python will not be found)
+ARG MAMBA_DOCKERFILE_ACTIVATE=1  # otherwise python will not be found
