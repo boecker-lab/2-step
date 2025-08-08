@@ -11,6 +11,7 @@ import io
 import torch
 import yaml
 import sys
+from time import time
 
 from utils import Data
 from mapping import LADModel
@@ -48,6 +49,7 @@ class PredictArgs(Tap):
     input_metadata: str                  # yaml file with at least `column.name`, `eluent.A.pH`, and `column.t0` specified
     model: str                           # model to load
     gpu: bool = False                    # whether to use GPU for predictions
+    output_roi: bool = False             # include Retention Order Index (ROI) in output
     output_anchors: bool = False         # include anchors in output
     out: Optional[str] = None            # where to write the output (TSV format). If not specified, output will be written to screen.
     batch_size: int = 256                # adjust according to available VRAM
@@ -98,6 +100,7 @@ if __name__ == '__main__':
     X_sys = np.concatenate((train_sys, test_sys, val_sys)).astype(np.float32)
     Y = np.concatenate((train_y, test_y, val_y))
     info(f'done preprocessing. predicting ROIs...')
+    t0 = time()
     graphs = np.concatenate((train_graphs, test_graphs, val_graphs))
     if (hasattr(model, 'add_sys_features') and model.add_sys_features):
         from utils_newbg import sysfeature_graph
@@ -112,9 +115,12 @@ if __name__ == '__main__':
         for i in range(len(graphs)):
             graphs[i] = sysfeature_graph(smiles_list[i], graphs[i], X_sys[i],
                                          bond_or_atom=model.add_sys_features_mode)
+    t0_actual = time()
     preds = model.predict(graphs, X, X_sys, batch_size=args.batch_size,
                           ret_features=False, prog_bar=args.verbose)
-    info(f'done predicting ROIs. predicting retention times...')
+    t1 = time() - t0
+    t1_actual = time() - t0_actual
+    info(f'done predicting ROIs, took {t1:.1}({t1_actual:.1})s ({t1/len(preds):.2}s per instance [{t1_actual/len(preds):.2}s], #={len(preds)}). predicting retention times...')
     d.df['roi'] = preds[np.arange(len(d.df.rt))[ # restore correct order
         np.argsort(np.concatenate([d.train_indices, d.test_indices, d.val_indices]))]]
     # predict retention times right here
@@ -123,9 +129,16 @@ if __name__ == '__main__':
     data_anchors = d.df.loc[d.df.rt > metadata['column.t0']]
     data_to_predict = d.df.loc[pd.isna(d.df.rt)].copy()
     info(f'building mapping using {len(data_anchors)} anchors, predicting {len(data_to_predict)} retention times...')
+    t0 = time()
     mapping_model = LADModel(data_anchors, ols_after=True, ols_discard_if_negative=True, ols_drop_mode='2*median')
+    import pickle
+    with open(args.input_compounds.replace('.tsv', '_model.pkl'), 'wb') as out:
+        pickle.dump(mapping_model, out)
     data_to_predict['rt_pred'] = mapping_model.get_mapping(data_to_predict.roi)
-    # TODO: output anchors, too?
+    t1 = time() - t0
+    info(f'took {t1:.1}s ({len(data_to_predict)/t1:.2}s per instance)')
+    if (args.output_roi):
+        original_input_columns += ['roi']
     out_df = data_to_predict[
         # [c for c in data_to_predict.columns if any(['smiles' in c, 'inchi' in c.lower(), 'name' in c, c.startswith('rt_pred'), c.startswith('id')])]
         original_input_columns + ['rt_pred']
@@ -133,8 +146,8 @@ if __name__ == '__main__':
     if (args.output_anchors):
         out_df = pd.concat([data_anchors[original_input_columns], out_df])
     if (args.out is None):
-        info(f'done. showing output.')
+        info(f'showing output.')
         out_df.to_csv(sys.stdout, sep='\t')
     else:
-        info(f'done. saving to {args.out}.')
+        info(f'saving to {args.out}.')
         out_df.to_csv(args.out, sep='\t')

@@ -8,6 +8,7 @@ on:
       - 'Dockerfile'
       - '.github/workflows/build_container.yaml'
       - 'env.yaml'
+      - '*.py'
 
 jobs:
   dockerloginbuildpush:
