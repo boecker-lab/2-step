@@ -1,0 +1,21 @@
+name: Test container and code execution
+
+on:
+  workflow_run:
+    workflows: ["Build and push docker container"]
+    types:
+      - completed
+jobs:
+  testcontainer:
+    runs-on: ubuntu-latest
+    container: ghcr.io/${{ github.repository }}:latest
+    steps:
+      - name: download RepoRT
+        uses: actions/checkout@v5
+        with:
+          repository: michaelwitting/RepoRT
+          path: RepoRT
+      - name: test prediction
+        run: |
+          python predict.py  --model models/2-step0525.pt --repo_root_folder RepoRT \
+                 --input_compounds test/test_input.tsv --input_metadata test/test_metadata.yaml --output_roi
