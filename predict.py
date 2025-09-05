@@ -75,12 +75,16 @@ if __name__ == '__main__':
     metadata = yaml.load(open(args.input_metadata), yaml.SafeLoader)
     # flatten metadata
     [metadata] = pd.json_normalize(metadata, sep='.').to_dict(orient='records')
+
+    if ('column.name' not in metadata or not any(ph_column in metadata for ph_column in
+                                                  ['eluent.A.pH', 'eluent.B.pH'])):
+       warning(f'Important metadata (column or pH) is missing (provided: {", ".join(metadata)}). '
+               'This metadata is necessary; only the `setupagnostic` and `nocolumn` model will work. '
+               'For these models the predictions will necessarily be worse!')
     original_input_columns = open(args.input_compounds).readlines()[0].strip().split('\t')
     d.add_external_data(args.input_compounds, metadata=metadata,
                         remove_nan_rts=False, tab_mode=True,
                         isomeric=True, split_type='evaluate')
-
-    # TODO: warn about missing metadata (or even error?)
 
     info('computing features')
     d.compute_features(mode=None, add_descs=False)

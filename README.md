@@ -58,6 +58,20 @@ An output with predicted retention times will be generated (full example output:
 5	COC1=C(C=CC(=C1)C=CC=O)O	24.9707
 ```
 
+## Experimental: alternative models
+
+> [!WARNING]
+> These alternative models are not recommended, predictions will be worse!
+
+There are two alternative models which do no use (all) chromatographic parameters, but consequently result in lower performance:
+- `models/2-step0525_nocolumn.pt`: does not require `column.name`, only pH
+- `models/2-step0525_setupagnostic.pt`: does not require any chromatographic parameters
+
+These models can be specified with the `--model` argument. Leaving out required metadata for the
+normal model leads to an error. Again, this is not the intended usage mode of 2-step, retention
+behavior is majorly dependent on the chromatographic system employed. Expect a substantial drop in
+performance.
+
 ## Dependencies
 
 The following dependencies are required:

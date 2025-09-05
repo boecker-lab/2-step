@@ -9,6 +9,7 @@ on:
       - '.github/workflows/build_container.yaml'
       - 'env.yaml'
       - '*.py'
+      - 'models/*.pt'
 
 jobs:
   dockerloginbuildpush:
