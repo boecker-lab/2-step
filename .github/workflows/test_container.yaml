@@ -4,7 +4,9 @@ on: workflow_dispatch
 jobs:
   testcontainer:
     runs-on: ubuntu-latest
-    container: ghcr.io/${{ github.repository }}@sha256:bf5ff5bf853c7606df18b6496646de2677afc8e5c6e10240dab0989ed0445358
+    container:
+      image: ghcr.io/${{ github.repository }}:latest
+      options: --user root
     steps:
       - name: download RepoRT
         uses: actions/checkout@v6
