@@ -26,7 +26,23 @@ Two input files are needed:
     A:
       pH: 3
    ```
-   The column should have [HSM](https://github.com/michaelwitting/RepoRT/blob/master/resources/hsm_database/hsm_database.tsv) and [Tanaka](https://github.com/michaelwitting/RepoRT/blob/master/resources/tanaka_database/tanaka_database.tsv) parameters available. If provided, twice `t0` is used as the void threshold, anchors below will not be considered during mapping.
+   The column should have [HSM](https://github.com/michaelwitting/RepoRT/blob/master/resources/hsm_database/hsm_database.tsv) and [Tanaka](https://github.com/michaelwitting/RepoRT/blob/master/resources/tanaka_database/tanaka_database.tsv) parameters available. HSM and Tanaka parameters can also be specified manually:
+   ```yaml
+  column:
+    H: 0.3
+    S*: 0.2
+    A: 0.4564
+    B: 0.1232
+    'C (pH 2.8)': -0.1
+    'C (pH 7.0)': -0.5
+    kPB: -1.2
+    αCH2: 0.3
+    αT/O: 0.5
+    αC/P: 0.6
+    αB/P: 0.1
+    αB/P.1: -0.2
+   ```
+   If provided, twice `t0` is used as the void threshold, anchors below will not be considered during mapping.
 
 Consider standardizing compound structures before, using e.g., [standardizeUtils](https://github.com/boecker-lab/standardizeUtils).
 

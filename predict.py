@@ -75,10 +75,14 @@ if __name__ == '__main__':
     metadata = yaml.load(open(args.input_metadata), yaml.SafeLoader)
     # flatten metadata
     [metadata] = pd.json_normalize(metadata, sep='.').to_dict(orient='records')
-
-    if ('column.name' not in metadata or not any(ph_column in metadata for ph_column in
-                                                  ['eluent.A.pH', 'eluent.B.pH'])):
-       warning(f'Important metadata (column or pH) is missing (provided: {", ".join(metadata)}). '
+    if (    # column not specified and neither HSM/Tanaka parameters
+            ('column.name' not in metadata and
+             any(f'column.{field}' not in metadata for field in d.hsm_fields + d.tanaka_fields))
+            # or pH not specified
+            or not any(ph_column in metadata for ph_column in
+                       ['eluent.A.pH', 'eluent.B.pH'])):
+       warning(f'Important metadata is missing. Required: 1. Column name or manual HSM/Tanaka parameters, 2. pH. '
+               f'Provided: {", ".join(metadata)}. '
                'This metadata is necessary; only the `setupagnostic` and `nocolumn` model will work. '
                'For these models the predictions will necessarily be worse!')
     original_input_columns = open(args.input_compounds).readlines()[0].strip().split('\t')

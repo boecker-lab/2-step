@@ -329,21 +329,31 @@ class Data:
         fields = []
         names = []
         if (use_hsm):
-            to_get = self.df[['column.name', 'column.particle.size']].drop_duplicates().reset_index(drop=True).copy()
-            hsm = to_get.join(pd.DataFrame.from_records([{'id': i} | dict(self.get_hsm_params(r))
+            # perhaps the HSM values are already in the input data?
+            if (all(f'column.{field}' in self.df.columns for field in self.hsm_fields)):
+                # remove the column prefix and take as is
+                data_with_hsm = self.df.rename({f'column.{field}': field for field in self.hsm_fields}, axis=1)
+            else:
+                to_get = self.df[['column.name', 'column.particle.size']].drop_duplicates().reset_index(drop=True).copy()
+                hsm = to_get.join(pd.DataFrame.from_records([{'id': i} | dict(self.get_hsm_params(r))
                                                          for i, r in to_get.iterrows()]).set_index('id'))
-            data_with_hsm = pd.merge(self.df, hsm, how='left', on=['column.name', 'column.particle.size'])
-            # print('HSM parameters matching:\n' + data_with_hsm.drop_duplicates('dataset_id')['hsm_how'].value_counts().to_string())
+                data_with_hsm = pd.merge(self.df, hsm, how='left', on=['column.name', 'column.particle.size'])
+                # print('HSM parameters matching:\n' + data_with_hsm.drop_duplicates('dataset_id')['hsm_how'].value_counts().to_string())
             self.df = data_with_hsm
             fields.append(data_with_hsm[self.hsm_fields].astype(float).values)
             system_features.extend(self.hsm_fields)
         if (use_tanaka):
-            to_get = self.df[['column.name', 'column.particle.size']].drop_duplicates().reset_index(drop=True).copy()
-            tanaka = to_get.join(pd.DataFrame.from_records([{'id': i} | dict(self.get_tanaka_params(
-                r, how=tanaka_match, ignore_spp_particle_size=tanaka_ignore_spp_particle_size))
+            # perhaps the Tanaka values are already in the input data?
+            if (all(f'column.{field}' in self.df.columns for field in self.tanaka_fields)):
+                # remove the column prefix and take as is
+                data_with_tanaka = self.df.rename({f'column.{field}': field for field in self.tanaka_fields}, axis=1)
+            else:
+                to_get = self.df[['column.name', 'column.particle.size']].drop_duplicates().reset_index(drop=True).copy()
+                tanaka = to_get.join(pd.DataFrame.from_records([{'id': i} | dict(self.get_tanaka_params(
+                    r, how=tanaka_match, ignore_spp_particle_size=tanaka_ignore_spp_particle_size))
                                                             for i, r in to_get.iterrows()]).set_index('id'))
-            data_with_tanaka = pd.merge(self.df, tanaka, how='left', on=['column.name', 'column.particle.size'])
-            # print('Tanaka parameters matching:\n' + data_with_tanaka.drop_duplicates('dataset_id')['tanaka_how'].value_counts().to_string())
+                data_with_tanaka = pd.merge(self.df, tanaka, how='left', on=['column.name', 'column.particle.size'])
+                # print('Tanaka parameters matching:\n' + data_with_tanaka.drop_duplicates('dataset_id')['tanaka_how'].value_counts().to_string())
             self.df = data_with_tanaka
             fields.append(data_with_tanaka[self.tanaka_fields].astype(float).values)
             system_features.extend(self.tanaka_fields)
