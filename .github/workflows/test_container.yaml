@@ -11,7 +11,7 @@ jobs:
     container: ghcr.io/${{ github.repository }}:latest
     steps:
       - name: download RepoRT
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
         with:
           repository: michaelwitting/RepoRT
           path: RepoRT
@@ -19,3 +19,6 @@ jobs:
         run: |
           python predict.py  --model models/2-step0525.pt --repo_root_folder RepoRT \
                  --input_compounds test/test_input.tsv --input_metadata test/test_metadata.yaml --output_roi
+      - name: Setup tmate session
+        if: ${{ failure() }}
+        uses: mxschmitt/action-tmate@v3
