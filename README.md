@@ -102,6 +102,7 @@ The following dependencies are required:
 - tqdm
 - yaml
 - numpy<2
+- setuptools<82
 ```
 
 A conda/mamba environment is provided (typical install time: 5 minutes):
