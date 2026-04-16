@@ -1,10 +1,6 @@
 name: Test container and code execution
 
-on:
-  workflow_run:
-    workflows: ["Build and push docker container"]
-    types:
-      - completed
+on: workflow_dispatch
 jobs:
   testcontainer:
     runs-on: ubuntu-latest
