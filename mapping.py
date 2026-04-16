@@ -22,7 +22,7 @@ OLS can also fail with too few data points
 
 from typing import Literal
 import numpy as np
-from pulp import LpMinimize, LpProblem, LpVariable, lpSum, getSolver
+from pulp import LpMinimize, LpProblem, LpVariable, lpSum, getSolver, listSolvers
 from logging import warning, info
 
 class LADModel:
@@ -92,7 +92,7 @@ class LADModel:
             model += u[i] >= - (y[i] - np.sum([coefficient * self.apply_basis_fun(x[i], basis)
                                               for coefficient, basis in zip(coefficients, self.bases)]))
         model += lpSum(u)
-        status = model.solve(getSolver('PULP_CBC_CMD', msg=False))
+        status = model.solve(getSolver(listSolvers(onlyAvailable=True)[0], msg=False))
         # status = model.solve()
         assert status == 1, 'LAD solution not optimal'
         return [c.varValue for c in coefficients]
