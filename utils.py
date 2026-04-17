@@ -541,11 +541,14 @@ class Data:
             self.df = pd.concat([self.df, df], ignore_index=True)
 
 
-    def add_external_data(self, data_path,
+    def add_external_data(self, data_path, structures_directly=None,
                           metadata_void_rt=True, void_rt=0.0, isomeric=True, split_type='train', tab_mode=True,
                           remove_nan_rts=True, metadata=None):
         global REL_ONEHOT_COLUMNS
-        df = pd.read_csv(data_path, sep='\t' if tab_mode else ',', dtype={'dataset_id': str})
+        if (structures_directly is None):
+            df = pd.read_csv(data_path, sep='\t' if tab_mode else ',', dtype={'dataset_id': str})
+        else:
+            df = pd.DataFrame(dict(smiles=structures_directly, rt=[np.nan] * len(structures_directly)))
         if ('smiles.std' in df.columns):
             df['smiles'] = df['smiles.std']
         if (metadata is not None):
