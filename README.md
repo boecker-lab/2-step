@@ -167,3 +167,8 @@ python evaluate.py --model <path to trained model> --test_sets <IDs of RepoRT da
 ```
 
 Again, add `--gpu` for GPU mode.
+
+## Data splits for benchmark datasets
+
+Splits for the evaluation of six benchmark datasets on retention *time* prediction are provided in the folder [benchmark_splits](benchmark_splits).
+
