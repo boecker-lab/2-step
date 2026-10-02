@@ -1,6 +1,6 @@
 # 2-step retention time prediction
 
-This repository contains source code, model weights, a ready-to-use docker image, and additional data for the 2-step approach for transferable retention time prediction, described in the publication [Times are changing but order matters: Transferable prediction of small molecule liquid chromatography retention times](https://doi.org/10.26434/chemrxiv-2024-wd5j8-v3) ([Citation](#citation)).
+This repository contains source code, model weights, a ready-to-use docker image, and additional data for the 2-step approach for transferable retention time prediction, described in the publication [Times are changing but order matters: Transferable prediction of small molecule liquid chromatography retention times](https://doi.org/10.1038/s41592-026-03243-2) ([Citation](#citation)).
 
 Use `predict.py` to first predict retention order indices and then map these to retention times using anchor compounds.
 
@@ -178,5 +178,5 @@ Splits for the evaluation of six benchmark datasets on retention *time* predicti
 
 F. Kretschmer, E.-M. Harrieder, M. Witting, and S. Böcker\
 **Times are changing but order matters: Transferable prediction of small molecule liquid chromatography retention times**\
-Preprint, *ChemRxiv* 2024-wd5j8, 2024. Version 3 August 2025.\
-https://doi.org/10.26434/chemrxiv-2024-wd5j8-v3
+*Nat Methods* 2026.\
+https://doi.org/10.1038/s41592-026-03243-2
