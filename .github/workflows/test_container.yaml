@@ -1,22 +1,27 @@
 name: Test container and code execution
 
-on: workflow_dispatch
+on:
+  workflow_dispatch:
+  workflow_run:
+    workflows: [Build and push docker container]
+    types: [completed]
 jobs:
   testcontainer:
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
-    container:
-      image: ghcr.io/${{ github.repository }}:latest
-      options: --user root
     steps:
-      - name: download RepoRT
+      - uses: actions/checkout@v6
+      - name: download RepoRT databases
         uses: actions/checkout@v6
         with:
           repository: michaelwitting/RepoRT
           path: RepoRT
+          sparse-checkout: |
+            resources/hsm_database
+            resources/tanaka_database
       - name: test prediction
         run: |
-          python predict.py  --model models/2-step0525.pt --repo_root_folder RepoRT \
+          chmod -R a+w test  # container user has to be able to write here
+          docker run -v $(pwd)/test:/app/test -v $(pwd)/RepoRT:/RepoRT --rm ghcr.io/${{ github.repository }}:latest \
+                 python predict.py --model models/2-step0525.pt --repo_root_folder /RepoRT \
                  --input_compounds test/test_input.tsv --input_metadata test/test_metadata.yaml --output_roi
-      - name: Setup tmate session
-        if: ${{ failure() }}
-        uses: mxschmitt/action-tmate@v3
