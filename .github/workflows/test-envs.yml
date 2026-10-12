@@ -1,0 +1,41 @@
+name: test envs
+
+on: [push, pull_request, workflow_dispatch]
+
+jobs:
+  predict:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        env: [env.yaml, env_cuda.yaml]
+        exclude:
+          - os: macos-latest   # no CUDA on macOS
+            env: env_cuda.yaml
+    runs-on: ${{ matrix.os }}
+    env:
+      # runners have no GPU; lets conda pick CUDA builds (empty = no CUDA)
+      CONDA_OVERRIDE_CUDA: ${{ matrix.env == 'env_cuda.yaml' && '12.6' || '' }}
+    defaults:
+      run:
+        shell: bash -el {0}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: conda-incubator/setup-miniconda@v3
+        with:
+          miniforge-version: latest
+          environment-file: ${{ matrix.env }}
+          activate-environment: test
+      - name: Get RepoRT HSM/Tanaka databases
+        run: |
+          git clone -q --depth 1 --filter=blob:none --sparse https://github.com/michaelwitting/RepoRT.git ../RepoRT
+          git -C ../RepoRT sparse-checkout set resources/hsm_database resources/tanaka_database
+      - name: Check CUDA build of torch
+        if: matrix.env == 'env_cuda.yaml'
+        run: python -c "import torch; assert torch.version.cuda, 'torch built without CUDA'; print(torch.version.cuda)"
+      # hosted runners have no GPU, so predictions run on CPU for both envs
+      - name: predict.py
+        run: |
+          python predict.py --model models/2-step0525.pt --repo_root_folder ../RepoRT \
+            --input_compounds test/test_input.tsv --input_metadata test/test_metadata.yaml --out out.tsv
+          head out.tsv
