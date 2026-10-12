@@ -13,6 +13,9 @@ jobs:
           - os: macos-latest   # no CUDA on macOS
             env: env_cuda.yaml
     runs-on: ${{ matrix.os }}
+    env:
+      # runners have no GPU; lets conda pick CUDA builds (empty = no CUDA)
+      CONDA_OVERRIDE_CUDA: ${{ matrix.env == 'env_cuda.yaml' && '12.6' || '' }}
     defaults:
       run:
         shell: bash -el {0}
