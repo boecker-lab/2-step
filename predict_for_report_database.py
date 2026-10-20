@@ -7,6 +7,7 @@ import pickle
 from logging import INFO, basicConfig, info, warning
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 import torch
 from mapping import LADModel
@@ -84,7 +85,16 @@ def train_lad_model(model, repo_root_folder, repo_index, save=False):
     )
 
     # anchors are all data points with annotated retention time, discarding the void volume
-    data_anchors = predicted_rois_df.loc[predicted_rois_df.rt > metadata["column.t0"]]
+    # Sometimes the ROI model outputs NaN the check for is finite removes those. Not sure why this happens, but I think it can happen if the metadata is not completely correct. 
+    data_anchors = predicted_rois_df.loc[
+        (predicted_rois_df.rt > metadata["column.t0"])
+        & np.isfinite(predicted_rois_df.roi)
+    ]
+
+    if len(data_anchors) < 10: 
+        warning(f"Too few valid anchors for report {repo_index}")
+        return None, None
+    
     info(f"building mapping using {len(data_anchors)} anchors")
     mapping_model = LADModel(
         data_anchors,
