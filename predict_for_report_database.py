@@ -172,9 +172,7 @@ def predict_for_multiple_report_experiments(
 
 class PredictRepoRTArgs(Tap):
     smiles_to_predict: str  # TSV file with `smiles` and `rt` columns
-    repo_indexes: list[
-        str
-    ]  # yaml file with at least `column.name`, `eluent.A.pH`, and `column.t0` specified
+    dataset_ids: list[str]  # RepoRT dataset IDs (e.g. 2 or 0002) whose anchors are used for prediction
     model: str = "./models/2-step0525.pt"  # model to load
     gpu: bool = False  # whether to use GPU for predictions
     out: str | None = (
@@ -205,7 +203,7 @@ if __name__ == "__main__":
         model,
         args.smiles_to_predict,
         args.repo_root_folder,
-        args.repo_indexes,
+        args.dataset_ids,
         args.metadata_summary,
     )
     if out_df is not None:

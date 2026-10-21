@@ -98,7 +98,7 @@ For testing, you can use anchors from datasets already available on RepoRT, usin
 You can make predictions for multiple datasets. Each dataset gets its own column with predictions. At the top of each column a summary of the column setup and gradient etc is added, to make it easy to compare the effect of different setups on RT. The results of this run can be found in `test_ouput_for_RepoRT.tsv`.
 
 ```bash
-python predict_for_report_database.py --smiles_to_predict test/test_input.tsv --repo_indexes 2 5 21 90 --repo_root_folder ../RepoRT/
+python predict_for_report_database.py --smiles_to_predict test/test_input.tsv --dataset_ids 2 5 21 90 --repo_root_folder ../RepoRT/
 ```
 
 
