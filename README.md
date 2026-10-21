@@ -67,13 +67,13 @@ docker run -v $(pwd)/test:/app/test -v <path to RepoRT>:/RepoRT -it --rm ghcr.io
 
 An output with predicted retention times will be generated (full example output: [test/test_output.tsv](test/test_output.tsv)):
 ```
-	smiles	rt_pred
-0	C1=CC(=C(C=C1C2=C(C(=O)C3=C(C=C(C=C3O2)O)O)O)O)OC4C(C(C(C(O4)CO)O)O)O	26.192242
-1	C1=CC(=CC=C1C=CC(=O)OC(C(C(=O)O)O)C(=O)O)O	11.60789
-2	CCC(C)CN	19.052101
-3	C1=C(OC(=C1)C=O)CO	20.10303
-4	C1=CC=C(C(=C1)C(=O)O)N	16.751137
-5	COC1=C(C=CC(=C1)C=CC=O)O	24.9707
+	smiles.std	rt	rt_pred
+0	C1C(C(OC2=CC(=CC(=C21)O)O)C3=CC(=C(C=C3)O)O)O		16.48204
+1	C1C(C(OC2=CC(=CC(=C21)O)O)C3=CC(=C(C=C3)O)O)OC(=O)C4=CC(=C(C(=C4)O)O)O		20.495604
+2	C1C(C(OC2=CC(=CC(=C21)O)O)C3=CC(=C(C(=C3)O)O)O)O		13.843465
+3	C1C(C(OC2=CC(=CC(=C21)O)O)C3=CC(=C(C(=C3)O)O)O)OC(=O)C4=CC(=C(C(=C4)O)O)O		18.297775
+4	C1=C(C=C(C=C1O)O)C(=O)O		13.721732
+5	C1=CC(=CC=C1C(=O)O)O		15.985861
 ```
 
 ## Experimental: alternative models
