@@ -90,6 +90,18 @@ normal model leads to an error. Again, this is not the intended usage mode of 2-
 behavior is majorly dependent on the chromatographic system employed. Expect a substantial drop in
 performance.
 
+## Experimental: anchors from RepoRT datasets
+> [!WARNING]
+> This is only for experimental purposes: anchors should come from reference standards measured on the target system, high-confidence annotations (spectral library search, in silico methods), or even common contaminants found in most LC-MS samples. Even nominally setups generally deviate in RT.
+
+For testing, you can use anchors from datasets already available on RepoRT, using [predict_for_report_database.py](predict_for_report_database.py).
+You can make predictions for multiple datasets. Each dataset gets its own column with predictions. At the top of each column a summary of the column setup and gradient etc is added, to make it easy to compare the effect of different setups on RT. The results of this run can be found in `test/test_output_for_RepoRT.tsv`.
+
+```bash
+python predict_for_report_database.py --smiles_to_predict test/test_input.tsv --dataset_ids 2 5 21 90 --repo_root_folder ../RepoRT/
+```
+
+
 ## Dependencies
 
 The following dependencies are required:
