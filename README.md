@@ -75,15 +75,6 @@ An output with predicted retention times will be generated (full example output:
 4	C1=CC=C(C(=C1)C(=O)O)N	16.751137
 5	COC1=C(C=CC(=C1)C=CC=O)O	24.9707
 ```
-## Predict using RepoRT anchors
-> [!WARNING]
-> Using your own anchors is recommended, since even "identical" setups often deviate in RT.
-If you don't have anchors to fit a model, you can use datasets already available on RepoRT.
-You can make predictions for multiple datasets available in RepoRT. Each dataset gets its own column with predictions. At the top of each column a summary of the column setup and gradient etc is added, to make it easy to compare the effect of different setups on RT. The results of this run can be found in test_ouput_for_RepoRT.tsv.
-
-```bash
-python predict_for_report_database.py --smiles_to_predict test/test_input.tsv --repo_indexes 2 5 21 90 --repo_root_folder ../RepoRT/
-```
 
 ## Experimental: alternative models
 
@@ -98,6 +89,18 @@ These models can be specified with the `--model` argument. Leaving out required 
 normal model leads to an error. Again, this is not the intended usage mode of 2-step, retention
 behavior is majorly dependent on the chromatographic system employed. Expect a substantial drop in
 performance.
+
+## Experimental: anchors from RepoRT datasets
+> [!WARNING]
+> This is only for experimental purposes: anchors should come from reference standards measured on the target system, high-confidence annotations (spectral library search, in silico methods), or even common contaminants found in most LC-MS samples. Even nominally setups generally deviate in RT.
+
+For testing, you can use anchors from datasets already available on RepoRT, using [predict_for_report_database.py](predict_for_report_database.py).
+You can make predictions for multiple datasets. Each dataset gets its own column with predictions. At the top of each column a summary of the column setup and gradient etc is added, to make it easy to compare the effect of different setups on RT. The results of this run can be found in `test_ouput_for_RepoRT.tsv`.
+
+```bash
+python predict_for_report_database.py --smiles_to_predict test/test_input.tsv --repo_indexes 2 5 21 90 --repo_root_folder ../RepoRT/
+```
+
 
 ## Dependencies
 
