@@ -1,6 +1,6 @@
 """Creates a dictionary with a text based summary of a RepoRT dataset.
 
-When making predictions for RepoRT
+Used by predict_for_report_database.py to add rows describing each dataset's setup above its predictions.
 
 For dataset 0001 the output looks like:
 
@@ -28,7 +28,16 @@ import pandas as pd
 
 
 def summarize_column(row):
-    column_summary = f"{row.get('column.name')}, {row['column.length']} x {row['column.id']} mm, {row.get('column.particle.size')} µm particles, {row.get('column.temperature')} °C"
+    def _get(key):
+        return (row.get(key) or "").strip()
+
+    column_summary = _get("column.name")
+    if _get("column.length") and _get("column.id"):
+        column_summary += f", {_get('column.length')} x {_get('column.id')} mm"
+    if _get("column.particle.size"):
+        column_summary += f", {_get('column.particle.size')} µm particles"
+    if _get("column.temperature"):
+        column_summary += f", {_get('column.temperature')} °C"
     return column_summary
 
 
@@ -56,7 +65,7 @@ def summarize_eluents(row) -> dict[str, str]:
     eluents_summary = {}
     for letter in sorted(eluents):
         mix = []
-        ph = eluents.get("pH", None)
+        ph, _ = eluents[letter].get("pH", (None, None))
         for comp, (value, unit) in eluents[letter].items():
             if comp.lower() == "ph":
                 continue
@@ -98,7 +107,8 @@ def summarize_metadata(path_to_report_dataset) -> dict[str, str]:
 
 def summarize_gradient_info(gradient_info_file) -> dict[str, str]:
     """Summarizes the gradient info.
-    E.g.:
+    E.g.: {"Gradient step 0": "0.0 min: 100.0% A, 0.28 ml/min",
+           "Gradient step 1": "3.0 min: 90.0% A 10.0% B, 0.28 ml/min", ...}
     """
     gradient_info = pd.read_csv(
         gradient_info_file,
@@ -108,17 +118,18 @@ def summarize_gradient_info(gradient_info_file) -> dict[str, str]:
     for i, row in gradient_info.iterrows():
         row_summary = f"{row['t [min]']} min:"
         for eluent in ("A [%]", "B [%]", "C [%]", "D [%]"):
-            if row[eluent]:
+            if pd.notna(row[eluent]) and row[eluent]:
                 row_summary += f" {row[eluent]}% {eluent[0]}"
-        if row["flow rate [ml/min]"]:
+        if pd.notna(row["flow rate [ml/min]"]) and row["flow rate [ml/min]"]:
             row_summary += f", {row['flow rate [ml/min]']} ml/min"
         summary[f"Gradient step {i}"] = row_summary
     return summary
 
 
 if __name__ == "__main__":
-    summary = summarize_metadata(
-        "C:/Users/jonge094/Repos/dynamic_sops/rt_prediction/RepoRT/processed_data/0001/"
-    )
+    import sys
+
+    # e.g. python summarize_RepoRT_metadata.py ../RepoRT/processed_data/0001/
+    summary = summarize_metadata(sys.argv[1])
     for key, value in summary.items():
         print(key, ": ", value)

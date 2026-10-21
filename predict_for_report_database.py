@@ -23,7 +23,7 @@ def get_path_to_report_index_folder(report_root, report_index):
     report_index_4_numbers = str(report_index).zfill(4)
 
     report_root = Path(report_root)
-    if not (report_root.exists and report_root.is_dir):
+    if not (report_root.exists() and report_root.is_dir()):
         raise ValueError("The given Report directory is not a directory")
 
     path_to_report_index_folder = (
@@ -128,15 +128,19 @@ def predict_for_report_index(
     )
 
     data_to_predict["rt_pred"] = mapping_model.get_mapping(data_to_predict.roi)
-    predictions = data_to_predict[["smiles.std", "rt_pred"]]
+    predictions = data_to_predict[["smiles.std", "rt_pred"]].rename(
+        columns={"rt_pred": report_index}
+    )
     predictions.set_index("smiles.std", inplace=True)
+    # identical SMILES get identical predictions; duplicates would break the concat across datasets
+    predictions = predictions[~predictions.index.duplicated()]
+    metadata_summary = None
     if add_metadata_summary:
         report_dir = get_path_to_report_index_folder(repo_root_folder, report_index)
         metadata_summary = pd.DataFrame.from_dict(
-            summarize_metadata(report_dir), orient="index", columns=["rt_pred"]
+            summarize_metadata(report_dir), orient="index", columns=[report_index]
         )
-        predictions = pd.concat([metadata_summary, predictions])
-    return predictions
+    return predictions, metadata_summary
 
 
 def predict_for_multiple_report_experiments(
@@ -147,26 +151,26 @@ def predict_for_multiple_report_experiments(
     add_metadata_summary,
 ):
     prediction_per_repo_index = []
-    longest_index = 0
-    index_order = None
+    summary_per_repo_index = []
     for repo_index in tqdm(report_indexes):
-        out_df = predict_for_report_index(
+        out = predict_for_report_index(
             model,
             file_with_smiles_to_predict,
             repo_root_folder,
             repo_index,
             add_metadata_summary,
         )
-        if out_df is None:
+        if out is None:
             continue
-        prediction_per_repo_index.append(out_df)
-        if out_df.shape[0] > longest_index:
-            longest_index = out_df.shape[0]
-            index_order = out_df.index.copy()
+        predictions, metadata_summary = out
+        prediction_per_repo_index.append(predictions)
+        summary_per_repo_index.append(metadata_summary)
     if not prediction_per_repo_index:
         return None
     results = pd.concat(prediction_per_repo_index, axis=1)
-    results = results.reindex(index_order)
+    if add_metadata_summary:
+        # outer join keeps summary rows that only exist for some datasets (e.g. extra gradient steps)
+        results = pd.concat([pd.concat(summary_per_repo_index, axis=1), results])
     return results
 
 
@@ -183,9 +187,7 @@ class PredictRepoRTArgs(Tap):
         "../RepoRT/"  # location of RepoRT, needed for HSM/Tanaka database
     )
     verbose: bool = False  # more info on what is being done internally
-    metadata_summary = (
-        True  # adds extra rows with a metadata summary above the predictions.
-    )
+    no_metadata_summary: bool = False  # omit the extra rows with a metadata summary above the predictions.
 
 
 if __name__ == "__main__":
@@ -204,7 +206,7 @@ if __name__ == "__main__":
         args.smiles_to_predict,
         args.repo_root_folder,
         args.dataset_ids,
-        args.metadata_summary,
+        not args.no_metadata_summary,
     )
     if out_df is not None:
         if args.out is None:
