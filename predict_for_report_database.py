@@ -4,6 +4,7 @@ These are less reliable than using the anchors for your own exact setup, but can
 """
 
 import pickle
+import sys
 from logging import INFO, basicConfig, info, warning
 from pathlib import Path
 
@@ -63,7 +64,7 @@ def get_files_from_report(report_root, report_index):
     return input_compounds_path, input_metadata_path, lad_model_path
 
 
-def train_lad_model(model, repo_root_folder, repo_index, save=False):
+def train_lad_model(model, repo_root_folder, repo_index, save=False, batch_size=256, verbose=False):
     input_compounds_path, input_metadata_path, model_save_location = (
         get_files_from_report(repo_root_folder, repo_index)
     )
@@ -81,7 +82,7 @@ def train_lad_model(model, repo_root_folder, repo_index, save=False):
             mapping_model = pickle.load(out)
         return mapping_model, metadata
     predicted_rois_df = predict_rois(
-        model, input_compounds_path, metadata, repo_root_folder, 256, False
+        model, input_compounds_path, metadata, repo_root_folder, batch_size, verbose
     )
 
     # anchors are all data points with annotated retention time, discarding the void volume
@@ -116,15 +117,17 @@ def predict_for_report_index(
     repo_root_folder,
     report_index,
     add_metadata_summary,
+    batch_size=256,
+    verbose=False,
 ):
     mapping_model, metadata = train_lad_model(
-        model, repo_root_folder, report_index, False
+        model, repo_root_folder, report_index, False, batch_size, verbose
     )
     if mapping_model is None:
         return None
 
     data_to_predict = predict_rois(
-        model, file_with_smiles_to_predict, metadata, repo_root_folder, 256, False
+        model, file_with_smiles_to_predict, metadata, repo_root_folder, batch_size, verbose
     )
 
     data_to_predict["rt_pred"] = mapping_model.get_mapping(data_to_predict.roi)
@@ -149,6 +152,8 @@ def predict_for_multiple_report_experiments(
     repo_root_folder,
     report_indexes,
     add_metadata_summary,
+    batch_size=256,
+    verbose=False,
 ):
     prediction_per_repo_index = []
     summary_per_repo_index = []
@@ -159,6 +164,8 @@ def predict_for_multiple_report_experiments(
             repo_root_folder,
             repo_index,
             add_metadata_summary,
+            batch_size,
+            verbose,
         )
         if out is None:
             continue
@@ -207,12 +214,12 @@ if __name__ == "__main__":
         args.repo_root_folder,
         args.dataset_ids,
         not args.no_metadata_summary,
+        args.batch_size,
+        args.verbose,
     )
     if out_df is not None:
         if args.out is None:
-            info(f"showing output.")
-            print(out_df)
-            # out_df.to_csv(sys.stdout, sep="\t")
+            out_df.to_csv(sys.stdout, sep="\t")
         else:
             info(f"saving to {args.out}.")
             out_df.to_csv(args.out, sep="\t")
