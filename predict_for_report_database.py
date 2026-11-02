@@ -3,6 +3,7 @@
 These are less reliable than using the anchors for your own exact setup, but can serve as a good way to select suitable setups for your experiment.
 """
 
+import hashlib
 import pickle
 import sys
 from logging import INFO, basicConfig, info, warning
@@ -56,17 +57,13 @@ def get_files_from_report(report_root, report_index):
         raise ValueError(f"The file {input_compounds_path} does not exist")
     if not input_metadata_path.is_file():
         raise ValueError(f"The file {input_metadata_path} does not exist")
-
-    lad_model_path = (
-        path_to_report_index_folder
-        / f"{path_to_report_index_folder.name}_lad_model.pkl"
-    )
-    return input_compounds_path, input_metadata_path, lad_model_path
+    return input_compounds_path, input_metadata_path
 
 
-def train_lad_model(model, repo_root_folder, repo_index, save=False, batch_size=256, verbose=False):
-    input_compounds_path, input_metadata_path, model_save_location = (
-        get_files_from_report(repo_root_folder, repo_index)
+def train_lad_model(model, repo_root_folder, repo_index, lad_cache_dir=None, batch_size=256, verbose=False):
+    """`lad_cache_dir` should be specific to the ROI model; fitted LAD models are cached there per dataset"""
+    input_compounds_path, input_metadata_path = get_files_from_report(
+        repo_root_folder, repo_index
     )
 
     info("load input data...")
@@ -76,11 +73,14 @@ def train_lad_model(model, repo_root_folder, repo_index, save=False, batch_size=
             f"The metadata is not complete to train a reliable model for report index {repo_index}"
         )
         return None, None
-    if model_save_location.is_file():
-        info(f"Loading mapping model from {model_save_location}")
-        with open(model_save_location, "rb") as out:
-            mapping_model = pickle.load(out)
-        return mapping_model, metadata
+    cache_path = None
+    if lad_cache_dir is not None:
+        cache_path = Path(lad_cache_dir) / f"{input_compounds_path.parent.name}_lad_model.pkl"
+        # only reuse if the cached model is newer than the anchor data
+        if cache_path.is_file() and cache_path.stat().st_mtime > input_compounds_path.stat().st_mtime:
+            info(f"Loading mapping model from {cache_path}")
+            with open(cache_path, "rb") as f:
+                return pickle.load(f), metadata
     predicted_rois_df = predict_rois(
         model, input_compounds_path, metadata, repo_root_folder, batch_size, verbose
     )
@@ -103,10 +103,10 @@ def train_lad_model(model, repo_root_folder, repo_index, save=False, batch_size=
         ols_discard_if_negative=True,
         ols_drop_mode="2*median",
     )
-    if save:
-        with open(model_save_location, "wb") as out:
-            info(f"Saving mapping model in {model_save_location}")
-            pickle.dump(mapping_model, out)
+    if cache_path is not None:
+        info(f"Saving mapping model in {cache_path}")
+        with open(cache_path, "wb") as f:
+            pickle.dump(mapping_model, f)
     # todo add some automatic testing as well, showing the accuracies for the input. Maybe a plot?
     return mapping_model, metadata
 
@@ -119,9 +119,10 @@ def predict_for_report_index(
     add_metadata_summary,
     batch_size=256,
     verbose=False,
+    lad_cache_dir=None,
 ):
     mapping_model, metadata = train_lad_model(
-        model, repo_root_folder, report_index, False, batch_size, verbose
+        model, repo_root_folder, report_index, lad_cache_dir, batch_size, verbose
     )
     if mapping_model is None:
         return None
@@ -154,6 +155,7 @@ def predict_for_multiple_report_experiments(
     add_metadata_summary,
     batch_size=256,
     verbose=False,
+    lad_cache_dir=None,
 ):
     prediction_per_repo_index = []
     summary_per_repo_index = []
@@ -166,6 +168,7 @@ def predict_for_multiple_report_experiments(
             add_metadata_summary,
             batch_size,
             verbose,
+            lad_cache_dir,
         )
         if out is None:
             continue
@@ -195,6 +198,7 @@ class PredictRepoRTArgs(Tap):
     )
     verbose: bool = False  # more info on what is being done internally
     no_metadata_summary: bool = False  # omit the extra rows with a metadata summary above the predictions.
+    lad_cache_dir: str | None = None  # cache fitted LAD models here (separately for each ROI model) and reuse them in later runs
 
 
 if __name__ == "__main__":
@@ -208,6 +212,12 @@ if __name__ == "__main__":
     model = load_model(args.model, all_in_one=True)
     if isinstance(model, tuple):
         model = model[0]
+    lad_cache_dir = None
+    if args.lad_cache_dir is not None:
+        # LAD models depend on the ROI model, so cache them per ROI model file
+        model_hash = hashlib.sha256(Path(args.model).read_bytes()).hexdigest()[:12]
+        lad_cache_dir = Path(args.lad_cache_dir) / f"{Path(args.model).stem}_{model_hash}"
+        lad_cache_dir.mkdir(parents=True, exist_ok=True)
     out_df = predict_for_multiple_report_experiments(
         model,
         args.smiles_to_predict,
@@ -216,6 +226,7 @@ if __name__ == "__main__":
         not args.no_metadata_summary,
         args.batch_size,
         args.verbose,
+        lad_cache_dir,
     )
     if out_df is not None:
         if args.out is None:
